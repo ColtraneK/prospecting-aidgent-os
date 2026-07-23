@@ -1,40 +1,47 @@
-# Codex + Playwright — source from LinkedIn
+# Codex + Playwright — the local worker
 
-When you are driving this from Codex, you can source directly from LinkedIn instead of the public web. The trick is to drive a browser **you are already logged into**, over the Chrome DevTools Protocol (CDP), so Playwright never handles your password and never logs in on your behalf. You are doing assisted research on pages you can see yourself, and you review every row before anything happens.
+The worker (`src/worker.mjs`) drives a **dedicated persistent Chrome profile**
+using Playwright's persistent context. This is different from attaching to an
+already-open Chrome over localhost CDP: the profile is created and owned by the
+worker, lives outside the repo, and you sign into it once. Later runs can be
+headless.
 
-Use this responsibly: it is your own session, human-reviewed, paced politely, and it never messages, connects, or comments. Respect LinkedIn's terms and keep volumes low. If you would not do it by hand at a human pace, do not script it.
+## How it works
 
-## The method
+- **Persistent profile, not CDP attach.** `chromium.launchPersistentContext(profilePath, { channel, headless })`. The profile path comes from `AIDGENT_CHROME_PROFILE` (env) or `--profile`, and must live outside the repo.
+- **Installed Chrome channel.** Uses `channel: "chrome"` (configurable via `AIDGENT_CHROME_CHANNEL`) so it drives your real Chrome build where possible.
+- **Manual login only.** `npm run setup-login` opens the profile headed so you sign in yourself. The worker never types credentials, MFA, or completes login.
+- **Read-only.** It navigates and extracts. It never clicks Connect, Message, Follow, Like, Celebrate, React, Comment, Share, Repost, or Post (`FORBIDDEN_ACTION_LABELS` documents them).
+- **Blocker-aware.** After each navigation it checks for login, CAPTCHA, checkpoint, rate-limit, session-expiry, and access-restricted states (`src/blockers.mjs`). On any blocker it stops, records it in the run report, and exits nonzero. It never tries to bypass detection or access controls.
+- **Paced + capped.** Conservative randomized delays (`AIDGENT_MIN_DELAY_MS`/`MAX`) and a hard per-run cap (`AIDGENT_DAILY_CAP`).
 
-1. **Start Chrome with remote debugging and log in yourself.**
+## What it captures per candidate
 
-   ```bash
-   # macOS
-   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-     --remote-debugging-port=9222 --user-data-dir="$HOME/.aidgent-chrome"
+Canonical profile URL, current title and company, and — when accessible — recent
+posts and comments (activity date, type, url, short evidence summary). It prefers
+the last 7 days as a ranking boost but allows strong older evidence. It never
+fabricates any field.
 
-   # Windows (PowerShell)
-   & "C:\Program Files\Google\Chrome\Application\chrome.exe" `
-     --remote-debugging-port=9222 --user-data-dir="$env:USERPROFILE\.aidgent-chrome"
-   ```
+## Commands
 
-   In that Chrome window, sign into LinkedIn normally. Leave it open.
+```bash
+# one-time headed login into the dedicated profile
+npm run setup-login -- --persona my-persona
 
-2. **Tell Codex to connect and source.** Point Codex at this repo and paste:
+# headless research runs
+npm run pilot  -- --persona my-persona --headless
+npm run source -- --persona my-persona --target 50 --headless --update-sheet
+```
 
-   > Read sourcing/codex-playwright.md and sourcing/linkedin_source.mjs. Connect Playwright to my already-open, logged-in Chrome over CDP at http://localhost:9222 (do not store credentials, do not log in for me). Using my locked ICP, open LinkedIn people-search results built from my titles, geography, and keywords. For each of 25 people, capture Name, Title / Company, profile URL, a recent post or activity link if visible, a one-line Why Them, and a short no-pitch opener. Write them to leads.csv in that order. Add a polite delay between profiles, do not message or connect with anyone, and stop at 25 for my review.
+## Selectors drift
 
-3. **Codex adapts the selectors.** LinkedIn's HTML changes often, so `linkedin_source.mjs` is a working scaffold, not a guarantee. Let Codex read the live DOM and adjust the selectors. That is exactly the kind of thing Codex is good at.
+LinkedIn's DOM changes. The extraction selectors in `src/worker.mjs` are a
+resilient starting point; Codex can read the live DOM and adjust them. Keep every
+change read-only and keep volumes low.
 
-4. **Review `leads.csv`, then paste into the Leads tab** (columns A to F). Fill the human-tracking columns (G to M) as you work each person.
+## Why not a hosted cloud browser
 
-## Guardrails
-
-- Your own logged-in session over CDP. No stored credentials, no automated login.
-- Read-only. The script collects public-to-you profile data. It does not click Connect, send messages, or leave comments.
-- Pace it. A short randomized delay between profiles, a small daily cap. This is research, not scraping.
-- You are the only actor who reaches out. The agent drafts; you decide and send.
-
-## Why not the cloud browser for LinkedIn
-
-A hosted cloud browser cannot sign into sites, so it cannot see logged-in LinkedIn search. That is why the default method (Method A) uses the public web, and why LinkedIn sourcing uses your own local session through Playwright instead.
+A hosted cloud browser cannot hold your signed-in LinkedIn session, so it cannot
+see logged-in activity. That is why local LinkedIn mode uses your own persistent
+profile, and why the alternative is the public-web fallback (`--public-web`),
+which needs no session but sees less.

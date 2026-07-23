@@ -1,41 +1,61 @@
-# Step 3 — Source leads from scratch
+# Step 3 — Source leads (local worker)
 
-Goal: from nothing but the locked ICP, find real people who fit and write them into the sheet. Pick the method that matches your tool.
+Goal: research real people who fit the active persona and maintain the Sheet.
+Read-only. Human-approved outreach. Nothing is sent.
 
-Both methods return the same six columns, in this exact order, matching columns A to F of the Leads tab:
+## Bind your existing sheet first (do not create a new one)
 
-`Name · Title / Company · LinkedIn (or profile URL) · Latest Post (or relevant link) · Why Them · Suggested Opener`
+Use the sheet you already have (or `File > Make a copy` of a template, then use
+the copy). Bind it and confirm access — the tool never creates a new spreadsheet:
 
-Leave the workflow fields (G to M) empty. Those are your human tracking.
+```bash
+npm run bind-sheet  -- --persona my-persona --sheet <your-sheet-id-or-url>
+npm run check-sheet -- --persona my-persona
+```
 
----
+Then run `buildAidgentOsSheet` from inside that sheet's Apps Script if it does
+not yet have the Leads / system tabs (safe, preserves data).
 
-## Method A — Public web (default, most reliable)
+## One-time: sign in to a dedicated Chrome profile
 
-Use this in ChatGPT agent mode, or any browsing AI, and for scheduled runs. It needs no sign-in, so it never stalls on a login wall and it runs with your computer off.
+```bash
+npm run setup-login -- --persona my-persona
+```
 
-1. Paste prompt 3 from [PROMPTS.md](../PROMPTS.md).
-2. It searches the public web: public LinkedIn profiles that surface in search, company team and about pages, industry directories, podcast guest lists, conference speaker pages.
-3. It returns 25 verified rows. Paste them into the Leads tab under the headers.
+A headed Chrome opens on a dedicated profile (path from `AIDGENT_CHROME_PROFILE`,
+kept outside the repo). Sign into LinkedIn yourself, including MFA. The tool never
+types your credentials. That profile holds your session — protect it like a
+password (see [SECURITY.md](../SECURITY.md)).
 
-Frame it out loud: assisted, human-reviewed research, not bulk scraping. You review every row.
+## Pilot, then run
 
----
+```bash
+npm run pilot  -- --persona my-persona --headless          # 10 people; review first
+npm run source -- --persona my-persona --target 50 --headless --update-sheet
+```
 
-## Method B — Codex + Playwright (LinkedIn)
+Each candidate is confirmed against the persona (title, company, geography, fit),
+its canonical profile URL is captured, and recent activity is inspected. Activity
+from the **last 7 days** is preferred as a ranking boost, but a strong ICP match
+with older or no recent activity is still allowed. Why Them and the opener are
+built only from verified evidence.
 
-Use this when you are driving from Codex and want to source directly from LinkedIn. Codex writes and runs a Playwright script that connects to a browser you are already logged into, so no credentials are stored and nothing is automated on your behalf beyond reading pages you can see yourself.
+The worker appends new leads and refreshes existing ones in the Sheet, preserves
+your human columns G–M, and writes a Run Log row. On any login / CAPTCHA /
+checkpoint / rate-limit / expiry page it **stops safely and exits nonzero** —
+re-run `setup-login` or wait.
 
-Full method and a ready script: [sourcing/codex-playwright.md](../sourcing/codex-playwright.md) and [sourcing/linkedin_source.mjs](../sourcing/linkedin_source.mjs).
+## Modes
 
-Short version:
+- **Local LinkedIn (default):** signed-in dedicated profile, richest activity. Requires the computer on and awake and Codex desktop running. Does NOT run with the computer off.
+- **Public-web fallback (`--public-web`):** no signed-in session; public profiles and external sources; lower activity visibility.
 
-1. Start Chrome with remote debugging and log into LinkedIn yourself.
-2. Tell Codex to connect Playwright to that browser over CDP, run your ICP search, and extract the six columns to `leads.csv`.
-3. Review `leads.csv`, then paste into the Leads tab.
+## Offline check
 
-This drives your own session for research you review. Pace requests politely, respect each platform's terms, and never message or connect automatically.
+```bash
+npm run dry-run -- --persona example-generic --fixture test/fixtures/dry-run.json
+```
 
----
+Plans a Sheet update from fixtures and writes nothing.
 
 Next: [Step 4 — Schedule it](4-schedule.md)

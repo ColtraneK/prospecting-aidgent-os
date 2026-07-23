@@ -1,20 +1,13 @@
 # Step 1 — Scan the business
 
-Goal: the AI reads a real website and drafts a credible ICP (ideal customer profile) you can correct. This is the first wow: it understands the business without being told.
+Goal: draft a credible ICP you can correct. This becomes a private persona, not
+hardcoded logic.
 
-## Do it
+1. In Codex desktop, paste prompt 1 from [PROMPTS.md](../PROMPTS.md) with the business website.
+2. Read the six-line ICP: what they sell, the outcome, who buys it (industry, size, titles), where they are, and the one buying signal.
+3. It is a draft. You fix it in Step 2.
 
-1. Open a browsing-capable AI (ChatGPT with agent mode, or Codex with browsing).
-2. Paste prompt 1 from [PROMPTS.md](../PROMPTS.md), swapping `{{URL}}` for the business website.
-3. Read the six-line ICP it drafts. It will not be perfect. That is the point of Step 2.
-
-## What good looks like
-
-Six short lines: what they sell, the outcome they deliver, who buys it (industry, size, titles), where those buyers are, and the one signal that says someone is a fit.
-
-## Notes
-
-- Website is the most reliable input. LinkedIn company pages work too, but a bot cannot sign in, so a public site is safest.
-- Do not let it contact anyone. This step only reads and drafts.
+Notes: a public website is the most reliable input. This step only reads and
+drafts; it contacts no one.
 
 Next: [Step 2 — Confirm the ICP](2-confirm-icp.md)
