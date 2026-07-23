@@ -1,0 +1,14 @@
+# Personal exports — never commit real prospect data
+leads.csv
+*-leads-export.csv
+private/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Node (Playwright)
+node_modules/
+npm-debug.log*
