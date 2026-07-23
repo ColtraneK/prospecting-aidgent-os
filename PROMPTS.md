@@ -1,27 +1,36 @@
 # Prompts
 
-Replace the `{{PLACEHOLDERS}}`, then copy the block. Every prompt is draft-only and keeps outward action human-approved. Placeholders: `{{URL}}`, `{{ANSWERS}}`, `{{GEO}}`, `{{TIME}}`, `{{TIMEZONE}}`.
+These build a **persona**. Sourcing and scheduling are run via the Codex skill
+and the npm commands, not by pasting prompts. Placeholders: `{{URL}}`,
+`{{ANSWERS}}`, `{{SLUG}}`.
 
-## 1. Scan
+## 1. Scan (draft the ICP)
 
-> Scan this business and tell me who its best-fit prospects are. Website: {{URL}}. Read the homepage, the about page, and the services or pricing pages. Then draft a tight ICP I can correct: what they sell, the outcome they deliver, who buys it (industry, size, titles), where those buyers are, and the one signal that says someone is a fit. Six short lines. Do not contact anyone.
->
-> Then ask me five quick questions: did you get who I sell to right, which exact titles, what geography, what signal means someone is worth reaching, and how should the opener sound?
+> Scan this business and tell me who its best-fit prospects are. Website: {{URL}}. Read the homepage, about, and services or pricing pages. Draft a tight ICP I can correct: what they sell, the outcome, who buys it (industry, size, titles), where they are, and the one buying signal. Six short lines. Then ask me five quick questions to lock it. Do not contact anyone.
 
-## 2. Lock the ICP
+## 2. Lock the ICP → create a private persona
 
-> Here are my corrections: {{ANSWERS}}. Lock the ICP in 5 lines: who I sell to, the exact titles, the geography, the buying signal, and my opener voice. Then wait; do not source until I say go.
+> Here are my corrections: {{ANSWERS}}. Lock the ICP in five lines (who I sell to, exact titles, geography, buying signal, opener voice). Then create a private persona at private/personas/{{SLUG}}.yaml with target_industries, company_sizes, buyer_titles, geography (include/exclude), buying_signals, exclusions, search_keywords, research_sources, and my Google Sheet id. Validate it. Do not source yet.
 
-## 3. Source from scratch (public web, default)
+## 3. Source (run the skill)
 
-> Using the locked ICP, find me 25 real prospects from scratch using public web search only. Do not sign into LinkedIn or any site. Good sources: public LinkedIn profiles that show up in search, company team and about pages, industry directories, podcast guest lists, and conference speaker pages. For each person: confirm they fit and are in {{GEO}}; capture a public profile link and, if visible, something recent they said or did; write a one-line Why Them; and draft a short, no-pitch opener that reacts to something specific. Return each row in this exact order: Name, Title / Company, LinkedIn (or profile URL), Latest Post (or a relevant link), Why Them, Suggested Opener. Leave workflow fields empty. Draft only; contact no one. Stop at 25 and show me.
+> Use the research-outreach-prospects skill with persona {{SLUG}}. Pilot 10 first, let me review, then run headless with --update-sheet. Read-only research only: prefer the last 7 days but allow strong older matches, never send/connect/react/comment, never touch my human columns G–M, and stop on any login / CAPTCHA / checkpoint / rate-limit page.
 
-## 3b. Source from LinkedIn (Codex + Playwright)
+## 4. Schedule (local)
 
-See [sourcing/codex-playwright.md](sourcing/codex-playwright.md) for the full method. The one-line kickoff:
+> Create a local Codex scheduled task that runs `npm run source -- --persona {{SLUG}} --target 50 --headless --update-sheet` every weekday at my chosen time. Remind me it needs the computer on and awake and Codex desktop running.
 
-> Read sourcing/codex-playwright.md and sourcing/linkedin_source.mjs. Connect Playwright to my already-open, logged-in Chrome over CDP (do not store credentials, do not log in for me). Using my locked ICP, collect 25 people from LinkedIn search results, capture Name, Title / Company, profile URL, a recent post or activity link, a one-line Why Them, and a short no-pitch opener. Write them to leads.csv in the Name, Title / Company, LinkedIn, Latest Post, Why Them, Suggested Opener order. Pace requests politely, do not message or connect with anyone, and stop at 25 for my review.
+## Commands (the real entry points)
 
-## 4. Flip to a schedule
-
-> Save this exact sourcing job as a scheduled task that runs every weekday at {{TIME}} {{TIMEZONE}} and appends 50 fresh prospects matching my locked ICP to the Leads tab, using public web search only and no sign-ins. Fresh means the name and profile URL are not already in the sheet. Do not erase or overwrite existing rows or human tracking. Do not message, connect, comment, or post; only add verified lead rows in columns A:F. Leave all workflow fields empty for me.
+```bash
+npm run list-personas
+npm run select-persona   -- --persona {{SLUG}}
+npm run validate-persona -- --persona {{SLUG}}
+npm run create-persona   -- --from approved-icp.json --slug {{SLUG}}
+npm run setup-login      -- --persona {{SLUG}}          # headed manual login
+npm run pilot            -- --persona {{SLUG}} --headless
+npm run source           -- --persona {{SLUG}} --target 50 --headless --update-sheet
+npm run dry-run          -- --persona {{SLUG}} --fixture test/fixtures/dry-run.json
+npm run source           -- --persona {{SLUG}} --csv-only     # CSV-only fallback
+npm run source           -- --persona {{SLUG}} --public-web   # no signed-in session
+```

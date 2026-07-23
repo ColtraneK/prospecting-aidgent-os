@@ -1,39 +1,87 @@
 # Aidgent OS
 
-Build a human-approved outreach agent in an afternoon. Point an AI at a business, confirm who its buyers are in a few questions, and have it source real, matching prospects into a simple Google Sheet. Then put it on a schedule. The agent reads and drafts. It never sends, connects, comments, or posts. Every outward action is something you do yourself.
+A local, scheduled, ICP-agnostic prospect-research system. It runs on your
+machine through Codex desktop and a Playwright worker, researches LinkedIn
+profiles, posts, and comments **read-only**, and maintains a Google Sheet. It
+never sends, connects, reacts, comments, or posts. Every outward action is
+yours.
 
-This repo is the follow-along for a live build. Work the four steps in order.
+The ICP is never hardcoded. One reusable Codex skill loads a **private,
+switchable persona**, so you can change businesses or audiences without touching
+the sourcing code.
 
-## The four steps
+## Two modes (honest)
 
-1. [Scan the business](steps/1-scan-business.md) - the AI reads a website and drafts your ICP.
-2. [Confirm the ICP](steps/2-confirm-icp.md) - five quick questions lock who to look for.
-3. [Source leads](steps/3-source-leads.md) - find real, matching people from scratch.
-4. [Schedule it](steps/4-schedule.md) - the same job every weekday, hands-off.
+**1. Local LinkedIn mode (default).**
+Codex desktop + this local repo + a dedicated persistent Chrome profile you sign
+into once. Later runs can be headless. It sees signed-in LinkedIn activity, so it
+gets the richest, most recent evidence.
+Requires: **computer on and awake, Codex desktop running.** This does **not** run
+with the computer off.
 
-All four prompts, ready to copy, are in [PROMPTS.md](PROMPTS.md).
+**2. Public-web fallback (`--public-web`).**
+No signed-in LinkedIn session. Uses public profiles and external sources
+(company pages, directories, podcasts, conferences). Lower activity visibility,
+but no login needed.
 
-## Two ways to source (Step 3)
+## What it does each run
 
-- **Public web (default, most reliable).** Works in any browsing AI, including scheduled runs with your computer off. No sign-ins: public profiles that surface in search, company team pages, directories, podcast and conference listings.
-- **Codex + Playwright (LinkedIn).** If you are driving this from Codex, source directly from LinkedIn using your own logged-in browser via Playwright. Codex writes and runs the script; it connects to a browser you are already signed into, so no credentials are stored and you review every row. See [sourcing/codex-playwright.md](sourcing/codex-playwright.md).
-
-Both methods produce the same six columns and feed the same sheet.
-
-## The sheet
-
-Leads land in a Google Sheet. Columns A to F are the agent's output; G to M are your human tracking. Full schema and a one-click builder are in [sheet/](sheet/SHEET.md).
-
-## The one rule
-
-The agent reads and drafts. You approve and act. Nothing sends without you. See [SECURITY.md](SECURITY.md).
+1. Loads the active persona (titles, industries, geography, keywords, signals, exclusions).
+2. Builds searches from the persona (no hardcoded terms).
+3. Researches candidates read-only: confirms title/company/geography/fit, captures the canonical profile URL, and inspects recent activity.
+4. Prefers activity from the **last 7 days** as a ranking boost, but still accepts strong ICP matches with older or no recent activity.
+5. Writes an evidence-based **Why Them** and a short no-pitch **opener** — never fabricating activity, dates, quotes, titles, geography, or URLs.
+6. Maintains the Google Sheet: dedupes by canonical URL (then name+company), appends new leads, refreshes existing ones, and **preserves your human columns G–M**.
+7. Appends a Run Log row. On any login / CAPTCHA / checkpoint / rate-limit / expiry page it stops safely and exits nonzero.
 
 ## Quickstart
 
-1. Build or copy the Lead Sheet (see [sheet/](sheet/SHEET.md)).
-2. Open [PROMPTS.md](PROMPTS.md). Run prompt 1 with a website, answer the five questions, run prompt 2.
-3. Run prompt 3 to source. Paste the rows into the Leads tab starting at the first empty row under the headers.
-4. When it works, run prompt 4 to put it on a schedule.
+```bash
+npm install                      # installs playwright + googleapis + js-yaml
+cp .env.example .env             # fill values; keep secrets OUTSIDE the repo
+npx playwright install chrome    # or use your installed Chrome channel
+
+# Build a persona (or edit personas/example-generic.yaml into private/personas/)
+npm run create-persona -- --from approved-icp.json --slug my-persona
+npm run validate-persona -- --persona my-persona
+
+# Bind YOUR existing sheet (or File > Make a copy of a template first, then bind
+# the copy). This tool NEVER creates a new spreadsheet; it maintains this one.
+npm run bind-sheet  -- --persona my-persona --sheet <your-sheet-id-or-url>
+npm run check-sheet -- --persona my-persona
+
+# One-time manual login into a dedicated Chrome profile
+npm run setup-login -- --persona my-persona
+
+# Pilot 10, review, then a full run that updates the Sheet
+npm run pilot  -- --persona my-persona --headless
+npm run source -- --persona my-persona --target 50 --headless --update-sheet
+```
+
+Offline demo (writes nothing, no network):
+
+```bash
+npm run dry-run -- --persona example-generic --fixture test/fixtures/dry-run.json
+npm test
+```
+
+## Layout
+
+```
+.agents/skills/research-outreach-prospects/SKILL.md   the one reusable skill
+personas/example-generic.yaml                          public FAKE example
+private/personas/<slug>.yaml                            your real personas (git-ignored)
+src/                                                    worker + pure logic + CLI
+sheet/BuildLeadSheet.gs, sheet/SHEET.md                 the 7-tab workbook
+steps/1..4                                              scan ICP → build persona → source → schedule
+sourcing/codex-playwright.md                            the persistent-profile method
+test/                                                   fixture-based tests (no network)
+.env.example                                            variable names only
+```
+
+## Safety
+
+Read-only research; human-approved outreach. See [SECURITY.md](SECURITY.md).
 
 ---
 

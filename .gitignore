@@ -1,14 +1,51 @@
-# Personal exports — never commit real prospect data
+# ============================================================================
+#  The public repo may contain ONLY fake examples. Everything below stays local.
+# ============================================================================
+
+# Private personas and any local selection state
+private/
+personas/*.local.yaml
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.key
+service-account*.json
+**/service-account*.json
+credentials*.json
+client_secret*.json
+gcp-*.json
+token*.json
+
+# Browser profiles / authentication state / cookies / sessions
+*chrome-profile*/
+*browser-profile*/
+user-data-dir*/
+storageState*.json
+auth-state*.json
+cookies*.json
+*.session
+
+# Run artifacts, exports, and debug output
+run-artifacts/
 leads.csv
 *-leads-export.csv
-private/
+*.leads.csv
+screenshots/
+traces/
+*.trace.zip
+playwright-report/
+test-results/
+debug/
+*.log
+npm-debug.log*
 
-# OS / editor noise
+# Node / OS / editor
+node_modules/
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
-
-# Node (Playwright)
-node_modules/
-npm-debug.log*

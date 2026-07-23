@@ -1,0 +1,28 @@
+{
+  "name": "aidgent-os",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local, scheduled, ICP-agnostic LinkedIn prospect research with human-approved outreach and Google Sheet maintenance.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "setup-login": "node src/cli.mjs setup-login",
+    "source": "node src/cli.mjs source",
+    "pilot": "node src/cli.mjs pilot",
+    "dry-run": "node src/cli.mjs dry-run",
+    "list-personas": "node src/cli.mjs list-personas",
+    "select-persona": "node src/cli.mjs select-persona",
+    "validate-persona": "node src/cli.mjs validate-persona",
+    "create-persona": "node src/cli.mjs create-persona",
+    "bind-sheet": "node src/cli.mjs bind-sheet",
+    "check-sheet": "node src/cli.mjs check-sheet"
+  },
+  "dependencies": {
+    "googleapis": "^144.0.0",
+    "js-yaml": "^4.3.0",
+    "playwright": "^1.48.2"
+  }
+}

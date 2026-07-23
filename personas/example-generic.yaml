@@ -1,0 +1,65 @@
+# Example persona (FAKE, public). Copy this to private/personas/<slug>.yaml and
+# edit with your real ICP. Real personas must live under private/ and stay
+# git-ignored. Everything here is invented for illustration.
+
+persona: Example Generic Persona
+version: 1
+
+business:
+  name: Acme Example Co
+  website: https://example.com
+
+offer: A done-for-you service that removes a recurring operational headache.
+customer_outcome: The buyer gets hours back each week and fewer dropped balls.
+
+target_industries:
+  - Professional services
+  - Local service businesses
+  - B2B software
+
+company_sizes:
+  - 1-10 employees
+  - 11-50 employees
+
+buyer_titles:
+  - Founder
+  - Owner
+  - Managing Director
+  - Operations Lead
+
+geography:
+  include:
+    - United States
+    - Canada
+  exclude:
+    - India   # example exclusion only
+
+buying_signals:
+  - Posting about being overwhelmed or hiring
+  - Talking about scaling operations
+  - Recently mentioned trying to automate a workflow
+
+exclusions:
+  - Students
+  - Job seekers
+  - Agencies that sell the same service
+  - Recruiters
+
+opener_voice: Warm, concise, curious, no pitch. React to something specific they said.
+
+search_keywords:
+  - operations
+  - founder
+  - small business
+
+research_sources:
+  - linkedin_profile
+  - linkedin_activity
+  - company_website
+  - conference_or_podcast
+
+# Point this at YOUR Google Sheet. This example ID is fake and will not resolve.
+sheet_id: EXAMPLE_SHEET_ID_replace_me
+
+created: 2026-07-23
+last_updated: 2026-07-23
