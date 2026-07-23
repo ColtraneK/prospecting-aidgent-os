@@ -32,12 +32,16 @@ export function canonicalizeLinkedInUrl(raw) {
   return `https://www.linkedin.com/in/${slug}`;
 }
 
+// Combining diacritical marks block (U+0300..U+036F). Built from char codes so
+// the source stays pure ASCII with no ambiguous escape sequence.
+const DIACRITICS_RE = new RegExp("[" + String.fromCharCode(0x300) + "-" + String.fromCharCode(0x36f) + "]", "g");
+
 /** Lowercase, collapse whitespace, strip punctuation for name/company fallback keys. */
 export function normalizeText(s) {
   return String(s || "")
     .toLowerCase()
     .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "") // strip diacritics
+    .replace(DIACRITICS_RE, "") // strip diacritics
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
