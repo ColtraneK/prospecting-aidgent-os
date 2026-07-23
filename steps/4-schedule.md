@@ -20,13 +20,15 @@ It does **not** run with the computer off. There is no cloud worker.
 
 ## What a run does
 
-Appends fresh, deduped leads and refreshes existing ones in your Sheet, prefers
-last-7-day activity, never sends or connects, never touches your human columns
-G–M, and writes a Run Log row. If it hits a blocker it stops and exits nonzero,
-so a scheduler can surface the failure.
+Appends fresh, deduped leads and refreshes existing ones in your Sheet,
+prioritizes prospects with a last-7-day post or relevant comment about a core
+topic, never sends or connects, never touches your human columns H–N, and writes
+a Run Log row. If it hits a blocker it stops and exits nonzero, so a scheduler
+can surface the failure.
 
 ## Your daily loop
 
-Open the Sheet. For each new person: read Why Them, open the source link, use or
-edit the opener, reach out yourself, then track G–M (Reached Out, Replied,
-Outcome). Watch the Run Log for blockers.
+Open the Sheet. For each new person: read Why Them, read the verbatim recent post
+in column D and open its link, use or edit the Suggested Comment (F) and Suggested
+Intro DM (G), reach out yourself, then track H–N (Reached Out, Replied, Outcome).
+Watch the Run Log for blockers.
