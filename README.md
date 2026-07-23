@@ -26,13 +26,34 @@ but no login needed.
 
 ## What it does each run
 
-1. Loads the active persona (titles, industries, geography, keywords, signals, exclusions).
+1. Loads the active persona (titles, industries, geography, keywords, core topics, signals, exclusions).
 2. Builds searches from the persona (no hardcoded terms).
 3. Researches candidates read-only: confirms title/company/geography/fit, captures the canonical profile URL, and inspects recent activity.
-4. Prefers activity from the **last 7 days** as a ranking boost, but still accepts strong ICP matches with older or no recent activity.
-5. Writes an evidence-based **Why Them** and a short no-pitch **opener** — never fabricating activity, dates, quotes, titles, geography, or URLs.
-6. Maintains the Google Sheet: dedupes by canonical URL (then name+company), appends new leads, refreshes existing ones, and **preserves your human columns G–M**.
+4. **Prioritizes** prospects with a post or relevant comment about a core topic in the **last 7 days**, but still accepts strong ICP matches with older or no recent activity.
+5. For each lead it writes, never fabricating activity, dates, quotes, titles, geography, or URLs:
+   - the **verbatim recent post** (if within 7 days) plus its link, in column **D**;
+   - an evidence-based **Why Them** (E);
+   - a **Suggested Comment** — a specific reply to their recent post/comment (F);
+   - a short no-pitch **Suggested Intro DM** (G).
+6. Maintains the Google Sheet: dedupes by canonical URL (then name+company), appends new leads, refreshes existing ones, and **preserves your human tracking columns H–N**.
 7. Appends a Run Log row. On any login / CAPTCHA / checkpoint / rate-limit / expiry page it stops safely and exits nonzero.
+
+### Columns
+
+- **A–G — the agent fills these:** Name, Title / Company, LinkedIn URL, Recent Post (verbatim + link), Why Them, Suggested Comment, Suggested Intro DM.
+- **H–N — yours to edit; the agent never overwrites them:** Reached Out, Replied, Outcome, Date Added, Source Type, Batch, Notes.
+- **O–U — system research metadata:** Activity Date, Activity Type, Fit Score, Last Verified, Canonical Key, Research Source, Research Status.
+
+### Sourcing from your existing connections (optional)
+
+By default the system sources *new* people who match your persona. If you'd rather
+research people you're **already connected to** who fit the ICP, add `--connections`
+(alias `--from-connections`). It reads your connections list read-only and researches
+matches the same way. This is opt-in and never the default.
+
+```bash
+npm run source -- --persona my-persona --connections --headless --update-sheet
+```
 
 ## Quickstart
 
@@ -85,4 +106,4 @@ Read-only research; human-approved outreach. See [SECURITY.md](SECURITY.md).
 
 ---
 
-An open starter kit from Aidgentic. aidgentic.com · MIT licensed.
+An open, ICP-agnostic starter kit. Configure it for any business — it asks for your site and ICP and saves them as a private persona. MIT licensed.

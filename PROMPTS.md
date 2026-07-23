@@ -10,11 +10,11 @@ and the npm commands, not by pasting prompts. Placeholders: `{{URL}}`,
 
 ## 2. Lock the ICP → create a private persona
 
-> Here are my corrections: {{ANSWERS}}. Lock the ICP in five lines (who I sell to, exact titles, geography, buying signal, opener voice). Then create a private persona at private/personas/{{SLUG}}.yaml with target_industries, company_sizes, buyer_titles, geography (include/exclude), buying_signals, exclusions, search_keywords, research_sources, and my Google Sheet id. Validate it. Do not source yet.
+> Here are my corrections: {{ANSWERS}}. Lock the ICP in five lines (who I sell to, exact titles, geography, buying signal, opener voice). Then create a private persona at private/personas/{{SLUG}}.yaml with target_industries, company_sizes, buyer_titles, geography (include/exclude), buying_signals, core_topics (the topics I want prospects to have posted or commented about recently), exclusions, search_keywords, research_sources, and my Google Sheet id. Validate it. Do not source yet.
 
 ## 3. Source (run the skill)
 
-> Use the research-outreach-prospects skill with persona {{SLUG}}. Pilot 10 first, let me review, then run headless with --update-sheet. Read-only research only: prefer the last 7 days but allow strong older matches, never send/connect/react/comment, never touch my human columns G–M, and stop on any login / CAPTCHA / checkpoint / rate-limit page.
+> Use the research-outreach-prospects skill with persona {{SLUG}}. Pilot 10 first, let me review, then run headless with --update-sheet. Read-only research only: prioritize people with a post or relevant comment about my core topics in the last 7 days but allow strong ICP matches without recent activity. For each lead put the verbatim recent post + link in column D, a Suggested Comment in F, and a Suggested Intro DM in G. Never send/connect/react/comment, never touch my human columns H–N, and stop on any login / CAPTCHA / checkpoint / rate-limit page.
 
 ## 4. Schedule (local)
 
@@ -33,4 +33,5 @@ npm run source           -- --persona {{SLUG}} --target 50 --headless --update-s
 npm run dry-run          -- --persona {{SLUG}} --fixture test/fixtures/dry-run.json
 npm run source           -- --persona {{SLUG}} --csv-only     # CSV-only fallback
 npm run source           -- --persona {{SLUG}} --public-web   # no signed-in session
+npm run source           -- --persona {{SLUG}} --connections  # research existing connections (opt-in)
 ```

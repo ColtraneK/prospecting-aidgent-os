@@ -11,11 +11,12 @@ the sourcing code.
 
 ## Golden rules
 
-- Read-only. Never Connect, Message, Follow, Like, React, Celebrate, Comment, Share, Repost, or Post.
+- Read-only. Never Connect, Message, Follow, Like, React, Celebrate, Comment, Share, Repost, or Post. The Suggested Comment and Suggested Intro DM are drafts for the human to send — never send them.
 - Never automate login, passwords, MFA, or CAPTCHA. Never bypass bot detection or access controls.
-- Never fabricate activity, dates, quotes, geography, titles, or URLs. Omit what was not verified.
-- Prefer activity from the last 7 days as a ranking boost, but allow strong ICP matches without recent activity.
-- Preserve the Sheet's human columns G:M. Only write agent (A:F) and system (N:T) fields.
+- Never fabricate activity, dates, quotes, geography, titles, or URLs. Omit what was not verified. If there is no recent post, leave the Recent Post cell and Suggested Comment empty rather than inventing one.
+- PRIORITIZE prospects with a post or relevant comment about a persona core topic within the last 7 days. This is a ranking boost, not a gate — still allow strong ICP matches with older or no recent activity.
+- For each lead: put the verbatim recent post (if within 7 days) with its link after it in column D, an evidence-based Why Them (E), a Suggested Comment replying to their recent activity (F), and a short no-pitch Suggested Intro DM (G).
+- Preserve the Sheet's human columns H:N. Only write agent (A:G) and system (O:U) fields.
 - Requires: computer on and awake, Codex desktop running, a signed-in dedicated Chrome profile. This does NOT run with the computer off.
 
 ## Prerequisites
@@ -24,7 +25,7 @@ the sourcing code.
 2. A service-account JSON at `GOOGLE_APPLICATION_CREDENTIALS`, and the target Sheet shared with the service-account email.
 3. A dedicated Chrome profile path in `AIDGENT_CHROME_PROFILE` (outside the repo), signed into LinkedIn once via setup-login.
 4. A selected persona.
-5. An EXISTING Google Sheet bound to the persona. Never create a new one and never use sheets.net. Use the user's sheet (or File > Make a copy of a template), then `npm run bind-sheet -- --persona <slug> --sheet <id-or-url>` and `npm run check-sheet -- --persona <slug>`. A run refuses to start if no real sheet is bound.
+5. An EXISTING Google Sheet bound to the persona. Never create a new one and never use sheets.new. Use the user's sheet (or File > Make a copy of a template), then `npm run bind-sheet -- --persona <slug> --sheet <id-or-url>` and `npm run check-sheet -- --persona <slug>`. A run refuses to start if no real sheet is bound.
 
 ## Persona commands
 
@@ -33,8 +34,11 @@ the sourcing code.
 - Validate: `npm run validate-persona -- --persona <slug>`
 - Create from an approved ICP: `npm run create-persona -- --from approved-icp.json --slug <slug>`
 
-If the user has no persona, run the scan/confirm ICP steps (steps/1 and steps/2),
-get explicit approval, then create a private persona under `private/personas/`.
+If the user has no persona, ask them for their website and ICP (who they sell to,
+buyer titles, geography, core topics they post about), run the scan/confirm ICP
+steps (steps/1 and steps/2), get explicit approval, then save it as a private
+persona under `private/personas/` so future runs reuse it. Nothing is hardcoded
+to any one business.
 
 ## Procedure
 
@@ -54,3 +58,4 @@ without a live run.
 
 - Local LinkedIn (default): signed-in dedicated profile, richest activity, computer must stay on and awake.
 - Public-web fallback (`--public-web`): no signed-in session, public profiles and external sources only, lower activity visibility.
+- Existing connections (`--connections`, alias `--from-connections`): research people the user is already connected to who match the persona, read-only. Opt-in only; use it only when the user explicitly asks, never as the default.

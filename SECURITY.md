@@ -35,7 +35,7 @@ human pace, do not script it. Respect LinkedIn's and every platform's terms.
 ## Data hygiene
 
 - Real personas, prospect exports, run artifacts, screenshots, traces, and the Chrome profile are all git-ignored. The public repo may contain **only fake examples**.
-- The worker preserves your human columns (G–M) and never deletes leads.
+- The worker preserves your human columns (H–N) and never deletes leads.
 
 ## Operating requirements (not a security feature, but be honest)
 

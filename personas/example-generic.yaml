@@ -39,6 +39,12 @@ buying_signals:
   - Talking about scaling operations
   - Recently mentioned trying to automate a workflow
 
+# Core topics to PRIORITIZE recent (last-7-day) posts/comments about.
+core_topics:
+  - operations
+  - automation
+  - scaling a small team
+
 exclusions:
   - Students
   - Job seekers
