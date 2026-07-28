@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { inspectSetup, buildChecklist, formatStatus } from "../src/start.mjs";
+import { inspectSetup, buildChecklist, formatStatus, SHEET_TEMPLATE_COPY_URL, SERVICE_ACCOUNT_WALKTHROUGH } from "../src/start.mjs";
 
 /** Facts for a setup where everything is done. */
 function readyFacts(over = {}) {
@@ -91,8 +91,69 @@ test("READY reports whether warm connections are being mined", () => {
 test("the status text never asks the user a question", () => {
   // A question mark here would mean the command is waiting for an answer it can
   // never receive. Every line must be a statement or an instruction.
-  const samples = [formatStatus(readyFacts()), formatStatus(readyFacts({ envFileExists: false }))];
+  // Every reachable state, not a sample of two: the two longest hints (the
+  // service-account walkthrough and the sheet copy link) are exactly where a
+  // stray question mark would creep in.
+  const states = ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "signedIn",
+    "credsExist", "personaValid", "sheetBound"];
+  const samples = [formatStatus(readyFacts()),
+    formatStatus(readyFacts({ credsExist: false, credsPath: "" })),
+    ...states.map((k) => formatStatus(readyFacts({ [k]: false })))];
   for (const out of samples) assert.ok(!out.includes("?"), out);
+});
+
+test("a numbered procedure stays readable after wrapping", () => {
+  // The long hints are things a non-developer follows with their hands. If a
+  // wrapped continuation line starts flush left, step 4 and step 5 read as one
+  // paragraph and people lose their place — which is how setup stalls.
+  const out = formatStatus(readyFacts({ credsExist: false, credsPath: "" }));
+  const body = out.split("NEXT STEP")[1].split("\n");
+  const numbered = body.filter((l) => /^\s+\d\. /.test(l));
+  assert.equal(numbered.length, 7, "all seven steps must each start their own line");
+  for (const l of body) assert.ok(l.length <= 90, `line too long to read: ${l}`);
+  for (const l of body) assert.equal(l, l.trimEnd(), "no trailing whitespace");
+  assert.ok(body.includes(""), "the hint keeps its blank separator lines");
+});
+
+test("the paused output carries the whole service-account procedure, not a pointer", () => {
+  // Codex relays this verbatim to someone who is not a developer. If it says
+  // "see README.md" they have to go find it, and setup stalls right here.
+  const out = formatStatus(readyFacts({ credsExist: false, credsPath: "" }));
+  assert.match(out, /NEXT STEP \(6 of 9\)/);
+  for (const beat of [/console\.cloud\.google\.com/, /Google Sheets API/,
+    /Service account/i, /JSON/, /GOOGLE_APPLICATION_CREDENTIALS/,
+    /client_email/, /Editor/]) {
+    assert.match(out, beat, `the walkthrough never mentions ${beat}`);
+  }
+  // Sharing the sheet with the service account is the step everyone skips, and
+  // skipping it fails in a way that looks like a bug in this tool. Say so.
+  assert.match(out, /different identity/i);
+});
+
+test("a wrong credentials path is a path problem, not a fresh walkthrough", () => {
+  // The hint is word-wrapped, so compare on whitespace-normalized text.
+  const out = formatStatus(readyFacts({ credsExist: false })).replace(/\s+/g, " ");
+  assert.match(out, /which is not there/);
+  assert.ok(!out.includes("console.cloud.google.com"), out);
+});
+
+test("someone with no sheet is given a copy link, not told to make one", () => {
+  const out = formatStatus(readyFacts({ sheetBound: false }));
+  assert.match(out, /NEXT STEP \(9 of 9\)/);
+  assert.ok(out.includes(SHEET_TEMPLATE_COPY_URL), out);
+  assert.match(out, /Make a copy/);
+  assert.match(out, /bind-sheet/);
+  // The label must keep saying this tool creates nothing — the copy is an act
+  // the human performs in their own Drive, which is the whole point.
+  assert.match(out, /never creates one/);
+});
+
+test("the copy link is a Google /copy URL, so the copy lands in the clicker's Drive", () => {
+  assert.match(SHEET_TEMPLATE_COPY_URL,
+    /^https:\/\/docs\.google\.com\/spreadsheets\/d\/[A-Za-z0-9_-]{20,}\/copy$/);
+  // /edit would hand everyone the same shared document instead of their own.
+  assert.ok(!SHEET_TEMPLATE_COPY_URL.includes("/edit"), SHEET_TEMPLATE_COPY_URL);
+  assert.ok(!SERVICE_ACCOUNT_WALKTHROUGH.includes("?"), "no questions in the walkthrough");
 });
 
 test("inspectSetup only reads the filesystem — an empty folder is simply not ready", async () => {

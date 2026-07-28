@@ -23,6 +23,35 @@ const SELECTED_FILE = path.join(REPO_ROOT, "private", "selected-persona.txt");
 const OK = "[x]";
 const NO = "[ ]";
 
+// The one-click copy of the empty Aidgent OS lead sheet. Copying it puts a
+// sheet in the person's OWN Drive, owned by them — this tool still never
+// creates a Sheet through the API, and never touches a sheet it was not given.
+export const SHEET_TEMPLATE_ID = "1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4";
+export const SHEET_TEMPLATE_COPY_URL =
+  `https://docs.google.com/spreadsheets/d/${SHEET_TEMPLATE_ID}/copy`;
+
+// Step 6 is where every first-time setup stalls, and the person driving it is
+// usually not a developer. An agent reading this output has to be able to
+// relay the whole procedure without going and looking anything up, so the
+// entire walkthrough lives here rather than as a pointer to README.md.
+// No question marks anywhere: a question in this output invites the agent to
+// answer it instead of doing the step.
+// One logical line per beat; `wrap` does the line breaking and hangs the
+// numbered steps, so nothing here has to be re-flowed by hand when it changes.
+export const SERVICE_ACCOUNT_WALKTHROUGH = [
+  "Create a Google service account and give it access to your sheet. A service account is a robot Google account this tool signs in as, so it can write rows for you without ever holding your own password. Five minutes, once.",
+  "",
+  "1. Go to console.cloud.google.com and sign in. Create a new project — any name will do, for example aidgent.",
+  "2. Search the bar at the top for \"Google Sheets API\", open it, and click Enable.",
+  "3. Search that same bar for \"Credentials\" and open the Credentials page. Click \"Create credentials\", choose \"Service account\", give it any name, then Create and continue, then Done.",
+  "4. Click the service account you just made, open its \"Keys\" tab, then \"Add key\", then \"Create new key\". Choose JSON and click Create. A .json file downloads to your computer.",
+  "5. Move that .json file to a folder OUTSIDE this repo — your home folder or Documents is fine — and set GOOGLE_APPLICATION_CREDENTIALS in .env to its full path.",
+  "6. Open that .json file in any text editor and copy the client_email value. It looks like something@your-project.iam.gserviceaccount.com.",
+  "7. Open your Google Sheet, click Share, paste that client_email, set it to Editor, and click Send.",
+  "",
+  "Step 7 is the one people skip. The service account is a different identity from your own Google login, so an unshared sheet fails every run with a permission error that looks like a bug in this tool.",
+].join("\n");
+
 /**
  * Gather every fact the checklist needs. Pure-ish: reads the local filesystem
  * only. Injected paths make it testable.
@@ -128,7 +157,7 @@ export function buildChecklist(s) {
       done: s.credsExist,
       next: s.credsPath
         ? `GOOGLE_APPLICATION_CREDENTIALS points at "${s.credsPath}", which is not there. Fix the path in .env, then run \`npm run start\` again.`
-        : "Create a Google Cloud service account, download its JSON key to a folder OUTSIDE this repo, set GOOGLE_APPLICATION_CREDENTIALS in .env to that file's full path, and share your Google Sheet with the service account's client_email as an Editor. See README.md.",
+        : SERVICE_ACCOUNT_WALKTHROUGH,
     },
     {
       label: "An ICP persona exists and is selected",
@@ -145,9 +174,22 @@ export function buildChecklist(s) {
         : "Fill in the remaining persona fields.",
     },
     {
-      label: "Your existing Google Sheet is bound (this tool never creates one)",
+      label: "A Google Sheet is bound (you own it; this tool never creates one)",
       done: s.sheetBound,
-      next: `Run \`npm run bind-sheet -- --persona ${s.activeSlug || "<slug>"} --sheet <your-sheet-url>\`, then verify with \`npm run check-sheet\`.`,
+      next: [
+        "Point this at the Google Sheet you want filled in. If you already have one, skip to the commands below.",
+        "",
+        "If you do not have one, open this link and click \"Make a copy\":",
+        "",
+        `  ${SHEET_TEMPLATE_COPY_URL}`,
+        "",
+        "That drops a ready-made, empty copy of the lead sheet into your own Google Drive, owned by you — all seven tabs, headers, and dropdowns already built, and no data in it. It is your copy; nobody else can see it.",
+        "",
+        "Share that sheet with your service account's client_email as an Editor (the address from step 6), then run:",
+        "",
+        `  npm run bind-sheet -- --persona ${s.activeSlug || "<slug>"} --sheet <your-sheet-url>`,
+        "  npm run check-sheet",
+      ].join("\n"),
     },
   ];
 }
@@ -178,22 +220,41 @@ export function formatStatus(s, checklist = buildChecklist(s)) {
     const stepNo = checklist.indexOf(pending) + 1;
     lines.push(`NEXT STEP (${stepNo} of ${checklist.length}):`);
     lines.push("");
-    for (const l of wrap(pending.next, 74)) lines.push("  " + l);
+    // trimEnd so a blank separator line is genuinely blank, not two spaces —
+    // trailing whitespace shows up as diff noise wherever this gets pasted.
+    for (const l of wrap(pending.next, 74)) lines.push(("  " + l).trimEnd());
     lines.push("");
     lines.push("Then run `npm run start` again. Nothing has been changed or sent.");
   }
   return lines.join("\n");
 }
 
+// Hints are prose, but the longest ones are numbered procedures a
+// non-developer has to follow with their hands. A single wrapped block turns
+// "(4)" into something you lose your place in, so an explicit newline in a
+// hint is honoured as a hard break and each line is wrapped on its own.
 function wrap(text, width) {
-  const words = String(text).split(/\s+/);
   const out = [];
-  let line = "";
-  for (const w of words) {
-    if (line && (line + " " + w).length > width) { out.push(line); line = w; }
-    else line = line ? line + " " + w : w;
+  for (const para of String(text).split("\n")) {
+    const indent = (para.match(/^\s*/) || [""])[0];
+    const words = para.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) { out.push(""); continue; }
+    // Continuation lines hang under the first, so a numbered step stays a
+    // visible block instead of collapsing into the one after it.
+    const hang = indent + (/^\s*\d+\.\s/.test(para) ? "   " : "");
+    let line = indent;
+    let first = true;
+    for (const w of words) {
+      const candidate = line === indent || line === hang ? line + w : line + " " + w;
+      if (candidate.length > width && !(line === indent && first) && line.trim()) {
+        out.push(line); line = hang + w;
+      } else {
+        line = candidate;
+      }
+      first = false;
+    }
+    if (line.trim()) out.push(line);
   }
-  if (line) out.push(line);
   return out;
 }
 

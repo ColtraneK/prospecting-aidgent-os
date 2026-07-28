@@ -25,7 +25,7 @@ the sourcing code.
 2. A service-account JSON at `GOOGLE_APPLICATION_CREDENTIALS`, and the target Sheet shared with the service-account email.
 3. A dedicated Chrome profile path in `AIDGENT_CHROME_PROFILE` (outside the repo), signed into LinkedIn once via setup-login.
 4. A selected persona.
-5. An EXISTING Google Sheet bound to the persona. Never create a new one and never use sheets.new. Use the user's sheet (or File > Make a copy of a template), then `npm run bind-sheet -- --persona <slug> --sheet <id-or-url>` and `npm run check-sheet -- --persona <slug>`. A run refuses to start if no real sheet is bound.
+5. An EXISTING Google Sheet bound to the persona. Never create a new one and never use sheets.new. Use the user's sheet; if they have none, give them https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy and have them click "Make a copy" themselves. Then `npm run bind-sheet -- --persona <slug> --sheet <id-or-url>` and `npm run check-sheet -- --persona <slug>`. A run refuses to start if no real sheet is bound.
 
 ## Persona commands
 

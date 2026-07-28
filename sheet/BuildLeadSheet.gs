@@ -13,7 +13,7 @@
  *                         Suggested Comment · Suggested Intro DM
  *    H-N  human tracking: Reached Out · Replied · Outcome · Date Added ·
  *                         Source Type · Batch · Notes
- *    O-U  system fields : Activity Date · Activity Type · Fit Score ·
+ *    O-Y  system fields : Activity Date · Activity Type · Fit Score ·
  *                         Last Verified · Canonical Key · Research Source · Research Status
  *    V-Y  follow-up     : Connection Status · Reply Status · Last Reply ·
  *                         Follow-up Checked
@@ -114,7 +114,7 @@ function ensureLeads_(ss) {
   sh.setHiddenGridlines(true);
   if (sh.getMaxColumns() < n) sh.insertColumnsAfter(sh.getMaxColumns(), n - sh.getMaxColumns());
 
-  banner_(sh, "AIDGENT OS   ·   LEADS", "Agent output A-G  ·  your tracking H-N  ·  system research O-U  ·  the worker never overwrites H-N", n);
+  banner_(sh, "AIDGENT OS   ·   LEADS", "Agent output A-G  ·  your tracking H-N  ·  system research O-Y  ·  the worker never overwrites H-N", n);
   var headers = LEADS_COLS.map(function (c) { return c[0]; });
   sh.getRange(HEADER_ROW, 1, 1, n).setValues([headers])
     .setBackground(NAVY).setFontColor(WHITE).setFontFamily(FONT).setFontWeight("bold")
@@ -344,7 +344,7 @@ function aboutAidgentOs() {
   SpreadsheetApp.getUi().alert(
     "Aidgent OS",
     "Local, human-approved prospect research.\n\n" +
-    "Leads: A-G agent output, H-N your tracking, O-U system research.\n" +
+    "Leads: A-G agent output, H-N your tracking, O-Y system research.\n" +
     "The worker never writes H-N and never sends, connects, or comments.\n\n" +
     "Build / refresh is safe: it preserves your data, tracking, ICP inputs, and Run Log.\n" +
     "Clearing leads is a separate, confirmed action.\n\nAn open, human-approved starter kit. MIT licensed.",

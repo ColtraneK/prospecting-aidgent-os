@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { SHEET_TEMPLATE_ID, SHEET_TEMPLATE_COPY_URL } from "../src/start.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => fs.readFileSync(path.join(REPO_ROOT, p), "utf8");
@@ -75,6 +76,45 @@ test("anything AGENTS.md tells the agent to write about the business stays local
   const ignore = read(".gitignore");
   assert.match(ignore, /^approved-icp\.json$/m, "approved-icp.json must be git-ignored");
   assert.match(ignore, /^private\/$/m);
+});
+
+test("the sheet copy link is identical everywhere it appears", () => {
+  // The link is the one thing a non-technical user clicks. A doc carrying a
+  // stale spreadsheet id would silently hand someone an empty or wrong sheet,
+  // so src/start.mjs is the source of truth and every doc must match it.
+  const COPY = /https:\/\/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]{20,})\/copy/g;
+  const templateId = SHEET_TEMPLATE_ID;
+  assert.match(SHEET_TEMPLATE_COPY_URL, new RegExp(`/d/${templateId}/copy$`));
+
+  const carriers = ["AGENTS.md", "START-HERE.md", "README.md", "sheet/SHEET.md",
+    "steps/2-confirm-icp.md", "steps/3-source-leads.md"];
+  for (const doc of carriers) {
+    const ids = [...read(doc).matchAll(COPY)].map((m) => m[1]);
+    assert.ok(ids.length, `${doc} never offers the sheet copy link`);
+    for (const id of ids) {
+      assert.equal(id, templateId, `${doc} points at a different template than src/start.mjs`);
+    }
+  }
+});
+
+test("offering a copy link did not soften the rule that the agent creates nothing", () => {
+  // The template exists so the HUMAN can click Make a copy. If the agent reads
+  // this as permission to provision sheets, the copy lands in whatever account
+  // the agent is authenticated as and vanishes with it.
+  const a = read("AGENTS.md");
+  assert.match(a, /must not create a Google Sheet/i);
+  assert.match(a, /sheets\.new/i, "AGENTS.md must still name the shortcut it is refusing");
+  assert.match(a, /Make a copy/, "AGENTS.md must give the human-clicks-it alternative");
+  // start.mjs says the same thing at the moment of the step, not just in prose.
+  assert.match(read("src/start.mjs"), /this tool never creates one/i);
+});
+
+test("the sheet script's own header matches the column bands it builds", () => {
+  // BuildLeadSheet.gs is pasted into Apps Script and read by humans there, so a
+  // banner claiming O-U while the worker writes through Y is a live lie.
+  const gs = read("sheet/BuildLeadSheet.gs");
+  assert.ok(!/O-U/.test(gs), "BuildLeadSheet.gs still describes the old O-U range");
+  assert.match(gs, /O-Y/);
 });
 
 test("the docs describe the column bands the schema actually has", () => {

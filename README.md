@@ -118,8 +118,10 @@ npx playwright install chrome    # or use your installed Chrome channel
 npm run create-persona -- --from approved-icp.json --slug my-persona
 npm run validate-persona -- --persona my-persona
 
-# Bind YOUR existing sheet (or File > Make a copy of a template first, then bind
-# the copy). This tool NEVER creates a new spreadsheet; it maintains this one.
+# Bind YOUR sheet. No sheet yet? Open the template below and click "Make a
+# copy" — you get your own, in your own Drive, tabs already built:
+#   https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy
+# This tool NEVER creates a spreadsheet itself; it maintains the one you bind.
 npm run bind-sheet  -- --persona my-persona --sheet <your-sheet-id-or-url>
 npm run check-sheet -- --persona my-persona
 
@@ -135,6 +137,31 @@ npm run daily  -- --persona my-persona --target 25 --headless --update-sheet
 ```
 
 Stuck at any point? `npm run start` will tell you which piece is missing.
+
+## Letting it write to your Sheet
+
+This is the step where first-time setups stall, so here it is in full. You need
+a **service account** — a robot Google account that this tool authenticates as.
+About five minutes, once. `npm run start` prints these same steps when you
+reach them, so you never have to come find this page.
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) and sign
+   in. Create a new project; any name works.
+2. Search the top bar for **Google Sheets API**, open it, click **Enable**.
+3. Search the top bar for **Credentials**. Click **Create credentials** →
+   **Service account**. Any name, then Create and continue → Done.
+4. Click the service account you just made → **Keys** tab → **Add key** →
+   **Create new key** → **JSON** → Create. A `.json` file downloads.
+5. Move that file somewhere **outside this repo** (home folder, Documents) and
+   set `GOOGLE_APPLICATION_CREDENTIALS` in `.env` to its full path.
+6. Open the `.json` in any text editor and copy the `client_email` value — it
+   looks like `something@your-project.iam.gserviceaccount.com`.
+7. Open your Google Sheet → **Share** → paste that `client_email` → set it to
+   **Editor** → Send.
+
+Step 7 is the one people skip. The service account is a *different identity*
+from your own Google login, so an unshared sheet fails every run with a
+permission error that looks like a bug in this tool.
 
 Offline demo (writes nothing, no network):
 

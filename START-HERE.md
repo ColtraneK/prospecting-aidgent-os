@@ -69,11 +69,15 @@ touches your 2FA. It just waits for you to finish and closes.
 one-time thing: a small JSON file from Google Cloud that lets the tool write to
 your sheet without you being logged in. You share your sheet with an email
 address from that file, exactly like sharing with a colleague. Your agent will
-walk you through it, and `README.md` has the steps.
+walk you through it — `npm run start` prints every step when you get there, and
+`README.md` has the same list.
 
-**Your Google Sheet.** Your own, existing sheet. This system will never create
-one for you. If you do not have one yet, `sheet/BuildLeadSheet.gs` builds the
-whole thing — tabs, columns, dropdowns — in a blank sheet in about a minute.
+**Your Google Sheet.** Your own sheet — this system will never create one for
+you. If you do not have one yet, open the template below and click **Make a
+copy**. The copy is yours, in your Drive, with all seven tabs, columns, and
+dropdowns already built and nothing in it:
+
+<https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy>
 
 **About twenty minutes of conversation about your business.** Your agent reads
 your website, proposes who it thinks your ideal customer is, and you correct it.

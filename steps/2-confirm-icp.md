@@ -18,7 +18,12 @@ Two more, asked once, because they change what a run does:
    nobody works that list. Default is no. Saved as `include_connections`; when
    it is on, those rows are labelled **Connection** in Source Type so they stand
    out.
-7. Which existing Google Sheet should this fill in? This system never creates one.
+7. Which Google Sheet should this fill in? This system never creates one — it
+   only writes to a sheet you own. If you do not have one, open the template
+   below and click **Make a copy**; the copy is yours, in your Drive, with the
+   seven tabs already built and no data in it.
+
+   <https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy>
 
 Then create the persona (private, git-ignored) and bind your sheet:
 

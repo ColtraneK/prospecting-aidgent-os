@@ -82,9 +82,15 @@ fit score.
 
 ## Which sheet does it use?
 
-**Your existing one.** Never `sheets.new`. Either open the sheet you already use,
-or `File > Make a copy` of a template first, then **bind that sheet** so the
-worker maintains it:
+**One you own.** Never `sheets.new`, and never one this tool made for you. Open
+the sheet you already use — or, if you do not have one, open the template below
+and click **Make a copy**. The copy lands in your Drive under your ownership,
+with all seven tabs, headers, dropdowns, and the ⚡ Aidgent OS menu already
+built, and no data in it:
+
+<https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy>
+
+Either way, **bind that sheet** so the worker maintains it:
 
 ```bash
 npm run bind-sheet  -- --persona <slug> --sheet <your-sheet-id-or-url>
@@ -97,7 +103,9 @@ creates a new spreadsheet.
 
 ## Build / refresh
 
-Open **that** Sheet (the one you bound) → Extensions > Apps Script → paste
+Copies of the template already have this built and need nothing here. If you
+brought your own sheet: open **that** Sheet (the one you bound) → Extensions >
+Apps Script → paste
 `BuildLeadSheet.gs` → run `buildAidgentOsSheet`. The script is container-bound and
 only edits the spreadsheet it lives in. **Re-running is safe:** it refreshes headers, formatting,
 validation, and the static tabs but preserves Leads data, your H–N tracking,

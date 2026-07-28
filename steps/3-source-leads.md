@@ -3,18 +3,24 @@
 Goal: research real people who fit the active persona and maintain the Sheet.
 Read-only. Human-approved outreach. Nothing is sent.
 
-## Bind your existing sheet first (do not create a new one)
+## Bind your sheet first (the tool never creates one)
 
-Use the sheet you already have (or `File > Make a copy` of a template, then use
-the copy). Bind it and confirm access — the tool never creates a new spreadsheet:
+Use the sheet you already have. If you do not have one, open the template and
+click **Make a copy** — the copy lands in your own Drive, owned by you, with all
+seven tabs built and nothing in it:
+
+<https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy>
+
+Bind it and confirm access:
 
 ```bash
 npm run bind-sheet  -- --persona my-persona --sheet <your-sheet-id-or-url>
 npm run check-sheet -- --persona my-persona
 ```
 
-Then run `buildAidgentOsSheet` from inside that sheet's Apps Script if it does
-not yet have the Leads / system tabs (safe, preserves data).
+If you brought your own sheet rather than copying the template, run
+`buildAidgentOsSheet` from inside that sheet's Apps Script to add the Leads /
+system tabs (safe, preserves data). Copies of the template already have it.
 
 ## One-time: sign in to a dedicated Chrome profile
 

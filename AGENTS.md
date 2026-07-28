@@ -61,9 +61,19 @@ gather prospects. The sourcing path is `npm run source` and nothing else. Your
 own search results are not reproducible, not paced, not rate-limited, not
 logged, and not subject to the read-only guarantees the person was promised.
 
-**You must not create a Google Sheet.** The person brings their own sheet. The
-system binds to it. If you cannot find their sheet, ask for the URL — do not
-solve it by making a new one.
+**You must not create a Google Sheet.** Not through the API, not through a
+connector, not with sheets.new. The person owns the sheet; the system binds to
+it. If they do not have one yet, give them this link and let them click it
+themselves:
+
+```
+https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy
+```
+
+That is a read-only template. Clicking **Make a copy** puts a copy in *their*
+Drive under *their* ownership, with all seven tabs already built and no data in
+it. Then bind that copy. The distinction matters: a sheet you created lives in
+someone else's account and disappears when that account does.
 
 **You must not sign in for them.** Never type a password, never handle a 2FA
 code, never fill a login form. `npm run setup-login` opens a window and the
