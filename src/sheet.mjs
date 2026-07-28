@@ -136,3 +136,44 @@ async function ensureTab(sheets, spreadsheetId, title, headers) {
     });
   }
 }
+
+/**
+ * Translate a Google Sheets API failure into the sentence that actually fixes it.
+ *
+ * Both of the common failures are silent setup mistakes, and both surface as a
+ * raw GaxiosError stack that sends people looking in the wrong place: a 403 is
+ * almost always "you never shared the sheet with the service account" (the
+ * service account is a different identity from your own Google login, so your
+ * own access proves nothing), and a 404 is almost always a mistyped or wrong id.
+ * Pure and string-in/string-out, so it is testable without the network.
+ *
+ * Returns null when the error is not one of these, so callers can rethrow.
+ */
+export function explainSheetsError(err, { sheetId = "", credentialsPath = "" } = {}) {
+  const status = Number(err && (err.status || err.code)) || 0;
+  const msg = String((err && err.message) || "");
+  const where = sheetId ? ` (${sheetId})` : "";
+  if (status === 403 || /caller does not have permission|insufficient|forbidden/i.test(msg)) {
+    return [
+      `Google refused access to that sheet${where}.`,
+      "",
+      "Almost always this means the sheet is not shared with the service account.",
+      "The service account is a SEPARATE Google identity from your own login, so",
+      "being able to open the sheet yourself does not give it access.",
+      "",
+      credentialsPath
+        ? `Open ${credentialsPath}, copy the "client_email" value,`
+        : 'Open your service-account .json key, copy the "client_email" value,',
+      "then in the sheet click Share, paste that address, set it to Editor, and Send.",
+    ].join("\n");
+  }
+  if (status === 404 || /requested entity was not found|not found/i.test(msg)) {
+    return [
+      `Google has no sheet with that id${where}.`,
+      "",
+      "Check the id you bound. The safest way is to open your sheet in the browser",
+      "and copy the whole URL, then re-run bind-sheet with that URL.",
+    ].join("\n");
+  }
+  return null;
+}

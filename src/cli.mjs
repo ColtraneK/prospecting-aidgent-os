@@ -22,7 +22,7 @@ import { parseFlags, resolveConfig, loadDotEnv, REPO_ROOT } from "./config.mjs";
 import {
   getPersona, validatePersona, listPersonaSlugs, personaSheetId,
   personaTemplate, PRIVATE_PERSONA_DIR, resolvePersonaPath, loadPersonaFile,
-  extractSheetId, isPlaceholderSheetId,
+  extractSheetId, isPlaceholderSheetId, isSharedTemplateId,
 } from "./persona.mjs";
 import { runPipeline } from "./pipeline.mjs";
 import { toCsv } from "./csv.mjs";
@@ -136,6 +136,18 @@ async function cmdBindSheet(flags) {
   const { default: YAML } = await import("js-yaml");
   const persona = await loadPersonaFile(p);
   const id = extractSheetId(arg);
+  // Pasting the template link instead of your own copy is the easiest mistake
+  // here, and it does not surface until the first Sheets call fails with a
+  // permission error that looks like the service-account step went wrong.
+  if (isSharedTemplateId(id)) {
+    fail([
+      "That is the shared TEMPLATE, not your own sheet. You only have view access to it,",
+      "so every run would fail with a permission error.",
+      "",
+      "Open the template link, click File > Make a copy, then copy the URL of the NEW",
+      "sheet from your browser's address bar and bind that one instead.",
+    ].join("\n"));
+  }
   persona.sheet_id = id;
   delete persona.sheet_url;
   persona.last_updated = new Date().toISOString().slice(0, 10);
@@ -151,6 +163,9 @@ async function cmdCheckSheet(flags) {
   const sheetId = config.sheetId || (persona && personaSheetId(persona)) || "";
   if (isPlaceholderSheetId(sheetId)) {
     fail("No real sheet bound. Run bind-sheet or set GOOGLE_SHEET_ID to your existing sheet. This tool never creates a new one.");
+  }
+  if (isSharedTemplateId(sheetId)) {
+    fail("The bound sheet is the shared TEMPLATE, which you can only view. Make a copy of it and bind the copy: npm run bind-sheet -- --persona <slug> --sheet <url-of-your-copy>");
   }
   const { getSheets } = await import("./sheet.mjs");
   const sheets = await getSheets(config.credentialsPath);
@@ -358,4 +373,15 @@ function existingRowWithSet(existingSheet, update) {
 function slugify(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
 function fail(msg) { console.error(msg); process.exit(2); }
 
-main().catch((e) => { console.error(e.stack || e.message); process.exit(1); });
+main().catch(async (e) => {
+  // A raw GaxiosError stack here is the single least useful thing we could show
+  // a non-developer, and the two common causes have exact, sayable fixes.
+  try {
+    const cfg = resolveConfig(parseFlags(process.argv.slice(3)));
+    const { explainSheetsError } = await import("./sheet.mjs");
+    const said = explainSheetsError(e, { sheetId: cfg.sheetId, credentialsPath: cfg.credentialsPath });
+    if (said) { console.error(said); process.exit(1); }
+  } catch { /* fall through to the raw error below */ }
+  console.error(e.stack || e.message);
+  process.exit(1);
+});

@@ -89,6 +89,24 @@ export function isPlaceholderSheetId(id) {
   return !s || /EXAMPLE_SHEET_ID/i.test(s) || s === "replace_me";
 }
 
+// The shared sheet everyone copies. It lives here rather than in start.mjs so
+// the CLI can refuse it without importing the whole status engine; start.mjs
+// re-exports it and builds the /copy URL from it.
+export const SHEET_TEMPLATE_ID = "1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g";
+
+/**
+ * True when someone bound the shared template instead of their own copy.
+ *
+ * This is the easiest mistake in the whole setup: the template link is sitting
+ * right there in the docs, and pasting it "works" as far as bind-sheet is
+ * concerned. It then fails at the first Sheets call with a permission error —
+ * which reads exactly like the service-account sharing step failed, so people
+ * troubleshoot the wrong thing. Catch it at bind time, where the fix is obvious.
+ */
+export function isSharedTemplateId(id) {
+  return extractSheetId(id) === SHEET_TEMPLATE_ID;
+}
+
 // --- file operations (kept out of the pure validators) ---------------------
 
 /** Parse a YAML persona file into an object. Requires js-yaml at runtime. */

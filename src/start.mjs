@@ -16,7 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { REPO_ROOT, loadDotEnv } from "./config.mjs";
-import { listPersonaSlugs, resolvePersonaPath, loadPersonaFile, validatePersona, personaSheetId, isPlaceholderSheetId } from "./persona.mjs";
+import { listPersonaSlugs, resolvePersonaPath, loadPersonaFile, validatePersona, personaSheetId, isPlaceholderSheetId, SHEET_TEMPLATE_ID } from "./persona.mjs";
 
 const SELECTED_FILE = path.join(REPO_ROOT, "private", "selected-persona.txt");
 
@@ -26,7 +26,8 @@ const NO = "[ ]";
 // The one-click copy of the empty Aidgent OS lead sheet. Copying it puts a
 // sheet in the person's OWN Drive, owned by them — this tool still never
 // creates a Sheet through the API, and never touches a sheet it was not given.
-export const SHEET_TEMPLATE_ID = "1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g";
+// The id itself lives in persona.mjs so bind-sheet can refuse it cheaply.
+export { SHEET_TEMPLATE_ID };
 export const SHEET_TEMPLATE_COPY_URL =
   `https://docs.google.com/spreadsheets/d/${SHEET_TEMPLATE_ID}/copy`;
 
