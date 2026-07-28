@@ -9,6 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SHEET_TEMPLATE_ID, SHEET_TEMPLATE_COPY_URL } from "../src/start.mjs";
+import { LEADS_HEADERS, FOLLOWUP_FIELDS, colLetter } from "../src/schema.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => fs.readFileSync(path.join(REPO_ROOT, p), "utf8");
@@ -97,6 +98,19 @@ test("the sheet copy link is identical everywhere it appears", () => {
   }
 });
 
+test("the template is never used as a stand-in for someone's own bound sheet", () => {
+  // The template is a thing you COPY. The moment a fixture binds to it
+  // directly, the tests stop distinguishing "the sheet you own" from "the
+  // sheet everyone copies" — which is the exact confusion the design exists to
+  // prevent, and it would go unnoticed because every assertion still passes.
+  for (const f of fs.readdirSync(path.join(REPO_ROOT, "test"))) {
+    if (!f.endsWith(".mjs")) continue;
+    const src = read(path.join("test", f));
+    assert.ok(!src.includes(SHEET_TEMPLATE_ID),
+      `test/${f} binds a fixture to the shared template id; use a sheet id of your own instead`);
+  }
+});
+
 test("offering a copy link did not soften the rule that the agent creates nothing", () => {
   // The template exists so the HUMAN can click Make a copy. If the agent reads
   // this as permission to provision sheets, the copy lands in whatever account
@@ -115,6 +129,28 @@ test("the sheet script's own header matches the column bands it builds", () => {
   const gs = read("sheet/BuildLeadSheet.gs");
   assert.ok(!/O-U/.test(gs), "BuildLeadSheet.gs still describes the old O-U range");
   assert.match(gs, /O-Y/);
+});
+
+test("no file stops the system band short of the last column the schema defines", () => {
+  // The follow-up columns were added at the end of SYSTEM_FIELDS, so every place
+  // that already said "system = O:U" became wrong without changing a character.
+  // A file may split the band (O-U research, V-Y follow-up) but it must not
+  // describe a band starting at O and simply stop before the real last column —
+  // an agent reading that treats V-Y as off-limits and silently stops recording
+  // whether anyone replied.
+  const last = colLetter(LEADS_HEADERS.length - 1);
+  const BAND = new RegExp(`\\bO[-–:]([A-Z])\\b`, "g");
+  const files = [...DOCS, "sheet/BuildLeadSheet.gs",
+    ".agents/skills/research-outreach-prospects/SKILL.md"];
+  for (const f of files) {
+    const src = read(f);
+    const ends = [...src.matchAll(BAND)].map((m) => m[1]);
+    if (!ends.length || ends.includes(last)) continue;
+    // Stopped short — only acceptable if the remainder is named separately.
+    const after = colLetter(LEADS_HEADERS.length - FOLLOWUP_FIELDS.length);
+    assert.match(src, new RegExp(`\\b${after}[-–:]${last}\\b`),
+      `${f} says the system band is O-${ends[0]} and never accounts for ${after}-${last}`);
+  }
 });
 
 test("the docs describe the column bands the schema actually has", () => {

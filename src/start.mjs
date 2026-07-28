@@ -26,7 +26,7 @@ const NO = "[ ]";
 // The one-click copy of the empty Aidgent OS lead sheet. Copying it puts a
 // sheet in the person's OWN Drive, owned by them — this tool still never
 // creates a Sheet through the API, and never touches a sheet it was not given.
-export const SHEET_TEMPLATE_ID = "1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4";
+export const SHEET_TEMPLATE_ID = "1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g";
 export const SHEET_TEMPLATE_COPY_URL =
   `https://docs.google.com/spreadsheets/d/${SHEET_TEMPLATE_ID}/copy`;
 

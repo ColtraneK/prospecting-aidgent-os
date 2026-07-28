@@ -16,7 +16,7 @@ the sourcing code.
 - Never fabricate activity, dates, quotes, geography, titles, or URLs. Omit what was not verified. If there is no recent post, leave the Recent Post cell and Suggested Comment empty rather than inventing one.
 - PRIORITIZE prospects with a post or relevant comment about a persona core topic within the last 7 days. This is a ranking boost, not a gate — still allow strong ICP matches with older or no recent activity.
 - For each lead: put the verbatim recent post (if within 7 days) with its link after it in column D, an evidence-based Why Them (E), a Suggested Comment replying to their recent activity (F), and a short no-pitch Suggested Intro DM (G).
-- Preserve the Sheet's human columns H:N. Only write agent (A:G) and system (O:U) fields.
+- Preserve the Sheet's human columns H:N. Only write agent (A:G) and system (O:Y) fields.
 - Requires: computer on and awake, Codex desktop running, a signed-in dedicated Chrome profile. This does NOT run with the computer off.
 
 ## Prerequisites
@@ -25,7 +25,7 @@ the sourcing code.
 2. A service-account JSON at `GOOGLE_APPLICATION_CREDENTIALS`, and the target Sheet shared with the service-account email.
 3. A dedicated Chrome profile path in `AIDGENT_CHROME_PROFILE` (outside the repo), signed into LinkedIn once via setup-login.
 4. A selected persona.
-5. An EXISTING Google Sheet bound to the persona. Never create a new one and never use sheets.new. Use the user's sheet; if they have none, give them https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy and have them click "Make a copy" themselves. Then `npm run bind-sheet -- --persona <slug> --sheet <id-or-url>` and `npm run check-sheet -- --persona <slug>`. A run refuses to start if no real sheet is bound.
+5. An EXISTING Google Sheet bound to the persona. Never create a new one and never use sheets.new. Use the user's sheet; if they have none, give them https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy and have them click "Make a copy" themselves. Then `npm run bind-sheet -- --persona <slug> --sheet <id-or-url>` and `npm run check-sheet -- --persona <slug>`. A run refuses to start if no real sheet is bound.
 
 ## Persona commands
 

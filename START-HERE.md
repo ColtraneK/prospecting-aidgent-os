@@ -77,7 +77,7 @@ you. If you do not have one yet, open the template below and click **Make a
 copy**. The copy is yours, in your Drive, with all seven tabs, columns, and
 dropdowns already built and nothing in it:
 
-<https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy>
+<https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy>
 
 **About twenty minutes of conversation about your business.** Your agent reads
 your website, proposes who it thinks your ideal customer is, and you correct it.

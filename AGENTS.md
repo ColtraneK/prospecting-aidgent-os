@@ -67,7 +67,7 @@ it. If they do not have one yet, give them this link and let them click it
 themselves:
 
 ```
-https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy
+https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy
 ```
 
 That is a read-only template. Clicking **Make a copy** puts a copy in *their*

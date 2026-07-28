@@ -23,7 +23,7 @@ Two more, asked once, because they change what a run does:
    below and click **Make a copy**; the copy is yours, in your Drive, with the
    seven tabs already built and no data in it.
 
-   <https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy>
+   <https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy>
 
 Then create the persona (private, git-ignored) and bind your sheet:
 

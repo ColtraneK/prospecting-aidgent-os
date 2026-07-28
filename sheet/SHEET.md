@@ -88,7 +88,7 @@ and click **Make a copy**. The copy lands in your Drive under your ownership,
 with all seven tabs, headers, dropdowns, and the ⚡ Aidgent OS menu already
 built, and no data in it:
 
-<https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy>
+<https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy>
 
 Either way, **bind that sheet** so the worker maintains it:
 

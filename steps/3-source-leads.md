@@ -9,7 +9,7 @@ Use the sheet you already have. If you do not have one, open the template and
 click **Make a copy** — the copy lands in your own Drive, owned by you, with all
 seven tabs built and nothing in it:
 
-<https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy>
+<https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy>
 
 Bind it and confirm access:
 

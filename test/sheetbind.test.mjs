@@ -5,8 +5,8 @@ import { extractSheetId, isPlaceholderSheetId, personaSheetId } from "../src/per
 test("extractSheetId handles raw id and full url", () => {
   assert.equal(extractSheetId("ABC_123-x"), "ABC_123-x");
   assert.equal(
-    extractSheetId("https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/edit?usp=sharing"),
-    "1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g",
+    extractSheetId("https://docs.google.com/spreadsheets/d/1YourOwnSheetIdGoesHere0123456789abcdefgh/edit?usp=sharing"),
+    "1YourOwnSheetIdGoesHere0123456789abcdefgh",
   );
 });
 
@@ -14,7 +14,7 @@ test("isPlaceholderSheetId flags empty and the shipped example", () => {
   assert.equal(isPlaceholderSheetId(""), true);
   assert.equal(isPlaceholderSheetId("EXAMPLE_SHEET_ID_replace_me"), true);
   assert.equal(isPlaceholderSheetId("replace_me"), true);
-  assert.equal(isPlaceholderSheetId("1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g"), false);
+  assert.equal(isPlaceholderSheetId("1YourOwnSheetIdGoesHere0123456789abcdefgh"), false);
 });
 
 test("personaSheetId reads id from url too", () => {

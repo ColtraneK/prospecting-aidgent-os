@@ -120,7 +120,7 @@ npm run validate-persona -- --persona my-persona
 
 # Bind YOUR sheet. No sheet yet? Open the template below and click "Make a
 # copy" — you get your own, in your own Drive, tabs already built:
-#   https://docs.google.com/spreadsheets/d/1mCBQiV3k8nN8LYJbWARV3AnqnYXjYaj4M39ysUqakA4/copy
+#   https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy
 # This tool NEVER creates a spreadsheet itself; it maintains the one you bind.
 npm run bind-sheet  -- --persona my-persona --sheet <your-sheet-id-or-url>
 npm run check-sheet -- --persona my-persona

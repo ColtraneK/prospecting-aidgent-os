@@ -20,7 +20,7 @@ function readyFacts(over = {}) {
     credsPath: "/home/me/keys/svc.json", credsExist: true,
     activeSlug: "acme", privatePersonaCount: 1,
     persona: { persona: "acme" }, personaValid: true, personaErrors: [],
-    sheetId: "1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g", sheetBound: true,
+    sheetId: "1YourOwnSheetIdGoesHere0123456789abcdefgh", sheetBound: true,
     includeConnections: false,
     ...over,
   };
@@ -189,7 +189,7 @@ test("personas are read from the repo you point at, not from wherever the code l
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aidgent-start-"));
   const dir = path.join(tmp, "private", "personas");
   fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(path.join(dir, "acme.yaml"), "persona: acme\nsheet_id: 1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g\n");
+  fs.writeFileSync(path.join(dir, "acme.yaml"), "persona: acme\nsheet_id: 1YourOwnSheetIdGoesHere0123456789abcdefgh\n");
   fs.writeFileSync(path.join(tmp, "private", "selected-persona.txt"), "acme\n");
 
   const s = await inspectSetup({ repoRoot: tmp, env: {} });
@@ -206,7 +206,7 @@ test("a placeholder sheet id does not count as bound", async () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aidgent-start-"));
   const placeholder = await inspectSetup({ repoRoot: tmp, env: { GOOGLE_SHEET_ID: "YOUR_EXAMPLE_SHEET_ID_HERE" } });
   assert.equal(placeholder.sheetBound, false);
-  const real = await inspectSetup({ repoRoot: tmp, env: { GOOGLE_SHEET_ID: "1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g" } });
+  const real = await inspectSetup({ repoRoot: tmp, env: { GOOGLE_SHEET_ID: "1YourOwnSheetIdGoesHere0123456789abcdefgh" } });
   assert.equal(real.sheetBound, true);
   fs.rmSync(tmp, { recursive: true, force: true });
 });
