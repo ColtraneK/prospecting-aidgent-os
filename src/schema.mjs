@@ -3,7 +3,7 @@
 // all must agree with this. If you change columns, change them here and mirror
 // them in the builder and docs.
 //
-// v2 layout (A-U): the agent writes A-G and O-U; you own H-N.
+// v3 layout (A-Y): the agent writes A-G and O-Y; you own H-N.
 
 export const AGENT_FIELDS = [
   "Name", // A
@@ -33,6 +33,20 @@ export const SYSTEM_FIELDS = [
   "Canonical Key", // S
   "Research Source", // T
   "Research Status", // U
+  // Follow-up loop (V-Y). Written ONLY by the follow-up pass, which reads
+  // LinkedIn read-only. These are observations, never actions.
+  "Connection Status", // V  connected | pending | not_connected | unknown
+  "Reply Status", // W  replied | no_reply | unknown
+  "Last Reply", // X  verbatim snippet of their latest message to you (+ date)
+  "Follow-up Checked", // Y  ISO date the follow-up pass last observed this row
+];
+
+/** The V-Y subset the follow-up pass owns. Nothing else may write these. */
+export const FOLLOWUP_FIELDS = [
+  "Connection Status",
+  "Reply Status",
+  "Last Reply",
+  "Follow-up Checked",
 ];
 
 export const LEADS_HEADERS = [...AGENT_FIELDS, ...HUMAN_FIELDS, ...SYSTEM_FIELDS];

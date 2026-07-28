@@ -1,6 +1,5 @@
 {
-  "note": "Fake data. Demonstrates: 1 new lead, 1 within-batch duplicate, 1 existing lead refreshed, preserved human tracking, 1 rejected out-of-ICP candidate. Use nowMs ~ 2026-07-23 in tests.",
-  "nowIso": "2026-07-23T12:00:00.000Z",
+  "note": "Offline demo of the follow-up pass. No network, no browser, no Sheet. Run: npm run follow-up -- --fixture test/fixtures/follow-up.json",
   "existingSheet": {
     "headers": [
       "Name",
@@ -62,48 +61,26 @@
       }
     ]
   },
-  "candidates": [
-    {
-      "name": "Sam Rivera",
-      "title": "Founder",
-      "company": "Bright Ops",
-      "url": "https://www.linkedin.com/in/sam-rivera-fake/",
-      "location": "Austin, United States",
-      "activity": {
-        "date": "2026-07-20",
-        "type": "post",
-        "url": "https://www.linkedin.com/feed/update/urn:li:activity:1111",
-        "summary": "Sharing how we cut our weekly ops busywork in half."
+  "observations": {
+    "observedConnections": true,
+    "observedInvites": true,
+    "observedMessages": true,
+    "connections": [
+      {
+        "name": "Dana Lopez",
+        "url": "https://www.linkedin.com/in/dana-lopez-fake"
       }
-    },
-    {
-      "name": "Sam Rivera",
-      "title": "Founder",
-      "company": "Bright Ops",
-      "url": "https://www.linkedin.com/in/sam-rivera-fake",
-      "location": "United States",
-      "activity": null
-    },
-    {
-      "name": "Dana Lopez",
-      "title": "Owner",
-      "company": "Lopez Studio",
-      "url": "https://www.linkedin.com/in/dana-lopez-fake",
-      "location": "Toronto, Canada",
-      "activity": {
-        "date": "2026-07-22",
-        "type": "comment",
-        "url": "https://www.linkedin.com/feed/update/urn:li:activity:2222",
-        "summary": "Commented on a thread about scaling operations."
+    ],
+    "pendingInvites": [],
+    "threads": [
+      {
+        "name": "Dana Lopez",
+        "url": "",
+        "lastMessageFromThem": true,
+        "lastMessageText": "Thanks for reaching out - what does onboarding look like?",
+        "lastMessageDate": "Jul 22"
       }
-    },
-    {
-      "name": "Riya Patel",
-      "title": "Student",
-      "company": "State University",
-      "url": "https://www.linkedin.com/in/riya-patel-fake",
-      "location": "Mumbai, India",
-      "activity": null
-    }
-  ]
+    ]
+  },
+  "nowIso": "2026-07-23T12:00:00Z"
 }

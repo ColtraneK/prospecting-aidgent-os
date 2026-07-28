@@ -36,7 +36,7 @@ function assertNoHumanColumns(indexes) {
   }
 }
 
-/** Full ordered row array (A:U) for a new lead's cells map. */
+/** Full ordered row array (A:Y) for a new lead's cells map. */
 export function rowArray(cells) {
   return LEADS_HEADERS.map((h) => (cells[h] === undefined ? "" : cells[h]));
 }

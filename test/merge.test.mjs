@@ -71,3 +71,28 @@ test("buildExistingIndex derives key when Canonical Key column is empty", () => 
   });
   assert.ok(idx.has("https://www.linkedin.com/in/xy"));
 });
+
+test('a lead found among your existing connections is labelled "Connection"', () => {
+  const opts = { nowIso: "2026-07-23T12:00:00Z", sourceType: "LinkedIn" };
+  const warm = toLeadRow({ name: "Ada Nkem", url: "https://www.linkedin.com/in/ada-nkem-fake", fromConnection: true }, opts);
+  assert.equal(warm["Source Type"], "Connection");
+
+  const cold = toLeadRow({ name: "Ada Nkem", url: "https://www.linkedin.com/in/ada-nkem-fake" }, opts);
+  assert.equal(cold["Source Type"], "LinkedIn");
+
+  // An explicit per-candidate label still wins.
+  const explicit = toLeadRow({ name: "Ada Nkem", url: "https://www.linkedin.com/in/ada-nkem-fake", fromConnection: true, sourceType: "Referral" }, opts);
+  assert.equal(explicit["Source Type"], "Referral");
+
+  // Refreshing an existing lead must never rewrite Source Type (it is yours).
+  const set = toRefreshSet({ name: "Ada Nkem", fromConnection: true }, opts);
+  assert.ok(!("Source Type" in set));
+});
+
+test("follow-up columns are never written by the sourcing merge", () => {
+  const cells = toLeadRow({ name: "Ada Nkem", url: "https://www.linkedin.com/in/ada-nkem-fake" }, { nowIso: "2026-07-23T12:00:00Z" });
+  for (const f of ["Connection Status", "Reply Status", "Last Reply", "Follow-up Checked"]) {
+    assert.equal(cells[f], "", `${f} must start blank on a new row`);
+    assert.ok(!(f in toRefreshSet({ name: "Ada Nkem" }, {})), `${f} must not be in a refresh set`);
+  }
+});

@@ -9,8 +9,11 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
+    "start": "node src/cli.mjs start",
     "setup-login": "node src/cli.mjs setup-login",
     "source": "node src/cli.mjs source",
+    "follow-up": "node src/cli.mjs follow-up",
+    "daily": "node src/cli.mjs daily",
     "pilot": "node src/cli.mjs pilot",
     "dry-run": "node src/cli.mjs dry-run",
     "list-personas": "node src/cli.mjs list-personas",

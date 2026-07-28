@@ -6,6 +6,20 @@ profiles, posts, and comments **read-only**, and maintains a Google Sheet. It
 never sends, connects, reacts, comments, or posts. Every outward action is
 yours.
 
+> **New here?** Read [START-HERE.md](START-HERE.md) — one paste block, no GitHub
+> account needed. If you are an AI agent working in this repo, read
+> [AGENTS.md](AGENTS.md) and follow it exactly.
+
+## Where am I? — `npm run start`
+
+```bash
+npm run start
+```
+
+Prints a plain-English checklist of everything setup needs and names exactly
+**one** next step. It never asks a question and never blocks, so it is safe
+inside an agent harness. Do the one thing, run it again, repeat until READY.
+
 The ICP is never hardcoded. One reusable Codex skill loads a **private,
 switchable persona**, so you can change businesses or audiences without touching
 the sourcing code.
@@ -43,6 +57,39 @@ but no login needed.
 - **A–G — the agent fills these:** Name, Title / Company, LinkedIn URL, Recent Post (verbatim + link), Why Them, Suggested Comment, Suggested Intro DM.
 - **H–N — yours to edit; the agent never overwrites them:** Reached Out, Replied, Outcome, Date Added, Source Type, Batch, Notes.
 - **O–U — system research metadata:** Activity Date, Activity Type, Fit Score, Last Verified, Canonical Key, Research Source, Research Status.
+- **V–Y — the follow-up pass, read-only:** Connection Status, Reply Status, Last Reply, Follow-up Checked.
+
+Column D shows whatever post was actually captured. An older post is shown and
+explicitly marked `(date — older than 7 days)` rather than dropped, so a
+suggested comment in F never points at a post that is missing from the sheet.
+
+## Did they accept? Did they reply?
+
+```bash
+npm run follow-up -- --persona my-persona --update-sheet
+```
+
+Opens three of **your own** pages read-only — sent invitations, connections, and
+your message list — and fills **V–Y** with what it saw. It clicks nothing that
+accepts, withdraws, replies, or sends.
+
+It only watches rows where **you** ticked **Reached Out (H)**. A surface it could
+not read records `unknown`, never a guessed `no_reply`, and a field it did not
+observe is left alone rather than blanked — so a reply recorded last week
+survives a pass that could not read messaging today.
+
+## One command a day
+
+```bash
+npm run daily -- --persona my-persona --target 25 --headless --update-sheet
+```
+
+Sources new people, then runs the follow-up pass. A sourcing blocker no longer
+kills the follow-up half; the exit code still reflects the failure.
+
+Keep the target near 25. The binding constraint is not this tool — LinkedIn
+objects to accounts sending much more than ~30 connection requests a day, and 25
+researched leads is already about twenty minutes of honest human outreach.
 
 ### Sourcing from your existing connections (optional)
 
@@ -54,6 +101,11 @@ matches the same way. This is opt-in and never the default.
 ```bash
 npm run source -- --persona my-persona --connections --headless --update-sheet
 ```
+
+You are also asked once during setup whether *ordinary* runs should mine your
+existing connections first. That answer is saved as `include_connections` in the
+persona; when it is on, connections are searched first and those rows are
+labelled **Connection** in Source Type so warm leads stand out.
 
 ## Quickstart
 
@@ -76,8 +128,13 @@ npm run setup-login -- --persona my-persona
 
 # Pilot 10, review, then a full run that updates the Sheet
 npm run pilot  -- --persona my-persona --headless
-npm run source -- --persona my-persona --target 50 --headless --update-sheet
+npm run source -- --persona my-persona --target 25 --headless --update-sheet
+
+# Once you are reaching out: source + check who accepted and who replied
+npm run daily  -- --persona my-persona --target 25 --headless --update-sheet
 ```
+
+Stuck at any point? `npm run start` will tell you which piece is missing.
 
 Offline demo (writes nothing, no network):
 
@@ -89,6 +146,8 @@ npm test
 ## Layout
 
 ```
+START-HERE.md                                          the paste block for a new user
+AGENTS.md                                              the manual your AI agent follows
 .agents/skills/research-outreach-prospects/SKILL.md   the one reusable skill
 personas/example-generic.yaml                          public FAKE example
 private/personas/<slug>.yaml                            your real personas (git-ignored)

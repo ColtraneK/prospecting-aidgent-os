@@ -12,7 +12,7 @@
 import { detectBlocker } from "./blockers.mjs";
 import { createPacer } from "./pacing.mjs";
 import { canonicalizeLinkedInUrl } from "./url.mjs";
-import { buildSearches } from "./searchTerms.mjs";
+import { buildSources, SENT_INVITES_URL, CONNECTIONS_URL, MESSAGING_URL } from "./searchTerms.mjs";
 
 export const FORBIDDEN_ACTION_LABELS = [
   "Connect", "Message", "Follow", "Like", "Celebrate", "Support",
@@ -77,11 +77,7 @@ export async function runResearch({ persona, config }) {
     maxDelayMs: config.maxDelayMs,
     dailyCap: config.dailyCap,
   });
-  // Default: build searches from the persona. Connections mode (opt-in only,
-  // when the user asks) walks the user's own existing connections instead.
-  const sources = config.mode === "connections"
-    ? [{ url: "https://www.linkedin.com/mynetwork/invite-connect/connections/", kind: "connections" }]
-    : buildSearches(persona);
+  const sources = buildSources(persona, config);
   const context = await launch({ profilePath: config.chromeProfile, channel: config.chromeChannel, headless: config.headless });
   const page = context.pages()[0] || (await context.newPage());
   const candidates = [];
@@ -98,14 +94,17 @@ export async function runResearch({ persona, config }) {
       const results = source.kind === "connections"
         ? await collectConnections(page)
         : await collectSearchResults(page);
+      let fromThisSource = 0;
       for (const r of results) {
         if (candidates.length >= config.target) break;
+        if (source.limit && fromThisSource >= source.limit) break;
         const canon = canonicalizeLinkedInUrl(r.url);
         if (!canon || seen.has(canon)) continue;
         seen.add(canon);
         if (!pacer.tick()) break; // daily cap
         const profile = await inspectProfile(page, canon, pacer);
         candidates.push({ ...r, ...profile, url: canon, fromConnection: source.kind === "connections" });
+        fromThisSource++;
       }
     }
   } catch (err) {
@@ -202,6 +201,123 @@ async function inspectProfile(page, profileUrl, pacer) {
     };
   }
   return out;
+}
+
+/**
+ * READ-ONLY follow-up pass.
+ *
+ * Opens three of your own LinkedIn pages — sent invitations, connections, and
+ * the messaging list — and reports what it saw. It clicks nothing that sends,
+ * withdraws, accepts or replies. Nothing here changes anything on LinkedIn.
+ *
+ * Returns the plain observation object planFollowUp() consumes:
+ *   { connections, pendingInvites, threads,
+ *     observedConnections, observedInvites, observedMessages, blocker }
+ * Each observed* flag is false when that surface could not be read, so the
+ * planner records "unknown" instead of guessing a negative.
+ */
+export async function runFollowUp({ config }) {
+  const pacer = createPacer({
+    minDelayMs: config.minDelayMs,
+    maxDelayMs: config.maxDelayMs,
+    dailyCap: config.dailyCap,
+  });
+  const context = await launch({
+    profilePath: config.chromeProfile,
+    channel: config.chromeChannel,
+    headless: config.headless,
+  });
+  const page = context.pages()[0] || (await context.newPage());
+
+  const out = {
+    connections: [],
+    pendingInvites: [],
+    threads: [],
+    observedConnections: false,
+    observedInvites: false,
+    observedMessages: false,
+    blocker: null,
+  };
+
+  try {
+    // 1) Invitations you SENT that are still outstanding -> "pending".
+    const iresp = await page.goto(SENT_INVITES_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
+    await guard(page, iresp ? iresp.status() : 0);
+    await pacer.wait();
+    out.pendingInvites = await collectSentInvites(page);
+    out.observedInvites = true;
+
+    // 2) People already in your network -> "connected".
+    const cresp = await page.goto(CONNECTIONS_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
+    await guard(page, cresp ? cresp.status() : 0);
+    await pacer.wait();
+    out.connections = await collectConnections(page);
+    out.observedConnections = true;
+
+    // 3) Message threads -> did they reply, and what did they say.
+    const mresp = await page.goto(MESSAGING_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
+    await guard(page, mresp ? mresp.status() : 0);
+    await pacer.wait();
+    out.threads = await collectThreads(page);
+    out.observedMessages = true;
+  } catch (err) {
+    out.blocker = err instanceof BlockerError
+      ? { kind: err.kind, reason: err.message }
+      : { kind: "error", reason: err.message };
+  } finally {
+    await context.close().catch(() => {});
+  }
+
+  return out;
+}
+
+/** Read-only extraction of your outstanding SENT invitations. */
+async function collectSentInvites(page) {
+  return page.$$eval(
+    "li.invitation-card, div.invitation-card, li[class*='invitation-card']",
+    (nodes) =>
+      nodes.map((n) => {
+        const linkEl = n.querySelector("a[href*='/in/']");
+        const nameEl = n.querySelector(
+          ".invitation-card__title, .artdeco-entity-lockup__title, span[aria-hidden='true']",
+        );
+        return {
+          name: nameEl?.textContent?.trim() || "",
+          url: linkEl?.href || "",
+        };
+      }).filter((r) => r.name || r.url),
+  ).catch(() => []);
+}
+
+/**
+ * Read-only extraction of the messaging conversation list.
+ *
+ * LinkedIn's list view shows the participant's name, a snippet of the most
+ * recent message, and a timestamp. When the newest message is yours the snippet
+ * is prefixed "You: " — so the absence of that prefix is how we tell that THEY
+ * spoke last. Threads carry no profile URL here, which is why the planner also
+ * matches on a normalized name key.
+ */
+async function collectThreads(page) {
+  return page.$$eval(
+    "li.msg-conversation-listitem, li[class*='msg-conversation-listitem'], div.msg-conversation-card",
+    (nodes) =>
+      nodes.map((n) => {
+        const t = (sel) => n.querySelector(sel)?.textContent?.replace(/\s+/g, " ").trim() || "";
+        const name = t(".msg-conversation-listitem__participant-names, .msg-conversation-card__participant-names");
+        const raw = t(".msg-conversation-card__message-snippet, .msg-conversation-listitem__message-snippet");
+        const date = t("time, .msg-conversation-listitem__time-stamp, .msg-conversation-card__time-stamp");
+        const linkEl = n.querySelector("a[href*='/in/']");
+        const mine = /^you\s*:/i.test(raw);
+        return {
+          name,
+          url: linkEl?.href || "",
+          lastMessageFromThem: !!raw && !mine,
+          lastMessageText: mine ? raw.replace(/^you\s*:\s*/i, "") : raw,
+          lastMessageDate: date,
+        };
+      }).filter((r) => r.name),
+  ).catch(() => []);
 }
 
 /** Best-effort ISO date; returns "" if not confidently parseable (no fabrication). */

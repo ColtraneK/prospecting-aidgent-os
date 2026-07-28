@@ -6,6 +6,11 @@
 private/
 personas/*.local.yaml
 
+# The ICP intake your agent writes from your answers. It describes your real
+# business and customers, so it stays local like the persona it produces.
+approved-icp.json
+*-icp.json
+
 # Environment and secrets
 .env
 .env.*

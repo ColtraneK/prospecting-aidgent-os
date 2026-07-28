@@ -15,6 +15,10 @@
  *                         Source Type · Batch · Notes
  *    O-U  system fields : Activity Date · Activity Type · Fit Score ·
  *                         Last Verified · Canonical Key · Research Source · Research Status
+ *    V-Y  follow-up     : Connection Status · Reply Status · Last Reply ·
+ *                         Follow-up Checked
+ *                         (filled by the read-only follow-up pass, for rows where
+ *                          YOU ticked Reached Out. It observes; it never sends.)
  *
  *  RE-RUNNING IS SAFE. "Build / refresh" never clears Leads data, human tracking,
  *  your ICP + Schedule inputs, or Run Log history. It only refreshes headers,
@@ -37,8 +41,10 @@ var SOFT = "#F2FBFE", SOFTBORDER = "#BDE9FA", ROWBG = "#F7FAFC", YELLOW = "#FFF8
 var HEADER_ROW = 3, FIRST_DATA_ROW = 4;
 
 var OUTCOMES = ["No response", "Neutral", "Positive", "Not a fit", "Follow up"];
-var SOURCE_TYPES = ["LinkedIn", "Public web", "Referral", "Other"];
+var SOURCE_TYPES = ["LinkedIn", "Connection", "Public web", "Referral", "Other"];
 var RESEARCH_STATUS = ["New", "Refreshed", "Needs review"];
+var CONNECTION_STATUS = ["connected", "pending", "not_connected", "unknown"];
+var REPLY_STATUS = ["replied", "no_reply", "unknown"];
 
 // [title, widthPx, type, group]  type: text|link|check|outcome|source|status|date|num
 var LEADS_COLS = [
@@ -63,6 +69,10 @@ var LEADS_COLS = [
   ["Canonical Key", 220, "text", "system"],
   ["Research Source", 130, "text", "system"],
   ["Research Status", 120, "status", "system"],
+  ["Connection Status", 120, "connstatus", "system"],
+  ["Reply Status", 100, "replystatus", "system"],
+  ["Last Reply", 300, "text", "system"],
+  ["Follow-up Checked", 120, "date", "system"],
 ];
 
 var RUN_LOG_HEADERS = [
@@ -133,6 +143,8 @@ function ensureLeads_(ss) {
     else if (type === "outcome") setListValidation_(body, OUTCOMES);
     else if (type === "source") setListValidation_(body, SOURCE_TYPES);
     else if (type === "status") setListValidation_(body, RESEARCH_STATUS);
+    else if (type === "connstatus") setListValidation_(body, CONNECTION_STATUS);
+    else if (type === "replystatus") setListValidation_(body, REPLY_STATUS);
   }
   sh.setFrozenRows(HEADER_ROW);
   sh.setFrozenColumns(1);
@@ -170,7 +182,7 @@ function rebuildStartHere_(ss) {
     "This is a LOCAL system. Your computer stays on and awake and Codex desktop stays running.",
     "A dedicated Chrome profile that you sign into once does read-only research. It never sends, connects, reacts, comments, or posts.",
     "Each run researches profiles, recent posts, and comments, prefers the last 7 days, and maintains this Sheet.",
-    "The worker writes agent (A-G) and system (O-U) fields. It never touches your human columns H-N.",
+    "The worker writes agent (A-G) and system (O-Y) fields. It never touches your human columns H-N.",
   ].forEach(function (t) { bullet_(sh, r++, W, t); });
   r++;
   section_(sh, r++, W, "First-time setup");
@@ -283,6 +295,8 @@ function rebuildLists_(ss) {
     ["", "OUTCOME (col J)", OUTCOMES.join(" · ")],
     ["", "SOURCE TYPE (col L)", SOURCE_TYPES.join(" · ")],
     ["", "RESEARCH STATUS (col U)", RESEARCH_STATUS.join(" · ")],
+    ["", "CONNECTION STATUS (col V)", CONNECTION_STATUS.join(" · ")],
+    ["", "REPLY STATUS (col W)", REPLY_STATUS.join(" · ")],
     ["", "", ""],
     ["", "QUALITY BAR", ""],
     ["", "Identity", "A real person with a current title and company."],

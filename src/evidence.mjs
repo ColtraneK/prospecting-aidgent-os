@@ -8,18 +8,30 @@ function clip(s, n = 200) {
 }
 
 /**
- * Column D: the verbatim recent post text followed by its link, but ONLY when the
- * activity is recent (within the 7-day window). Returns "" otherwise — we never
- * paste an old post as if it were recent.
+ * Column D: their latest captured post/comment, verbatim, then its link.
+ *
+ * Whatever we actually captured goes in the cell — a blank D used to mean "the
+ * post was older than 7 days", which was indistinguishable from "we found
+ * nothing", and left you with a comment suggestion and no post to comment on.
+ * So an older post is still shown, explicitly dated and marked, and only a
+ * genuinely empty capture yields "". We never present an old post as recent and
+ * we never invent one.
  */
 export function recentPostCell(candidate = {}, recent = false) {
   const a = candidate.activity;
-  if (!recent || !a) return "";
+  if (!a) return "";
   const text = String(a.summary || "").trim(); // verbatim (already the captured text)
   const url = String(a.url || "").trim();
   if (!text && !url) return "";
-  if (text && url) return `"${clip(text, 500)}"\n${url}`;
-  return text ? `"${clip(text, 500)}"` : url;
+
+  const date = String(a.date || "").trim();
+  const stamp = recent
+    ? (date ? `(${date})` : "")
+    : `(${date || "date unknown"} — older than 7 days)`;
+
+  return [text ? `"${clip(text, 500)}"` : "", stamp, url]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** A concise, evidence-based reason. Returns "" when nothing is verified. */

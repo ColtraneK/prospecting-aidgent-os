@@ -14,7 +14,7 @@ const REFRESHABLE_AGENT_FIELDS = [
   "Suggested Intro DM",
 ];
 
-/** Build the {header: value} map for a brand-new lead row (A:U). */
+/** Build the {header: value} map for a brand-new lead row (A:Y). */
 export function toLeadRow(candidate, opts = {}) {
   const { nowIso = new Date().toISOString(), sourceType = "LinkedIn", researchStatus = "New" } = opts;
   const activity = candidate.activity || {};
@@ -30,9 +30,11 @@ export function toLeadRow(candidate, opts = {}) {
   cells["Suggested Comment"] = candidate.comment || "";
   cells["Suggested Intro DM"] = candidate.introDM || "";
   // Human H-N — seed only Date Added + Source Type on insert; the rest is yours.
+  // A person found among your existing connections is labelled "Connection" so
+  // you can tell warm rows from cold ones at a glance.
   cells["Date Added"] = dateOnly(nowIso);
-  cells["Source Type"] = sourceType;
-  // System O-U
+  cells["Source Type"] = candidate.sourceType || (candidate.fromConnection ? "Connection" : sourceType);
+  // System O-Y
   cells["Activity Date"] = activity.date || "";
   cells["Activity Type"] = activity.type || "";
   cells["Fit Score"] = numOrBlank(candidate.score);

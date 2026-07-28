@@ -5,8 +5,20 @@ Goal: run the same research each weekday without starting it by hand.
 Use a **local Codex desktop scheduled task** that runs the deterministic command:
 
 ```bash
-npm run source -- --persona my-persona --target 50 --headless --update-sheet
+npm run daily -- --persona my-persona --target 25 --headless --update-sheet
 ```
+
+`daily` is two things in order: source new people, then the read-only follow-up
+pass that records who accepted your connection request and who wrote back. If
+sourcing hits a blocker the follow-up half still runs and reports, and the
+command still exits nonzero so your scheduler surfaces the failure.
+
+Keep the target near 25. LinkedIn objects to accounts sending much more than
+about 30 connection requests a day, and 25 researched leads is already roughly
+twenty minutes of real outreach. More rows do not become more conversations.
+
+Scheduled tasks need a paid agent plan (OpenAI Plus, for Codex). Without one
+everything still works — you just start the run yourself.
 
 ## Honest requirements
 
@@ -30,5 +42,13 @@ can surface the failure.
 
 Open the Sheet. For each new person: read Why Them, read the verbatim recent post
 in column D and open its link, use or edit the Suggested Comment (F) and Suggested
-Intro DM (G), reach out yourself, then track H–N (Reached Out, Replied, Outcome).
-Watch the Run Log for blockers.
+Intro DM (G), reach out yourself, then tick **Reached Out (H)**.
+
+That tick matters beyond your own tracking — it is what tells tomorrow's
+follow-up pass to watch that person. The next morning, **V–Y** will tell you who
+accepted and who replied, so you can spend your twenty minutes on the
+conversations that are actually live rather than re-reading the whole list.
+
+Watch the Run Log for blockers. And run `npm run start` any time you want to
+confirm the system is still healthy — it is a status check, not just a setup
+wizard.

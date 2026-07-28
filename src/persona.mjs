@@ -158,6 +158,10 @@ export function personaTemplate(icp = {}, { nowIso = new Date().toISOString() } 
     opener_voice: icp.openerVoice || "",
     search_keywords: icp.keywords || [],
     research_sources: icp.researchSources || ["linkedin_profile", "linkedin_activity"],
+    // Asked once during setup. true = also mine the people you are ALREADY
+    // connected to for ICP matches (warm, low-hanging fruit). Default false, so
+    // a run is net-new search unless you opted in.
+    include_connections: icp.includeConnections === true,
     sheet_id: icp.sheetId || "",
     created: date,
     last_updated: date,

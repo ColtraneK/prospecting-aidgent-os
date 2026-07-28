@@ -1,0 +1,88 @@
+// The docs are the product here: a non-technical user pastes a block from
+// START-HERE.md and an agent follows AGENTS.md verbatim. A command that appears
+// in a doc but not in package.json is a dead end for someone who cannot debug
+// it, so these tests treat the docs as code.
+
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const read = (p) => fs.readFileSync(path.join(REPO_ROOT, p), "utf8");
+const pkg = JSON.parse(read("package.json"));
+
+const DOCS = ["AGENTS.md", "START-HERE.md", "README.md", "PROMPTS.md", "SECURITY.md",
+  "sheet/SHEET.md", "steps/1-scan-business.md", "steps/2-confirm-icp.md",
+  "steps/3-source-leads.md", "steps/4-schedule.md"];
+
+test("every `npm run <x>` in the docs is a script that actually exists", () => {
+  for (const doc of DOCS) {
+    const named = [...read(doc).matchAll(/npm run ([a-z][a-z0-9-]*)/g)].map((m) => m[1]);
+    for (const script of named) {
+      assert.ok(pkg.scripts[script], `${doc} tells the user to run "npm run ${script}", which is not in package.json`);
+    }
+  }
+});
+
+test("the commands a new user is walked through are all reachable", () => {
+  for (const s of ["start", "setup-login", "pilot", "source", "follow-up", "daily", "dry-run",
+    "create-persona", "validate-persona", "select-persona", "bind-sheet", "check-sheet", "test"]) {
+    assert.ok(pkg.scripts[s], `missing script: ${s}`);
+  }
+});
+
+test("every command dispatched by the CLI is exposed as an npm script", () => {
+  // Otherwise a user reading `npm run <x>` in one place and a bare command in
+  // another gets two different vocabularies for the same system.
+  const cli = read("src/cli.mjs");
+  const cases = [...cli.matchAll(/^\s*case "([a-z][a-z0-9-]*)":/gm)].map((m) => m[1]);
+  assert.ok(cases.length >= 13, `only found ${cases.length} CLI commands`);
+  for (const c of cases) assert.ok(pkg.scripts[c], `CLI command "${c}" has no npm script`);
+});
+
+test("the two entry-point docs exist and point at each other", () => {
+  const start = read("START-HERE.md");
+  const agents = read("AGENTS.md");
+  assert.match(start, /AGENTS\.md/, "START-HERE must send the agent to AGENTS.md");
+  assert.match(start, /npm run start/, "START-HERE must name the checklist command");
+  assert.match(read("README.md"), /START-HERE\.md/);
+  // The paste block must not assume a GitHub account: clone must be anonymous
+  // HTTPS, with a ZIP fallback for machines without git.
+  assert.match(start, /git clone https:\/\/github\.com\//);
+  assert.ok(!/git@github\.com/.test(start), "no SSH clone — that needs an account and keys");
+  assert.match(start, /\.zip/i, "there must be a no-git fallback");
+  assert.ok(!/aidgent-os\.git/.test(start.replace(/prospecting-aidgent-os\.git/g, "")),
+    "the paste block must reference the public v3 repo name");
+});
+
+test("AGENTS.md states the refusal rules an agent must not talk itself out of", () => {
+  const a = read("AGENTS.md");
+  for (const rule of [/must not invent/i, /must not substitute your own tools/i,
+    /must not create a Google Sheet/i, /must not sign in for them/i,
+    /must not send/i, /must not commit/i]) {
+    assert.match(a, rule);
+  }
+});
+
+test("anything AGENTS.md tells the agent to write about the business stays local", () => {
+  // AGENTS.md has the agent write approved-icp.json in the repo root from the
+  // person's own answers. That file describes their real business, so it must
+  // never be publishable by accident.
+  const agents = read("AGENTS.md");
+  assert.match(agents, /approved-icp\.json/);
+  const ignore = read(".gitignore");
+  assert.match(ignore, /^approved-icp\.json$/m, "approved-icp.json must be git-ignored");
+  assert.match(ignore, /^private\/$/m);
+});
+
+test("the docs describe the column bands the schema actually has", () => {
+  // A doc that says H–N while the code protects H–P would quietly mislead.
+  const sheetDoc = read("sheet/SHEET.md");
+  for (const col of ["Connection Status", "Reply Status", "Last Reply", "Follow-up Checked"]) {
+    assert.ok(sheetDoc.includes(col), `SHEET.md does not document ${col}`);
+  }
+  assert.match(sheetDoc, /A–G and O–Y only/);
+  assert.ok(!/O–U only/.test(sheetDoc), "SHEET.md still describes the old O–U range");
+});

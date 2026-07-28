@@ -3,6 +3,11 @@
 Goal: draft a credible ICP you can correct. This becomes a private persona, not
 hardcoded logic.
 
+If you pasted the block from [START-HERE.md](../START-HERE.md), your agent is
+already doing this — [AGENTS.md](../AGENTS.md) has it read your site first, then
+propose an ICP, then ask you to correct it. These steps are the same thing by
+hand.
+
 1. In Codex desktop, paste prompt 1 from [PROMPTS.md](../PROMPTS.md) with the business website.
 2. Read the six-line ICP: what they sell, the outcome, who buys it (industry, size, titles), where they are, and the one buying signal.
 3. It is a draft. You fix it in Step 2.

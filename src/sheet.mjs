@@ -5,14 +5,14 @@
 //
 // This layer maintains an EXISTING Sheet in place. It detects the Leads header
 // row (it need not be row 3), preserves human columns H:N, and ensures the
-// system columns O:U exist before writing. It never deletes rows.
+// system columns O:Y exist before writing. It never deletes rows.
 
 import { LEADS_HEADERS, SYSTEM_FIELDS, colLetter, COLS } from "./schema.mjs";
 import { buildValueUpdates, LEADS_TAB } from "./sheetPlan.mjs";
 import { toRunLogRow, RUN_LOG_HEADERS } from "./runlog.mjs";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
-const LAST_COL = colLetter(LEADS_HEADERS.length - 1); // "U"
+const LAST_COL = colLetter(LEADS_HEADERS.length - 1); // "Y" (derived, so it follows schema.mjs)
 
 export async function getSheets(credentialsPath) {
   if (!credentialsPath) throw new Error("GOOGLE_APPLICATION_CREDENTIALS is not set");
@@ -57,12 +57,14 @@ export async function readLeads(sheets, spreadsheetId) {
 }
 
 /**
- * Ensure the system columns O:U exist in the header row. Non-destructive: only
- * writes headers that are missing, into their canonical O:U positions.
+ * Ensure the system columns O:Y exist in the header row. Non-destructive: only
+ * writes headers that are missing, into their canonical O:Y positions.
+ * The range is derived from SYSTEM_FIELDS, so adding a system column here is
+ * enough — an older sheet gets the new headers on its next run.
  */
 export async function ensureLeadsSchema(sheets, spreadsheetId, headerRow) {
   const startCol = COLS[SYSTEM_FIELDS[0]].letter; // O
-  const endCol = COLS[SYSTEM_FIELDS[SYSTEM_FIELDS.length - 1]].letter; // U
+  const endCol = COLS[SYSTEM_FIELDS[SYSTEM_FIELDS.length - 1]].letter; // Y
   const range = `${LEADS_TAB}!${startCol}${headerRow}:${endCol}${headerRow}`;
   const cur = await sheets.spreadsheets.values.get({ spreadsheetId, range }).catch(() => ({ data: {} }));
   const existing = (cur.data.values && cur.data.values[0]) || [];

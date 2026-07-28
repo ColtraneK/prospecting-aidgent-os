@@ -2,8 +2,11 @@
 // cli.mjs — command dispatcher for the local prospect-research worker.
 //
 // Commands:
+//   start             where am I? a checklist and exactly one next step
 //   setup-login       headed: open Chrome so YOU sign into LinkedIn manually
 //   source            run research + maintain the Sheet (the scheduled command)
+//   follow-up         read-only: did they accept / did they reply (fills V-Y)
+//   daily             source, then follow-up — one command for the daily schedule
 //   pilot             a 10-person run to sanity-check before 25/50 runs
 //   dry-run           plan only; writes nothing; use --fixture for an offline demo
 //   list-personas     list available personas (private + public)
@@ -26,6 +29,7 @@ import { toCsv } from "./csv.mjs";
 import { LEADS_HEADERS } from "./schema.mjs";
 import { rowArray } from "./sheetPlan.mjs";
 import { makeRunId, buildRunReport, formatRunReport } from "./runlog.mjs";
+import { planFollowUp, formatFollowUpReport } from "./followup.mjs";
 
 const SELECTED_FILE = path.join(REPO_ROOT, "private", "selected-persona.txt");
 
@@ -33,8 +37,11 @@ async function main() {
   const [, , command, ...rest] = process.argv;
   const flags = parseFlags(rest);
   switch (command) {
+    case "start": return cmdStart();
     case "setup-login": return cmdSetupLogin(flags);
     case "source": return cmdSource(flags, {});
+    case "follow-up": return cmdFollowUp(flags);
+    case "daily": return cmdDaily(flags);
     case "pilot": return cmdSource({ ...flags, target: flags.target || "10" }, { pilot: true });
     case "dry-run": return cmdSource({ ...flags, "dry-run": true }, {});
     case "list-personas": return cmdListPersonas();
@@ -44,7 +51,7 @@ async function main() {
     case "bind-sheet": return cmdBindSheet(flags);
     case "check-sheet": return cmdCheckSheet(flags);
     default:
-      console.log("Unknown command. See: setup-login | source | pilot | dry-run | list-personas | select-persona | validate-persona | create-persona | bind-sheet | check-sheet");
+      console.log("Unknown command. See: start | setup-login | source | follow-up | daily | pilot | dry-run | list-personas | select-persona | validate-persona | create-persona | bind-sheet | check-sheet");
       process.exit(2);
   }
 }
@@ -54,6 +61,15 @@ function resolvePersonaSlug(flags) {
   if (flags.persona) return flags.persona;
   if (env.AIDGENT_PERSONA) return env.AIDGENT_PERSONA;
   try { return fs.readFileSync(SELECTED_FILE, "utf8").trim(); } catch { return ""; }
+}
+
+/**
+ * `npm run start` — status only. Imported lazily so this command stays fast and
+ * so nothing in the status engine can affect the other commands.
+ */
+async function cmdStart() {
+  const { main: startMain } = await import("./start.mjs");
+  return startMain();
 }
 
 async function cmdSetupLogin(flags) {
@@ -146,13 +162,17 @@ async function cmdCheckSheet(flags) {
   console.log("This tool maintains THIS sheet in place and never creates a new spreadsheet.");
 }
 
-async function cmdSource(flags, { pilot } = {}) {
+async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
   const config = resolveConfig(flags);
   const slug = resolvePersonaSlug(flags);
   if (!slug) fail("No persona. Use --persona <slug>, AIDGENT_PERSONA, or select-persona.");
 
-  const nowIso = new Date().toISOString();
+  // A fixture may pin the clock so the offline demo stays deterministic as real
+  // time passes. Live runs always use the real clock.
+  const nowIso = fixtureNowIso(flags) || new Date().toISOString();
   const nowMs = Date.parse(nowIso);
+  // Duration is measured on the real wall clock even when a fixture pins nowIso.
+  const startedMs = Date.now();
   const runId = makeRunId(nowIso, pilot ? "pilot" : "");
   fs.mkdirSync(config.outDir, { recursive: true });
 
@@ -211,7 +231,7 @@ async function cmdSource(flags, { pilot } = {}) {
       headerRow: existingSheet.headerRow || 3,
       firstDataRow: existingSheet.firstDataRow || 4,
     });
-    const report0 = buildRunReport({ runId, persona: slug, requestedTarget: config.target, counts, blocker: blocker ? `${blocker.kind}: ${blocker.reason}` : "", startedMs: nowMs, endedMs: Date.now(), nowIso });
+    const report0 = buildRunReport({ runId, persona: slug, requestedTarget: config.target, counts, blocker: blocker ? `${blocker.kind}: ${blocker.reason}` : "", startedMs, endedMs: Date.now(), nowIso });
     await appendRunLog(sheets, sheetId, report0);
   }
 
@@ -219,7 +239,7 @@ async function cmdSource(flags, { pilot } = {}) {
   const report = buildRunReport({
     runId, persona: slug, requestedTarget: config.target, counts,
     blocker: blocker ? `${blocker.kind}: ${blocker.reason}` : "",
-    startedMs: nowMs, endedMs: Date.now(), nowIso,
+    startedMs, endedMs: Date.now(), nowIso,
   });
   fs.writeFileSync(path.join(config.outDir, `${runId}.report.json`), JSON.stringify({ report, plan, rejected: plan.rejected.map(r => ({ name: r.candidate.name, reason: r.reason })) }, null, 2));
   console.log(formatRunReport(report));
@@ -227,10 +247,108 @@ async function cmdSource(flags, { pilot } = {}) {
   if (config.dryRun || flags.fixture) console.log("(dry-run / fixture: no Sheet was modified)");
   else if (applied) console.log(`Sheet: appended ${applied.appended}, updated ${applied.updated}`);
 
-  if (blocker) { console.error(`BLOCKER: ${blocker.kind} — ${blocker.reason}. Stopped safely.`); process.exit(1); }
+  if (blocker) {
+    console.error(`BLOCKER: ${blocker.kind} — ${blocker.reason}. Stopped safely.`);
+    if (exitOnBlocker) process.exit(1);
+  }
+  return { blocker };
+}
+
+/**
+ * follow-up — the "did it land?" pass.
+ *
+ * For every row where YOU ticked "Reached Out" (column H), this looks at your
+ * own LinkedIn pages read-only and fills in four columns: whether they accepted
+ * the connection, whether they replied, the verbatim text of their latest
+ * message, and the date checked. It never sends, accepts, withdraws or replies
+ * to anything, and it never writes your columns H:N.
+ */
+async function cmdFollowUp(flags) {
+  const config = resolveConfig(flags);
+  const slug = resolvePersonaSlug(flags);
+  const nowIso = fixtureNowIso(flags) || new Date().toISOString();
+  fs.mkdirSync(config.outDir, { recursive: true });
+
+  const persona = slug ? (await getPersona(slug)).persona : null;
+  const sheetId = config.sheetId || (persona && personaSheetId(persona)) || "";
+
+  // Observations + current sheet: fixture (offline) or the live read-only pass.
+  let existingSheet, observations, blocker = null;
+  if (flags.fixture) {
+    const fx = JSON.parse(fs.readFileSync(flags.fixture, "utf8"));
+    existingSheet = fx.existingSheet || { headers: LEADS_HEADERS, rows: [] };
+    observations = fx.observations || {};
+    console.log(`[fixture] ${flags.fixture}: ${existingSheet.rows.length} existing rows`);
+  } else {
+    if (isPlaceholderSheetId(sheetId)) {
+      fail(
+        "No real Google Sheet is bound, so there is nothing to follow up on.\n" +
+        `  npm run bind-sheet -- --persona ${slug || "<slug>"} --sheet <your-sheet-id-or-url>`,
+      );
+    }
+    const { getSheets, readLeads } = await import("./sheet.mjs");
+    const sheets = await getSheets(config.credentialsPath);
+    existingSheet = await readLeads(sheets, sheetId);
+    const { runFollowUp } = await import("./worker.mjs");
+    observations = await runFollowUp({ config });
+    blocker = observations.blocker || null;
+  }
+
+  const { updates, counts, skipped } = planFollowUp(existingSheet, observations, { nowIso });
+
+  // Apply — updates only, no new rows, V:Y only (followup.mjs asserts that).
+  let applied = null;
+  if (!config.dryRun && !config.csvOnly && config.updateSheet && !flags.fixture && updates.length) {
+    const { getSheets, applyPlan } = await import("./sheet.mjs");
+    const sheets = await getSheets(config.credentialsPath);
+    applied = await applyPlan(sheets, sheetId, { newRows: [], updates }, {
+      headerRow: existingSheet.headerRow || 3,
+      firstDataRow: existingSheet.firstDataRow || 4,
+    });
+  }
+
+  console.log(formatFollowUpReport(counts, skipped));
+  if (config.dryRun || flags.fixture) console.log("(dry-run / fixture: no Sheet was modified)");
+  else if (applied) console.log(`Sheet: updated ${applied.updated} cell range(s).`);
+  else console.log("Nothing to write.");
+
+  if (blocker) {
+    console.error(`BLOCKER: ${blocker.kind} — ${blocker.reason}. Stopped safely.`);
+    process.exit(1);
+  }
+}
+
+/**
+ * daily — what the scheduled task runs: find today's people, then check what
+ * happened to the ones you already reached out to. A blocker in sourcing still
+ * lets the follow-up pass report, and the exit code reflects the failure.
+ */
+async function cmdDaily(flags) {
+  let failed = false;
+  try {
+    const { blocker } = await cmdSource(flags, { exitOnBlocker: false });
+    if (blocker) failed = true;
+  } catch (e) {
+    failed = true;
+    console.error(`source failed: ${e.message}`);
+  }
+  console.log("");
+  await cmdFollowUp(flags);
+  if (failed) process.exit(1);
 }
 
 // --- helpers ---------------------------------------------------------------
+/** A fixture's pinned clock, if it has one. Fixtures only — never a live run. */
+function fixtureNowIso(flags) {
+  if (!flags.fixture || flags.fixture === true) return "";
+  try {
+    const fx = JSON.parse(fs.readFileSync(flags.fixture, "utf8"));
+    return typeof fx.nowIso === "string" && !isNaN(Date.parse(fx.nowIso)) ? fx.nowIso : "";
+  } catch {
+    return "";
+  }
+}
+
 function existingRowWithSet(existingSheet, update) {
   const row = (existingSheet.rows || []).find((r) => r.rowNumber === update.rowNumber);
   const cells = { ...(row ? row.cells : {}) };

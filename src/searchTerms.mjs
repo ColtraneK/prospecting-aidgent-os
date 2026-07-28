@@ -50,6 +50,34 @@ export function buildSearches(persona, { maxSearches = 24 } = {}) {
   return searches;
 }
 
+// Read-only LinkedIn surfaces the worker is allowed to open.
+export const CONNECTIONS_URL = "https://www.linkedin.com/mynetwork/invite-connect/connections/";
+export const SENT_INVITES_URL = "https://www.linkedin.com/mynetwork/invitation-manager/sent/";
+export const MESSAGING_URL = "https://www.linkedin.com/messaging/";
+
+/** True when this persona opted in (during setup) to blending existing connections. */
+export function includeConnections(persona) {
+  return !!(persona && persona.include_connections === true);
+}
+
+/**
+ * Decide which surfaces a run walks.
+ * - explicit --connections  -> ONLY your existing connections
+ * - persona opted in        -> connections first (capped share) then net-new search
+ * - otherwise               -> net-new search only
+ * Pure so it is testable without a browser.
+ */
+export function buildSources(persona, config = {}, { connectionShare = 0.4 } = {}) {
+  if (config.mode === "connections") {
+    return [{ url: CONNECTIONS_URL, kind: "connections" }];
+  }
+  const searches = buildSearches(persona);
+  if (config.mode === "public-web" || !includeConnections(persona)) return searches;
+  const target = Number(config.target) > 0 ? Number(config.target) : 25;
+  const limit = Math.max(1, Math.ceil(target * connectionShare));
+  return [{ url: CONNECTIONS_URL, kind: "connections", limit }, ...searches];
+}
+
 function arr(v) {
   if (Array.isArray(v)) return v.map((x) => String(x).trim()).filter(Boolean);
   if (typeof v === "string" && v.trim()) return [v.trim()];

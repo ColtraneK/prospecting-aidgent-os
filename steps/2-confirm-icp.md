@@ -11,12 +11,23 @@ Answer these five, then paste prompt 2 from [PROMPTS.md](../PROMPTS.md):
 4. What is the buying signal, the observable fact that makes someone worth reaching?
 5. How should the opener sound so it is yours, not a pitch?
 
-Then create the persona (private, git-ignored):
+Two more, asked once, because they change what a run does:
+
+6. Should ordinary runs also mine the people you are **already connected to**?
+   Some of your best-fit prospects are already in your network — warm, and
+   nobody works that list. Default is no. Saved as `include_connections`; when
+   it is on, those rows are labelled **Connection** in Source Type so they stand
+   out.
+7. Which existing Google Sheet should this fill in? This system never creates one.
+
+Then create the persona (private, git-ignored) and bind your sheet:
 
 ```bash
 npm run create-persona -- --from approved-icp.json --slug my-persona
 npm run validate-persona -- --persona my-persona
 npm run select-persona -- --persona my-persona
+npm run bind-sheet -- --persona my-persona --sheet <your-sheet-id-or-url>
+npm run check-sheet -- --persona my-persona
 ```
 
 Personas support: business + website, offer, customer outcome, target
