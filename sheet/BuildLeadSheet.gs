@@ -91,20 +91,56 @@ function onOpen() {
     .addToUi();
 }
 
+/**
+ * Run one build step without letting it take the other six down with it.
+ *
+ * The build used to be a straight sequence, so the FIRST thing that threw
+ * aborted everything after it — one unhappy column in Leads meant no Personas
+ * tab, no Run Log, no banner. That failure mode is invisible to a non-technical
+ * user: they see a red error naming a function they have never heard of, and a
+ * workbook that is quietly half-built. Now every step runs, and whatever went
+ * wrong is reported once at the end in plain language.
+ */
+function safeStep_(label, fn, problems) {
+  try { fn(); } catch (e) { problems.push(label + ": " + explainGsError_(e)); }
+}
+
+/** Turn an Apps Script exception into something a human can act on. */
+function explainGsError_(e) {
+  var msg = (e && e.message) ? e.message : String(e);
+  if (/table/i.test(msg)) {
+    return msg + "  FIX: this tab was converted into a Google Table, and a table's " +
+      "header row refuses checkboxes and dropdowns. Click any cell in the table, open " +
+      "the table menu (the chip at its top-left), choose \"Revert to unformatted data\" " +
+      "(that keeps every row — do NOT choose \"Delete table\", which deletes the data " +
+      "with it), then run Build / refresh again.";
+  }
+  return msg;
+}
+
 function buildAidgentOsSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  ensureLeads_(ss); // safe refresh, preserves data
-  rebuildStartHere_(ss); // static
-  ensureIcpSchedule_(ss); // create if missing, preserve inputs
-  ensurePersonas_(ss); // create if missing
-  rebuildPromptLibrary_(ss); // static
-  rebuildLists_(ss); // static
-  ensureRunLog_(ss); // create if missing, preserve history
-  orderTabs_(ss, ["Start Here", "Leads", "ICP + Schedule", "Personas", "Prompt Library", "Lists", "Run Log"]);
+  var problems = [];
+  safeStep_("Leads", function () { ensureLeads_(ss); }, problems); // safe refresh, preserves data
+  safeStep_("Start Here", function () { rebuildStartHere_(ss); }, problems); // static
+  safeStep_("ICP + Schedule", function () { ensureIcpSchedule_(ss); }, problems); // preserve inputs
+  safeStep_("Personas", function () { ensurePersonas_(ss); }, problems); // create if missing
+  safeStep_("Prompt Library", function () { rebuildPromptLibrary_(ss); }, problems); // static
+  safeStep_("Lists", function () { rebuildLists_(ss); }, problems); // static
+  safeStep_("Run Log", function () { ensureRunLog_(ss); }, problems); // preserve history
+  safeStep_("Tab order", function () {
+    orderTabs_(ss, ["Start Here", "Leads", "ICP + Schedule", "Personas", "Prompt Library", "Lists", "Run Log"]);
+  }, problems);
   var start = ss.getSheetByName("Start Here"); if (start) ss.setActiveSheet(start);
   var def = ss.getSheetByName("Sheet1");
   if (def && ss.getSheets().length > 1 && def.getLastRow() === 0) { try { ss.deleteSheet(def); } catch (e) {} }
-  SpreadsheetApp.getActive().toast("Aidgent OS workbook is ready (data preserved).", "⚡ Built", 5);
+
+  if (!problems.length) {
+    SpreadsheetApp.getActive().toast("Aidgent OS workbook is ready (data preserved).", "⚡ Built", 5);
+    return;
+  }
+  SpreadsheetApp.getActive().toast("Built, but " + problems.length + " step(s) need attention. See the details below.", "⚡ Built with warnings", 8);
+  throw new Error("The workbook was built, but these steps did not finish:\n\n- " + problems.join("\n\n- "));
 }
 
 // --- Leads (SAFE refresh: never clears data) -------------------------------
@@ -133,21 +169,35 @@ function ensureLeads_(ss) {
 
   var maxRows = sh.getMaxRows();
   var dataRows = maxRows - HEADER_ROW;
+  // Cosmetics are per-column and independent, so one column that refuses styling
+  // must not cost the other twenty-four theirs. The known cause is a native
+  // Google Table on this tab: its header row rejects checkboxes and dropdowns,
+  // and the body range unavoidably overlaps it. Collect and re-report rather
+  // than aborting — the data and headers are already correct by this point.
+  var colProblems = [], colError = null;
   for (var c = 0; c < n; c++) {
     var col = c + 1, type = LEADS_COLS[c][2];
-    var body = sh.getRange(FIRST_DATA_ROW, col, dataRows, 1);
-    body.setFontFamily(FONT).setFontColor(INK).setFontSize(10).setVerticalAlignment("top");
-    body.setWrapStrategy(type === "text" ? SpreadsheetApp.WrapStrategy.WRAP : SpreadsheetApp.WrapStrategy.CLIP);
-    if (type === "check") { body.insertCheckboxes(); body.setHorizontalAlignment("center"); }
-    else if (type === "date") { body.setNumberFormat("yyyy-mm-dd"); body.setHorizontalAlignment("center"); }
-    else if (type === "outcome") setListValidation_(body, OUTCOMES);
-    else if (type === "source") setListValidation_(body, SOURCE_TYPES);
-    else if (type === "status") setListValidation_(body, RESEARCH_STATUS);
-    else if (type === "connstatus") setListValidation_(body, CONNECTION_STATUS);
-    else if (type === "replystatus") setListValidation_(body, REPLY_STATUS);
+    try {
+      var body = sh.getRange(FIRST_DATA_ROW, col, dataRows, 1);
+      body.setFontFamily(FONT).setFontColor(INK).setFontSize(10).setVerticalAlignment("top");
+      body.setWrapStrategy(type === "text" ? SpreadsheetApp.WrapStrategy.WRAP : SpreadsheetApp.WrapStrategy.CLIP);
+      if (type === "check") { body.insertCheckboxes(); body.setHorizontalAlignment("center"); }
+      else if (type === "date") { body.setNumberFormat("yyyy-mm-dd"); body.setHorizontalAlignment("center"); }
+      else if (type === "outcome") setListValidation_(body, OUTCOMES);
+      else if (type === "source") setListValidation_(body, SOURCE_TYPES);
+      else if (type === "status") setListValidation_(body, RESEARCH_STATUS);
+      else if (type === "connstatus") setListValidation_(body, CONNECTION_STATUS);
+      else if (type === "replystatus") setListValidation_(body, REPLY_STATUS);
+    } catch (e) {
+      colProblems.push(LEADS_COLS[c][0]);
+      colError = e;
+    }
   }
-  sh.setFrozenRows(HEADER_ROW);
-  sh.setFrozenColumns(1);
+  // Freeze the header rows only. NOT the first column: the banner on rows 1-2 is
+  // one cell merged across all of A:Y, and Sheets refuses to freeze a column that
+  // would cut a merged cell in half ("you can't freeze columns which contain only
+  // part of a merged cell"). Asking for it threw on every single build.
+  try { sh.setFrozenRows(HEADER_ROW); } catch (e) {}
 
   // Conditional formatting: zebra + outcome colors + status colors. Rebuilt each run.
   var rng = sh.getRange(FIRST_DATA_ROW, 1, dataRows, n);
@@ -159,9 +209,20 @@ function ensureLeads_(ss) {
   var stRng = sh.getRange(FIRST_DATA_ROW, stCol, dataRows, 1);
   [["New", SOFT, INK], ["Refreshed", "#DCEEFB", NAVY], ["Needs review", "#FFF2CC", INK]]
     .forEach(function (m) { rules.push(cf_(m[0], m[1], m[2], stRng)); });
-  sh.setConditionalFormatRules(rules);
-  rng.setBorder(null, null, true, null, false, true, SOFTBORDER, SpreadsheetApp.BorderStyle.SOLID);
-  if (sh.getMaxColumns() > n) sh.deleteColumns(n + 1, sh.getMaxColumns() - n);
+  try {
+    sh.setConditionalFormatRules(rules);
+    rng.setBorder(null, null, true, null, false, true, SOFTBORDER, SpreadsheetApp.BorderStyle.SOLID);
+  } catch (e) { if (!colError) colError = e; colProblems.push("row colours"); }
+  try {
+    if (sh.getMaxColumns() > n) sh.deleteColumns(n + 1, sh.getMaxColumns() - n);
+  } catch (e) { if (!colError) colError = e; colProblems.push("trailing columns"); }
+
+  // Headers and widths are done; only cosmetics could have failed. Report once,
+  // with the real message, so the cause is visible instead of a silent gap.
+  if (colProblems.length) {
+    throw new Error("headers are correct, but formatting was skipped for " +
+      colProblems.join(", ") + ". " + (colError ? colError.message : ""));
+  }
 }
 
 // --- Start Here (static) ---------------------------------------------------
