@@ -40,6 +40,12 @@ does not have `git`, the ZIP link is the same files in a zip archive. The repo
 is public and readable in a browser if you want to look before you run it:
 [github.com/ColtraneK/prospecting-aidgent-os](https://github.com/ColtraneK/prospecting-aidgent-os).
 
+**It installs the pieces the code needs.** `npm install` pulls down a browser
+engine along with the Google and YAML libraries, so on a normal connection it
+takes a few minutes and prints very little while it works. That is the one step
+in the whole setup that looks like it has frozen when it has not. Leave it
+alone until it gives you your prompt back.
+
 **It points your AI agent at a file called `AGENTS.md`.** That file is the real
 instruction manual — several pages of rules the agent has to follow, including a
 list of things it is not allowed to do. That is the whole design: the
