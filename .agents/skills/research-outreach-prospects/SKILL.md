@@ -17,6 +17,7 @@ the sourcing code.
 - PRIORITIZE prospects with a post or relevant comment about a persona core topic within the last 7 days. This is a ranking boost, not a gate — still allow strong ICP matches with older or no recent activity.
 - For each lead: put the verbatim recent post (if within 7 days) with its link after it in column D, an evidence-based Why Them (E), a Suggested Comment replying to their recent activity (F), and a short no-pitch Suggested Intro DM (G).
 - Preserve the Sheet's human columns H:N. Only write agent (A:G) and system (O:Y) fields.
+- The Sheet has a **Feedback** tab. Columns A:C are the user's (Date, What to change, Must / Prefer / Avoid). Columns D:F are yours (Status, Applied on, What your agent changed). Never write A:C, never invent a row.
 - Requires: computer on and awake, Codex desktop running, a signed-in dedicated Chrome profile. This does NOT run with the computer off.
 
 ## Prerequisites
@@ -43,10 +44,18 @@ to any one business.
 ## Procedure
 
 1. Confirm prerequisites and the active persona (`validate-persona`).
-2. First-time only: `npm run setup-login -- --persona <slug>` and have the user sign in manually.
-3. Pilot: `npm run pilot -- --persona <slug> --headless`. Review the 10-lead output before scaling.
-4. Full run / scheduled: `npm run source -- --persona <slug> --target 50 --headless --update-sheet`.
-5. Report: read the run report and Run Log. If a blocker was hit (login, CAPTCHA, checkpoint, rate limit, expiry), stop and tell the user to re-run setup-login or wait.
+2. **Read the Feedback tab before sourcing.** For every row whose Status is not
+   `Applied`, turn the note into a concrete persona change (exclusion,
+   geography, buyer title, keyword, core topic), then set Status to `Applied`,
+   fill Applied on with today's date, and write what you changed. If a note
+   cannot be expressed as a persona change, set Status to `Needs a decision`,
+   write why, and raise it with the user. Never skip a row silently.
+   `Must` is a hard requirement, `Avoid` becomes an exclusion, `Prefer` is a
+   ranking boost and never a gate. See AGENTS.md section 4b.
+3. First-time only: `npm run setup-login -- --persona <slug>` and have the user sign in manually.
+4. Pilot: `npm run pilot -- --persona <slug> --headless`. Review the 10-lead output before scaling.
+5. Full run / scheduled: `npm run source -- --persona <slug> --target 50 --headless --update-sheet`.
+6. Report: read the run report and Run Log. If a blocker was hit (login, CAPTCHA, checkpoint, rate limit, expiry), stop and tell the user to re-run setup-login or wait.
 
 ## Offline check
 

@@ -160,6 +160,38 @@ a file, not a decision — editing it later is normal and cheap.
 
 ---
 
+## 4b. The Feedback tab — read it before every run
+
+The person's sheet has a **Feedback** tab. It is how they steer targeting
+without touching a config file, and it is the only place their corrections are
+recorded.
+
+Before any sourcing run, read every row whose **Status** is not `Applied`. For
+each one:
+
+- If you can express it as a persona change, make the change. Set **Status** to
+  `Applied`, put today's date in **Applied on**, and write plainly what you
+  changed in **What your agent changed**.
+- If you cannot, set **Status** to `Needs a decision` and write why. Then ask
+  them about it.
+
+Never leave a row untouched, and never silently ignore one. A person who writes
+"no leads outside the US" and then sees Canadian leads the next morning has
+learned that the sheet is decorative.
+
+The **Must / Prefer / Avoid** column is their intent, and it maps onto the
+persona directly. `Must` is a hard requirement, `Avoid` becomes an exclusion,
+and `Prefer` is a ranking preference — a boost, never a gate.
+
+You must not write rows on this tab yourself, and you must not invent feedback.
+Columns A to C are theirs. Columns D to F are yours.
+
+Note what this design is protecting: the sourcing code never reads free text.
+You translate their English into persona fields, and the deterministic code
+reads the persona. That is what keeps the no-fabrication guarantee intact.
+
+---
+
 ## 5. Running it
 
 Always pilot before a full run. A pilot is ten people, so they can look at real

@@ -80,8 +80,8 @@ export const RANGE_SYSTEM = [
 export const TAB_NAMES = [
   "Start Here",
   "Leads",
+  "Feedback",
   "ICP + Schedule",
-  "Personas",
   "Prompt Library",
   "Lists",
   "Run Log",

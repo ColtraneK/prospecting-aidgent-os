@@ -8,8 +8,8 @@ existing ones, and it never touches your human tracking. Nothing is auto-sent.
 
 - **Start Here** — how the local system runs and the daily loop.
 - **Leads** — the working list. A–G agent output, H–N your tracking, O–Y system research and follow-up.
+- **Feedback** — plain-English notes from you about what to change. You write A–C, the agent writes D–F.
 - **ICP + Schedule** — your business snapshot, the locked five-line ICP, and run settings. Mirrors a persona.
-- **Personas** — how to list/select/validate/create the private personas that drive sourcing.
 - **Prompt Library** — prompts to build a persona; sourcing and scheduling run via the skill / npm, not by pasting.
 - **Lists** — dropdown values and the quality bar.
 - **Run Log** — one row per run (appended by the worker).
@@ -73,6 +73,25 @@ People are matched across those pages by canonical profile URL where one exists,
 and by normalized name where LinkedIn only exposes a name (the messaging list
 does not carry profile links).
 
+## The Feedback tab
+
+The deterministic sourcing code must never read free text. If a language model
+sat inside the sourcing loop deciding who qualifies, the no-fabrication
+guarantee would be gone. So the loop is:
+
+1. The person writes a plain-English note: *no leads outside the US*, *prefer
+   people who comment on posts often*, *only people with a PMP certification*.
+2. Before the next run the **agent** reads every row whose Status is not
+   `Applied`, and turns each one into a concrete persona change — an exclusion,
+   a geography rule, a title, a keyword, a core topic.
+3. It writes back what it changed, and the unchanged worker reads the persona.
+
+`Must` is a hard filter, `Avoid` becomes an exclusion, and `Prefer` is a ranking
+preference rather than a gate. A row the agent cannot express as a persona
+change is marked `Needs a decision` with the reason, never silently dropped.
+
+This tab is the audit trail of why the targeting looks the way it does.
+
 ## Dedup and merge
 
 Leads are matched by the canonical LinkedIn URL (column S), falling back to
@@ -102,6 +121,12 @@ place. A live run refuses to start if no real sheet is bound — the tool never
 creates a new spreadsheet.
 
 ## Build / refresh
+
+The ⚡ Aidgent OS menu offers **Clear the Leads list** and **About**, and
+deliberately does not offer a Build button. Copies of the template arrive fully
+built, so a one-click rebuild in front of a non-technical person can only make
+things worse. `buildAidgentOsSheet` is run deliberately from
+Extensions > Apps Script > Run when someone brings their own sheet.
 
 Copies of the template already have this built and need nothing here. If you
 brought your own sheet: open **that** Sheet (the one you bound) → Extensions >
