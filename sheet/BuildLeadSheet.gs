@@ -421,7 +421,7 @@ function rebuildStartHere_(ss) {
   sh.setRowHeight(safety, 26); sh.setRowHeight(safety + 1, 26); sh.setRowHeight(safety + 2, 20);
   var footer = safety + 3;
   sh.getRange(footer, 2, 1, 6).merge()
-    .setValue("Aidgentic  •  AI automation for founder-led businesses  •  aidgentic.com  •  hello@aidgentic.com")
+    .setValue("Outreach Aidgent  ·  a free tool by Aidgentic  ·  aidgentic.com")
     .setFontColor(MUTED).setFontFamily(FACE).setFontSize(9).setHorizontalAlignment("center");
   sh.setRowHeight(footer, 30);
 

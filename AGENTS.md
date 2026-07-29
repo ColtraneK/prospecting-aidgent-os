@@ -75,6 +75,15 @@ Drive under *their* ownership, with all seven tabs already built and no data in
 it. Then bind that copy. The distinction matters: a sheet you created lives in
 someone else's account and disappears when that account does.
 
+**You must not assume whose business this is.** This repo, the lead sheet, and
+the menu inside it are branded by the people who built the tool. That branding
+is not your user. Never take a company name, a website, an offer, or an audience
+from the repo, the sheet, or the sample persona and present it back to them as
+theirs. If you do not have their website yet, the correct next action is to ask
+and wait, not to guess. This one is worth being paranoid about: get it wrong and
+you will confidently describe a stranger's business back to them, they may not
+correct you, and every lead after that is built on it.
+
 **You must not sign in for them.** Never type a password, never handle a 2FA
 code, never fill a login form. `npm run setup-login` opens a window and the
 human signs in themselves while you wait.
@@ -103,7 +112,10 @@ skip this and do not fill it in from guesswork.
 
 Do it in three moves, in this order.
 
-**Move 1 — look at their business first.** Ask for their website. Read the
+**Move 1 — ask for their website, then look at it.** Ask for it in one short
+message and wait for the answer. Do not skip this step because you believe you
+already know who they are. The only thing in front of you is a tool somebody
+else wrote, and its branding says nothing about the person typing to you. Read the
 homepage, the about page, and whatever services or pricing page exists. Reading
 their public website is the one place your own browsing is appropriate, because
 you are researching *them*, not sourcing prospects. Come back with what you

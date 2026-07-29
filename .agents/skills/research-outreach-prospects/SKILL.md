@@ -13,6 +13,7 @@ the sourcing code.
 
 - Read-only. Never Connect, Message, Follow, Like, React, Celebrate, Comment, Share, Repost, or Post. The Suggested Comment and Suggested Intro DM are drafts for the human to send — never send them.
 - Never automate login, passwords, MFA, or CAPTCHA. Never bypass bot detection or access controls.
+- Never assume whose business this is. The branding in this repo and in the sheet belongs to whoever built the tool, not to the user. Never infer their company, website, offer or audience from it. Ask for their website and wait for the answer.
 - Never fabricate activity, dates, quotes, geography, titles, or URLs. Omit what was not verified. If there is no recent post, leave the Recent Post cell and Suggested Comment empty rather than inventing one.
 - PRIORITIZE prospects with a post or relevant comment about a persona core topic within the last 7 days. This is a ranking boost, not a gate — still allow strong ICP matches with older or no recent activity.
 - For each lead: put the verbatim recent post (if within 7 days) with its link after it in column D, an evidence-based Why Them (E), a Suggested Comment replying to their recent activity (F), and a short no-pitch Suggested Intro DM (G).

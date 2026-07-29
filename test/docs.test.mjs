@@ -62,6 +62,7 @@ test("the two entry-point docs exist and point at each other", () => {
 test("AGENTS.md states the refusal rules an agent must not talk itself out of", () => {
   const a = read("AGENTS.md");
   for (const rule of [/must not invent/i, /must not substitute your own tools/i,
+    /must not assume whose business this is/i,
     /must not create a Google Sheet/i, /must not sign in for them/i,
     /must not send/i, /must not commit/i]) {
     assert.match(a, rule);
