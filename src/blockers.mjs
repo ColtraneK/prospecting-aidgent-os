@@ -32,3 +32,55 @@ export function detectBlocker(state = {}) {
   }
   return { blocked: false, kind: null, reason: null };
 }
+
+// LinkedIn's own wording when a search legitimately matched nobody. This is the
+// ONLY empty page that is not a defect.
+const NO_RESULTS_TEXT =
+  /no results found|no matching results|try (different|new) keywords|we (couldn.?t|could not) find|didn.?t match any|no people (were )?found|no (pending )?invitations|you have no (pending )?invitations|no connections (yet|found)|nothing to show here/i;
+
+/**
+ * Why did a page that loaded fine produce zero rows?
+ *
+ * A search that finds nobody and a parser that cannot see anybody look
+ * identical from the outside — both are "0 candidates" — and the second is a
+ * bug that will silently return 0 forever. This separates them from evidence
+ * that is actually on the page.
+ *
+ * @param {{url?:string, bodyTextSample?:string, profileLinkCount?:number}} state
+ * @returns {{kind:string, reason:string, benign:boolean}}
+ */
+export function diagnoseEmptyResults(state = {}) {
+  const text = String(state.bodyTextSample || "");
+  const links = Number(state.profileLinkCount || 0);
+
+  if (NO_RESULTS_TEXT.test(text)) {
+    return {
+      kind: "no_results",
+      benign: true,
+      reason: "LinkedIn reported no results for this search.",
+    };
+  }
+  if (links > 0) {
+    return {
+      kind: "parse_failed",
+      benign: false,
+      reason:
+        `the page shows ${links} link(s) to profiles but the extractor matched none — ` +
+        "LinkedIn's result markup has changed and the collector needs updating.",
+    };
+  }
+  if (!text.trim()) {
+    return {
+      kind: "page_not_rendered",
+      benign: false,
+      reason: "the page returned no readable text at all — it never finished rendering.",
+    };
+  }
+  return {
+    kind: "no_results_visible",
+    benign: false,
+    reason:
+      "the page rendered, but it contained neither profile links nor a 'no results' message — " +
+      "this is not the search page we expected.",
+  };
+}

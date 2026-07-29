@@ -12,7 +12,9 @@ existing ones, and it never touches your human tracking. Nothing is auto-sent.
 - **ICP + Schedule** — your business snapshot, the locked five-line ICP, and run settings. Mirrors a persona.
 - **Prompt Library** — prompts to build a persona; sourcing and scheduling run via the skill / npm, not by pasting.
 - **Lists** — dropdown values and the quality bar.
-- **Run Log** — one row per run (appended by the worker).
+- **Run Log** — one row per run (appended by the worker). A run that inspected
+  nobody always carries a reason in **Blocker / Failure**; a blank there with a
+  zero next to it would be a bug, not a quiet day.
 
 ## Leads columns
 

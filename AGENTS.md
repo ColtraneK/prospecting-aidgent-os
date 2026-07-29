@@ -339,6 +339,28 @@ asks. Tell the person plainly what page it hit, and:
 Partial results already written to the sheet are real and stay. Say how many
 landed before the stop.
 
+### A run that finds nobody is also a blocker
+
+There is no such thing as a successful run that inspected zero people. If the
+worker walks its searches and extracts nobody, it stops and names one of these
+in the Run Log's Blocker column, and you must repeat it to the person:
+
+- **`no_results`** — LinkedIn itself said there were no matches. This is the one
+  benign case. The persona is too narrow: too many title variants stacked with
+  keywords and a geography. Widen it with them, then re-run.
+- **`parse_failed`** — the page was full of profile links and the collector read
+  none of them. LinkedIn changed its markup. A screenshot and the page HTML are
+  saved in `run-artifacts/`. **Do not hand-edit selectors on the person's
+  machine mid-call.** Say plainly that the tool needs a fix, and that their
+  sheet and settings are untouched.
+- **`page_not_rendered`** / **`no_results_visible`** — the page loaded but was
+  not the search page. Usually a signed-out or half-loaded profile. Have them
+  run `npm run setup-login`, confirm the feed loads, then re-run.
+
+The worker stops after two unreadable pages in a row rather than walking all
+twenty-odd searches. A run that ends in twenty seconds with a reason is worth
+more than one that ends in four minutes with a zero.
+
 ---
 
 ## 8. How to talk to the person

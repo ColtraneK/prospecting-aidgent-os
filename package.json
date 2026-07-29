@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
+    "test:dom": "node --test test/dom/*.test.mjs",
     "start": "node src/cli.mjs start",
     "setup-login": "node src/cli.mjs setup-login",
     "source": "node src/cli.mjs source",

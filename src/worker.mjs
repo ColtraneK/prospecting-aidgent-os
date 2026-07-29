@@ -9,7 +9,7 @@
 // playwright is imported lazily so the pure logic modules and tests do not
 // require it to be installed.
 
-import { detectBlocker } from "./blockers.mjs";
+import { detectBlocker, diagnoseEmptyResults } from "./blockers.mjs";
 import { createPacer } from "./pacing.mjs";
 import { canonicalizeLinkedInUrl } from "./url.mjs";
 import { buildSources, SENT_INVITES_URL, CONNECTIONS_URL, MESSAGING_URL } from "./searchTerms.mjs";
@@ -82,7 +82,9 @@ export async function runResearch({ persona, config }) {
   const page = context.pages()[0] || (await context.newPage());
   const candidates = [];
   const seen = new Set();
+  const sourceReports = [];
   let blocker = null;
+  let unreadableInARow = 0;
 
   try {
     for (const source of sources) {
@@ -94,6 +96,29 @@ export async function runResearch({ persona, config }) {
       const results = source.kind === "connections"
         ? await collectConnections(page)
         : await collectSearchResults(page);
+
+      // A source that yields nothing is either an empty search (fine) or a page
+      // we can no longer read (a defect). Never let the second look like the
+      // first: find out which, and stop early if the page is unreadable rather
+      // than repeating the same failure across every remaining search.
+      if (!results.length) {
+        const ev = await pageEvidence(page);
+        const d = diagnoseEmptyResults(ev);
+        sourceReports.push({ url: source.url, kind: d.kind, reason: d.reason, profileLinks: ev.profileLinkCount });
+        if (d.benign) { unreadableInARow = 0; continue; }
+        unreadableInARow++;
+        const shot = unreadableInARow === 1 ? await saveSnapshot(page, config.outDir, d.kind) : null;
+        if (unreadableInARow >= 2) {
+          throw new BlockerError(
+            d.kind,
+            `${d.reason} Two sources in a row came back unreadable, so the run stopped instead of ` +
+            `walking the rest.${shot ? ` Snapshot: ${shot}` : ""}`,
+          );
+        }
+        continue;
+      }
+      unreadableInARow = 0;
+      sourceReports.push({ url: source.url, kind: "ok", found: results.length });
       let fromThisSource = 0;
       for (const r of results) {
         if (candidates.length >= config.target) break;
@@ -117,31 +142,159 @@ export async function runResearch({ persona, config }) {
     await context.close().catch(() => {});
   }
 
-  return { candidates, blocker, inspected: pacer.inspected };
+  // A run that walked every source, found nobody, and reported no reason is the
+  // worst outcome this system can produce: it looks like a clean run. Give it a
+  // reason, so it reaches the Run Log, the console, and the exit code.
+  if (!candidates.length && !blocker) {
+    const benign = sourceReports.filter((r) => r.kind === "no_results").length;
+    blocker = {
+      kind: benign === sourceReports.length && benign > 0 ? "no_results" : "no_candidates",
+      reason:
+        `walked ${sourceReports.length} of ${sources.length} source(s) and extracted nobody. ` +
+        (benign === sourceReports.length && benign > 0
+          ? "Every search legitimately returned no results — the persona's titles/keywords are too narrow."
+          : `Breakdown: ${summarize(sourceReports)}.`),
+    };
+  }
+
+  return { candidates, blocker, inspected: pacer.inspected, sourceReports };
 }
 
-/** Read-only extraction of people-search result cards. */
+function summarize(reports) {
+  const counts = {};
+  for (const r of reports) counts[r.kind] = (counts[r.kind] || 0) + 1;
+  return Object.entries(counts).map(([k, n]) => `${n}× ${k}`).join(", ") || "no sources walked";
+}
+
+/**
+ * Read-only extraction of people-search result cards.
+ *
+ * This deliberately does NOT key on LinkedIn's class names. Those are generated
+ * and they change; a collector built on `.entity-result` returns zero the day
+ * they rename it, and zero is indistinguishable from "nobody matched". The one
+ * thing a people-search result page cannot stop doing is linking to profiles,
+ * so we anchor on `a[href*='/in/']` inside <main> and read the card around it.
+ */
 async function collectSearchResults(page) {
-  // Selectors drift; keep this resilient and read-only. Codex may adapt them.
-  return page.$$eval("li.reusable-search__result-container, div.entity-result", (nodes) =>
-    nodes.map((n) => {
-      const nameEl = n.querySelector("span[aria-hidden='true']");
-      const linkEl = n.querySelector("a[href*='/in/']");
-      const titleEl = n.querySelector(".entity-result__primary-subtitle, .entity-result__summary");
-      const locEl = n.querySelector(".entity-result__secondary-subtitle");
-      return {
-        name: nameEl?.textContent?.trim() || "",
-        url: linkEl?.href || "",
-        title: titleEl?.textContent?.trim() || "",
-        location: locEl?.textContent?.trim() || "",
-      };
-    }).filter((r) => r.name && r.url),
-  ).catch(() => []);
+  // Results render after domcontentloaded. Wait for the anchor rather than
+  // trusting the pacing delay to be long enough.
+  await page.waitForSelector("main a[href*='/in/']", { timeout: 12000 }).catch(() => {});
+  return page.evaluate(extractPeopleFromDom).catch(() => []);
 }
 
-/** Read-only extraction of the user's own existing connections (opt-in mode). */
+/**
+ * The DOM walk itself, as a standalone function so it can be run against a
+ * saved page in `npm run test:dom` instead of only against live LinkedIn.
+ * It must close over nothing: Playwright ships its source into the page.
+ */
+export function extractPeopleFromDom() {
+  {
+    const root = document.querySelector("main") || document.body;
+    if (!root) return [];
+    const out = new Map();
+    for (const a of root.querySelectorAll("a[href*='/in/']")) {
+      const href = a.href || "";
+      const m = href.match(/\/in\/([^/?#]+)/);
+      if (!m) continue;
+      const key = m[1].toLowerCase();
+      if (out.has(key)) continue;
+
+      // The visible name sits in an aria-hidden span (the anchor's own text
+      // repeats it and appends "View X's profile" for screen readers).
+      const hidden = a.querySelector("span[aria-hidden='true']");
+      let name = (hidden?.textContent || a.textContent || "").replace(/\s+/g, " ").trim();
+      name = name.split(/\bView\b|['’]s profile/)[0].trim();
+      // Degree badges ("• 2nd") and empty/CTA anchors are not people.
+      if (!name || name.length > 120) continue;
+      if (/^(\d+(st|nd|rd|th)|view|message|connect|follow|see more)\b/i.test(name)) continue;
+
+      // Title and location are simply the first two lines of the card that are
+      // not the person's own name, a screen-reader label, a degree badge, or a
+      // button. innerText renders the anchor as one inline run — "Ada Lovelace
+      // View Ada Lovelace's profile • 2nd" — so leading-name is the real filter.
+      const card = a.closest("li") || a.parentElement?.parentElement || a;
+      const lower = name.toLowerCase();
+      const lines = (card.innerText || "")
+        .split("\n")
+        .map((s) => s.replace(/\s+/g, " ").trim())
+        .filter((s) => {
+          if (!s || s.toLowerCase().startsWith(lower)) return false;
+          if (/\bview\b[\s\S]*\bprofile\b/i.test(s)) return false;
+          if (/^\d+(st|nd|rd|th)\b/.test(s)) return false;
+          if (/^(view|message|connect|follow|see more|status is)\b/i.test(s)) return false;
+          if (/^[•·|]/.test(s)) return false;
+          return true;
+        });
+
+      out.set(key, {
+        name,
+        url: href,
+        title: lines[0] || "",
+        location: lines[1] || "",
+      });
+    }
+    return [...out.values()];
+  }
+}
+
+/**
+ * What is actually on this page? Used only when a source produced nothing, to
+ * tell "nobody matched" apart from "we cannot read this page any more".
+ */
+async function pageEvidence(page) {
+  return page.evaluate(() => {
+    const root = document.querySelector("main") || document.body;
+    return {
+      url: location.href,
+      profileLinkCount: root ? root.querySelectorAll("a[href*='/in/']").length : 0,
+      bodyTextSample: (root && root.innerText ? root.innerText : "").slice(0, 3000),
+    };
+  }).catch(() => ({ url: "", profileLinkCount: 0, bodyTextSample: "" }));
+}
+
+/**
+ * Did we really observe this surface, or did we just fail to read it?
+ *
+ * Rows came back — we observed it. Nothing came back — believe that only when
+ * the page itself says the list is empty. Anything else is an unread page, and
+ * an unread page is not evidence that nobody replied.
+ */
+async function trustEmpty(page, rows) {
+  if (Array.isArray(rows) && rows.length) return true;
+  const d = diagnoseEmptyResults(await pageEvidence(page));
+  return d.benign;
+}
+
+/**
+ * Save a screenshot + the rendered HTML of a page we could not read, so the
+ * next person does not have to reproduce the failure to see it.
+ * Best-effort: a failure to write a diagnostic must never mask the real problem.
+ */
+async function saveSnapshot(page, outDir, label) {
+  if (!outDir) return null;
+  try {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    fs.mkdirSync(outDir, { recursive: true });
+    const base = path.join(outDir, `diagnostic-${label}`);
+    await page.screenshot({ path: `${base}.png`, fullPage: false }).catch(() => {});
+    const html = await page.content().catch(() => "");
+    if (html) fs.writeFileSync(`${base}.html`, html.slice(0, 2_000_000));
+    return `${base}.png`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read-only extraction of the user's own existing connections (opt-in mode).
+ * Tries LinkedIn's named connection-card classes first, then falls back to the
+ * same structural walk the search collector uses — a connections list is also
+ * just a list of links to profiles, so a class rename cannot empty it.
+ */
 async function collectConnections(page) {
-  return page.$$eval("li.mn-connection-card, div.mn-connection-card", (nodes) =>
+  await page.waitForSelector("main a[href*='/in/']", { timeout: 12000 }).catch(() => {});
+  const carded = await page.$$eval("li.mn-connection-card, div.mn-connection-card", (nodes) =>
     nodes.map((n) => {
       const nameEl = n.querySelector(".mn-connection-card__name");
       const titleEl = n.querySelector(".mn-connection-card__occupation");
@@ -154,6 +307,8 @@ async function collectConnections(page) {
       };
     }).filter((r) => r.name && r.url),
   ).catch(() => []);
+  if (carded.length) return carded;
+  return page.evaluate(extractPeopleFromDom).catch(() => []);
 }
 
 /** Visit a profile + its recent activity, read-only, and capture evidence. */
@@ -245,21 +400,21 @@ export async function runFollowUp({ config }) {
     await guard(page, iresp ? iresp.status() : 0);
     await pacer.wait();
     out.pendingInvites = await collectSentInvites(page);
-    out.observedInvites = true;
+    out.observedInvites = await trustEmpty(page, out.pendingInvites);
 
     // 2) People already in your network -> "connected".
     const cresp = await page.goto(CONNECTIONS_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
     await guard(page, cresp ? cresp.status() : 0);
     await pacer.wait();
     out.connections = await collectConnections(page);
-    out.observedConnections = true;
+    out.observedConnections = await trustEmpty(page, out.connections);
 
     // 3) Message threads -> did they reply, and what did they say.
     const mresp = await page.goto(MESSAGING_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
     await guard(page, mresp ? mresp.status() : 0);
     await pacer.wait();
     out.threads = await collectThreads(page);
-    out.observedMessages = true;
+    out.observedMessages = await trustEmpty(page, out.threads);
   } catch (err) {
     out.blocker = err instanceof BlockerError
       ? { kind: err.kind, reason: err.message }
@@ -273,7 +428,7 @@ export async function runFollowUp({ config }) {
 
 /** Read-only extraction of your outstanding SENT invitations. */
 async function collectSentInvites(page) {
-  return page.$$eval(
+  const carded = await page.$$eval(
     "li.invitation-card, div.invitation-card, li[class*='invitation-card']",
     (nodes) =>
       nodes.map((n) => {
@@ -287,6 +442,8 @@ async function collectSentInvites(page) {
         };
       }).filter((r) => r.name || r.url),
   ).catch(() => []);
+  if (carded.length) return carded;
+  return page.evaluate(extractPeopleFromDom).catch(() => []);
 }
 
 /**

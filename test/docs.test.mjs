@@ -173,3 +173,24 @@ test("the docs describe the column bands the schema actually has", () => {
   assert.match(sheetDoc, /A–G and O–Y only/);
   assert.ok(!/O–U only/.test(sheetDoc), "SHEET.md still describes the old O–U range");
 });
+
+test("AGENTS.md explains every empty-page verdict the worker can produce", () => {
+  // The worker can now end a run with `no_results`, `parse_failed`,
+  // `page_not_rendered` or `no_results_visible`. A kind that reaches the Run Log
+  // but is not in AGENTS.md leaves the agent staring at a word it cannot explain
+  // to the person in front of it.
+  const a = read("AGENTS.md");
+  for (const kind of ["no_results", "parse_failed", "page_not_rendered", "no_results_visible"]) {
+    assert.ok(a.includes(kind), `AGENTS.md never explains the "${kind}" verdict`);
+  }
+  assert.match(a, /run that finds nobody is also a blocker/i,
+    "AGENTS.md must state that a zero-result run is a failure, not a quiet success");
+});
+
+test("the empty-page verdicts in the docs are the ones the code emits", () => {
+  const src = read("src/blockers.mjs");
+  const kinds = [...src.matchAll(/kind:\s*"([a-z_]+)"/g)].map((m) => m[1]);
+  for (const k of ["no_results", "parse_failed", "page_not_rendered", "no_results_visible"]) {
+    assert.ok(kinds.includes(k), `src/blockers.mjs no longer emits "${k}" — the docs are now stale`);
+  }
+});
