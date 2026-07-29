@@ -20,7 +20,7 @@
  *                         (filled by the read-only follow-up pass, for rows where
  *                          YOU ticked Reached Out. It observes; it never sends.)
  *
- *  RE-RUNNING IS SAFE. "Build / refresh" never clears Leads data, human tracking,
+ *  RE-RUNNING IS SAFE. buildAidgentOsSheet never clears Leads data, human tracking,
  *  your ICP + Schedule inputs, or Run Log history. It only refreshes headers,
  *  formatting, validation, and the static guidance tabs. Clearing leads is a
  *  separate, explicitly-confirmed action.
@@ -105,12 +105,24 @@ var RUN_LOG_HEADERS = [
   "Blocker / Failure", "Duration (s)",
 ];
 
+/**
+ * The menu deliberately does NOT offer "Build / refresh all tabs".
+ *
+ * Almost everyone gets this sheet by copying the template, which arrives fully
+ * built. For them a Build button does nothing useful and plenty that is
+ * confusing: it rewrites the guidance tabs and, on an older copy, would repaint
+ * the whole workbook. A one-click button that can only make things worse does
+ * not belong in front of a non-technical person.
+ *
+ * buildAidgentOsSheet() is still here and still supported. It is for the person
+ * who brought their OWN sheet, and it is run deliberately from
+ * Extensions > Apps Script > Run, not from a menu they might click by accident.
+ */
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("⚡ Aidgent OS")
-    .addItem("Build / refresh all tabs", "buildAidgentOsSheet")
-    .addSeparator()
     .addItem("Clear the Leads list…", "clearLeadsConfirm")
+    .addSeparator()
     .addItem("About", "aboutAidgentOs")
     .addToUi();
 }
@@ -137,7 +149,7 @@ function explainGsError_(e) {
       "header row refuses checkboxes and dropdowns. Click any cell in the table, open " +
       "the table menu (the chip at its top-left), choose \"Revert to unformatted data\" " +
       "(that keeps every row — do NOT choose \"Delete table\", which deletes the data " +
-      "with it), then run Build / refresh again.";
+      "with it), then run buildAidgentOsSheet again from Extensions > Apps Script.";
   }
   return msg;
 }
@@ -195,7 +207,7 @@ function ensureLeads_(ss) {
       throw new Error("this tab has its headers on row " + found + " with data below them. " +
         "Rebuilding would leave two header rows. Either delete rows 1 to " + (found - HEADER_ROW) +
         " so the headers land on row " + HEADER_ROW + ", or move your leads into a fresh copy of the " +
-        "template, then run Build / refresh again.");
+        "template, then run buildAidgentOsSheet again from Extensions > Apps Script.");
     }
     if (found > HEADER_ROW) sh.deleteRows(1, found - HEADER_ROW);
     else sh.insertRowsBefore(1, HEADER_ROW - found);
@@ -687,7 +699,7 @@ function aboutAidgentOs() {
     "Local, human-approved prospect research.\n\n" +
     "Leads: A-G agent output, H-N your tracking, O-Y system research.\n" +
     "The worker never writes H-N and never sends, connects, or comments.\n\n" +
-    "Build / refresh is safe: it preserves your data, tracking, ICP inputs, and Run Log.\n" +
+    "Rebuilding is safe: it preserves your data, tracking, ICP inputs, and Run Log.\n" +
     "Clearing leads is a separate, confirmed action.\n\nAn open, human-approved starter kit. MIT licensed.",
     SpreadsheetApp.getUi().ButtonSet.OK
   );
