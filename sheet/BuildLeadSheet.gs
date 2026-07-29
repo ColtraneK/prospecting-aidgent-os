@@ -1,10 +1,10 @@
 /**
  * ============================================================================
- *  AIDGENT OS  ·  Lead Sheet builder 
+ *  AIDGENT OS  ·  Lead Sheet builder
  * ----------------------------------------------------------------------------
  *  Builds and SAFELY refreshes the workbook the local research worker maintains.
  *
- *  Tabs: Start Here · Leads · ICP + Schedule · Personas · Prompt Library ·
+ *  Tabs: Start Here · Leads · Feedback · ICP + Schedule · Prompt Library ·
  *        Lists · Run Log
  *
  *  Leads columns (must match src/schema.mjs and sheet/SHEET.md):
@@ -25,6 +25,10 @@
  *  formatting, validation, and the static guidance tabs. Clearing leads is a
  *  separate, explicitly-confirmed action.
  *
+ *  HOUSE STYLE. The palette and fonts below are the same ones the shared
+ *  template uses, so a sheet built here and a copy of the template look
+ *  identical. Change them in one place: the constants at the top of this file.
+ *
  *  SETUP — USE YOUR EXISTING SHEET. Do NOT open sheets.new; that creates a new
  *  spreadsheet. Open the Sheet you want to use (or File > Make a copy of the
  *  provided template first), then in THAT sheet: Extensions > Apps Script ->
@@ -35,8 +39,28 @@
  * ============================================================================
  */
 
-var NAVY = "#0A2540", CYAN = "#14CCF7", INK = "#1A2230", GRAY = "#8A93A2";
-var SOFT = "#F2FBFE", SOFTBORDER = "#BDE9FA", ROWBG = "#F7FAFC", YELLOW = "#FFF8E1", WHITE = "#FFFFFF", FONT = "Arial";
+// --- house style -----------------------------------------------------------
+var INK = "#111827",      // banner and table-header fill
+    DEEP = "#172554",     // banner subtitle fill
+    BLUE = "#2563EB",     // section bars
+    PALE = "#DBEAFE",     // number chips and callouts
+    SUBTLE = "#DCE7FF",   // text on DEEP
+    GRAYBG = "#F3F4F6",   // label cells
+    MUTED = "#6B7280",    // hint and footer text
+    BODY = "#1F2937",     // body text
+    YEL = "#FFF7D6",      // cells you fill in
+    WHITE = "#FFFFFF",
+    LINE = "#E5E7EB",     // hairlines between rows
+    ZEBRA = "#F9FAFB",    // alternating Leads rows
+    BOX = "#CBD5E1";      // prompt-box outline
+
+// Header fills for the three Leads bands, so who-owns-what reads at a glance.
+var AGENT_HDR = INK, AGENT_TXT = WHITE;
+var HUMAN_HDR = "#1F2937", HUMAN_TXT = "#FDE68A";
+var SYS_HDR = "#374151",  SYS_TXT = "#D1D5DB";
+
+var DISP = "Play";   // display face: banners, section bars, big numbers
+var FACE = "Aptos";  // everything else
 
 var HEADER_ROW = 3, FIRST_DATA_ROW = 4;
 
@@ -46,33 +70,33 @@ var RESEARCH_STATUS = ["New", "Refreshed", "Needs review"];
 var CONNECTION_STATUS = ["connected", "pending", "not_connected", "unknown"];
 var REPLY_STATUS = ["replied", "no_reply", "unknown"];
 
-// [title, widthPx, type, group]  type: text|link|check|outcome|source|status|date|num
+// [title, widthPx, type, group]  type: text|link|check|outcome|source|status|connstatus|replystatus|date|num
 var LEADS_COLS = [
-  ["Name", 170, "text", "agent"],
-  ["Title / Company", 220, "text", "agent"],
-  ["LinkedIn (or profile URL)", 180, "link", "agent"],
-  ["Recent Post (verbatim + link)", 300, "text", "agent"],
-  ["Why Them", 240, "text", "agent"],
-  ["Suggested Comment", 320, "text", "agent"],
-  ["Suggested Intro DM", 320, "text", "agent"],
-  ["Reached Out", 90, "check", "human"],
-  ["Replied", 80, "check", "human"],
-  ["Outcome", 120, "outcome", "human"],
-  ["Date Added", 100, "date", "human"],
-  ["Source Type", 120, "source", "human"],
-  ["Batch", 90, "text", "human"],
-  ["Notes", 220, "text", "human"],
-  ["Activity Date", 100, "date", "system"],
-  ["Activity Type", 100, "text", "system"],
-  ["Fit Score", 80, "num", "system"],
-  ["Last Verified", 100, "date", "system"],
-  ["Canonical Key", 220, "text", "system"],
-  ["Research Source", 130, "text", "system"],
-  ["Research Status", 120, "status", "system"],
-  ["Connection Status", 120, "connstatus", "system"],
-  ["Reply Status", 100, "replystatus", "system"],
-  ["Last Reply", 300, "text", "system"],
-  ["Follow-up Checked", 120, "date", "system"],
+  ["Name", 159, "text", "agent"],
+  ["Title / Company", 239, "text", "agent"],
+  ["LinkedIn (or profile URL)", 223, "link", "agent"],
+  ["Recent Post (verbatim + link)", 239, "text", "agent"],
+  ["Why Them", 303, "text", "agent"],
+  ["Suggested Comment", 278, "text", "agent"],
+  ["Suggested Intro DM", 415, "text", "agent"],
+  ["Reached Out", 111, "check", "human"],
+  ["Replied", 95, "check", "human"],
+  ["Outcome", 143, "outcome", "human"],
+  ["Date Added", 111, "date", "human"],
+  ["Source Type", 159, "source", "human"],
+  ["Batch", 127, "text", "human"],
+  ["Notes", 287, "text", "human"],
+  ["Activity Date", 110, "date", "system"],
+  ["Activity Type", 110, "text", "system"],
+  ["Fit Score", 90, "num", "system"],
+  ["Last Verified", 110, "date", "system"],
+  ["Canonical Key", 230, "text", "system"],
+  ["Research Source", 140, "text", "system"],
+  ["Research Status", 130, "status", "system"],
+  ["Connection Status", 130, "connstatus", "system"],
+  ["Reply Status", 110, "replystatus", "system"],
+  ["Last Reply", 320, "text", "system"],
+  ["Follow-up Checked", 130, "date", "system"],
 ];
 
 var RUN_LOG_HEADERS = [
@@ -95,7 +119,7 @@ function onOpen() {
  * Run one build step without letting it take the other six down with it.
  *
  * The build used to be a straight sequence, so the FIRST thing that threw
- * aborted everything after it — one unhappy column in Leads meant no Personas
+ * aborted everything after it — one unhappy column in Leads meant no Feedback
  * tab, no Run Log, no banner. That failure mode is invisible to a non-technical
  * user: they see a red error naming a function they have never heard of, and a
  * workbook that is quietly half-built. Now every step runs, and whatever went
@@ -121,15 +145,15 @@ function explainGsError_(e) {
 function buildAidgentOsSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var problems = [];
-  safeStep_("Leads", function () { ensureLeads_(ss); }, problems); // safe refresh, preserves data
+  safeStep_("Leads", function () { ensureLeads_(ss); }, problems);          // safe refresh, preserves data
   safeStep_("Start Here", function () { rebuildStartHere_(ss); }, problems); // static
-  safeStep_("ICP + Schedule", function () { ensureIcpSchedule_(ss); }, problems); // preserve inputs
-  safeStep_("Personas", function () { ensurePersonas_(ss); }, problems); // create if missing
+  safeStep_("Feedback", function () { ensureFeedback_(ss); }, problems);     // preserves your notes
+  safeStep_("ICP + Schedule", function () { ensureIcpSchedule_(ss); }, problems); // preserves your answers
   safeStep_("Prompt Library", function () { rebuildPromptLibrary_(ss); }, problems); // static
-  safeStep_("Lists", function () { rebuildLists_(ss); }, problems); // static
-  safeStep_("Run Log", function () { ensureRunLog_(ss); }, problems); // preserve history
+  safeStep_("Lists", function () { rebuildLists_(ss); }, problems);          // static
+  safeStep_("Run Log", function () { ensureRunLog_(ss); }, problems);        // preserves history
   safeStep_("Tab order", function () {
-    orderTabs_(ss, ["Start Here", "Leads", "ICP + Schedule", "Personas", "Prompt Library", "Lists", "Run Log"]);
+    orderTabs_(ss, ["Start Here", "Leads", "Feedback", "ICP + Schedule", "Prompt Library", "Lists", "Run Log"]);
   }, problems);
   var start = ss.getSheetByName("Start Here"); if (start) ss.setActiveSheet(start);
   var def = ss.getSheetByName("Sheet1");
@@ -144,31 +168,55 @@ function buildAidgentOsSheet() {
 }
 
 // --- Leads (SAFE refresh: never clears data) -------------------------------
+
+/** 1-based row of an existing "Name" header in column A, or 0 if there is none. */
+function findHeaderRow_(sh) {
+  var depth = Math.min(sh.getMaxRows(), 30);
+  var col = sh.getRange(1, 1, depth, 1).getValues();
+  for (var i = 0; i < depth; i++) {
+    if (String(col[i][0]).trim().toLowerCase() === "name") return i + 1;
+  }
+  return 0;
+}
+
 function ensureLeads_(ss) {
   var sh = ss.getSheetByName("Leads") || ss.insertSheet("Leads");
   var n = LEADS_COLS.length;
   sh.setHiddenGridlines(true);
   if (sh.getMaxColumns() < n) sh.insertColumnsAfter(sh.getMaxColumns(), n - sh.getMaxColumns());
 
-  banner_(sh, "AIDGENT OS   ·   LEADS", "Agent output A-G  ·  your tracking H-N  ·  system research O-Y  ·  the worker never overwrites H-N", n);
+  // A sheet built before this layout may carry its headers on another row.
+  // Writing row 3 on top of that leaves TWO header rows and a worker that
+  // reads the wrong one, so realign first — and refuse rather than mangle a
+  // sheet that already holds leads.
+  var found = findHeaderRow_(sh);
+  if (found && found !== HEADER_ROW) {
+    if (sh.getLastRow() > found) {
+      throw new Error("this tab has its headers on row " + found + " with data below them. " +
+        "Rebuilding would leave two header rows. Either delete rows 1 to " + (found - HEADER_ROW) +
+        " so the headers land on row " + HEADER_ROW + ", or move your leads into a fresh copy of the " +
+        "template, then run Build / refresh again.");
+    }
+    if (found > HEADER_ROW) sh.deleteRows(1, found - HEADER_ROW);
+    else sh.insertRowsBefore(1, HEADER_ROW - found);
+  }
+
+  banner_(sh, n, "LEADS",
+    "Agent output A-G   ·   your tracking H-N   ·   system research O-Y   ·   the worker never overwrites H-N", 22);
+
   var headers = LEADS_COLS.map(function (c) { return c[0]; });
   sh.getRange(HEADER_ROW, 1, 1, n).setValues([headers])
-    .setBackground(NAVY).setFontColor(WHITE).setFontFamily(FONT).setFontWeight("bold")
-    .setFontSize(10).setWrap(true).setVerticalAlignment("middle");
-  sh.setRowHeight(HEADER_ROW, 30);
-
-  // Guidance notes on header cells by group.
-  for (var i = 0; i < n; i++) {
-    var group = LEADS_COLS[i][3];
-    var note = group === "human" ? "Human-managed. The research worker NEVER writes this column."
-      : group === "system" ? "System/agent-managed research field. Avoid hand-editing."
-      : "Agent output. Refreshed on each run; safe to edit your own copy.";
-    sh.getRange(HEADER_ROW, i + 1).setNote(note);
-    sh.setColumnWidth(i + 1, LEADS_COLS[i][1]);
-  }
+    .setFontFamily(FACE).setFontWeight("bold").setFontSize(9)
+    .setHorizontalAlignment("center").setVerticalAlignment("middle").setWrap(true);
+  // Three bands, so the ownership rule is visible without reading anything.
+  bandHeader_(sh, 1, 7, AGENT_HDR, AGENT_TXT, "Agent output. Refreshed on each run; safe to edit in your own copy.");
+  bandHeader_(sh, 8, 7, HUMAN_HDR, HUMAN_TXT, "Human-managed. The research worker NEVER writes this column.");
+  bandHeader_(sh, 15, 11, SYS_HDR, SYS_TXT, "System/agent-managed research field. Avoid hand-editing.");
+  sh.setRowHeight(HEADER_ROW, 34);
 
   var maxRows = sh.getMaxRows();
   var dataRows = maxRows - HEADER_ROW;
+
   // Cosmetics are per-column and independent, so one column that refuses styling
   // must not cost the other twenty-four theirs. The known cause is a native
   // Google Table on this tab: its header row rejects checkboxes and dropdowns,
@@ -177,12 +225,24 @@ function ensureLeads_(ss) {
   var colProblems = [], colError = null;
   for (var c = 0; c < n; c++) {
     var col = c + 1, type = LEADS_COLS[c][2];
+    sh.setColumnWidth(col, LEADS_COLS[c][1]);
     try {
       var body = sh.getRange(FIRST_DATA_ROW, col, dataRows, 1);
-      body.setFontFamily(FONT).setFontColor(INK).setFontSize(10).setVerticalAlignment("top");
+      body.setFontFamily(FACE).setFontColor(BODY).setFontSize(10).setVerticalAlignment("top");
       body.setWrapStrategy(type === "text" ? SpreadsheetApp.WrapStrategy.WRAP : SpreadsheetApp.WrapStrategy.CLIP);
-      if (type === "check") { body.insertCheckboxes(); body.setHorizontalAlignment("center"); }
+      // requireCheckbox(), NOT insertCheckboxes(). Both render a tickbox, but
+      // insertCheckboxes() WRITES a literal FALSE into every data row. On a
+      // 1000-row sheet that is ~997 non-empty cells in H and I, which makes the
+      // whole grid look like a populated table to the Sheets API: values.append
+      // then lands the first real batch of leads below the last FALSE instead of
+      // at row 4, and the person sees an empty sheet. A validation rule gives the
+      // same tickbox with the cells genuinely empty.
+      if (type === "check") {
+        body.setDataValidation(SpreadsheetApp.newDataValidation().requireCheckbox().build());
+        body.setHorizontalAlignment("center");
+      }
       else if (type === "date") { body.setNumberFormat("yyyy-mm-dd"); body.setHorizontalAlignment("center"); }
+      else if (type === "num") { body.setHorizontalAlignment("center"); }
       else if (type === "outcome") setListValidation_(body, OUTCOMES);
       else if (type === "source") setListValidation_(body, SOURCE_TYPES);
       else if (type === "status") setListValidation_(body, RESEARCH_STATUS);
@@ -193,25 +253,33 @@ function ensureLeads_(ss) {
       colError = e;
     }
   }
+
+  // A sheet built by the OLD script carries a literal FALSE in every H and I
+  // cell. Clearing those is only safe while the list is genuinely empty — once
+  // there are leads, an unticked box and a real "no" look identical.
+  try { clearStrayCheckboxValues_(sh); } catch (e) { /* cosmetic only */ }
+
   // Freeze the header rows only. NOT the first column: the banner on rows 1-2 is
   // one cell merged across all of A:Y, and Sheets refuses to freeze a column that
   // would cut a merged cell in half ("you can't freeze columns which contain only
   // part of a merged cell"). Asking for it threw on every single build.
   try { sh.setFrozenRows(HEADER_ROW); } catch (e) {}
 
-  // Conditional formatting: zebra + outcome colors + status colors. Rebuilt each run.
+  // Conditional formatting: zebra + outcome colours + status colours. Rebuilt each run.
   var rng = sh.getRange(FIRST_DATA_ROW, 1, dataRows, n);
-  var rules = [SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied("=ISEVEN(ROW())").setBackground(ROWBG).setRanges([rng]).build()];
-  var outCol = colOf_("Outcome"), stCol = colOf_("Research Status");
-  var outRng = sh.getRange(FIRST_DATA_ROW, outCol, dataRows, 1);
-  [["Positive", "#0F9D58", WHITE], ["Follow up", "#FFF2CC", INK], ["Neutral", SOFT, INK], ["No response", "#F1F3F4", GRAY], ["Not a fit", "#F4CCCC", "#7A1F1F"]]
+  var rules = [SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied("=ISEVEN(ROW())").setBackground(ZEBRA).setRanges([rng]).build()];
+  var outRng = sh.getRange(FIRST_DATA_ROW, colOf_("Outcome"), dataRows, 1);
+  [["Positive", "#DCFCE7", "#14532D"], ["Follow up", "#FEF3C7", "#78350F"],
+   ["Neutral", "#F3F4F6", "#374151"], ["No response", WHITE, "#9CA3AF"],
+   ["Not a fit", "#FEE2E2", "#991B1B"]]
     .forEach(function (m) { rules.push(cf_(m[0], m[1], m[2], outRng)); });
-  var stRng = sh.getRange(FIRST_DATA_ROW, stCol, dataRows, 1);
-  [["New", SOFT, INK], ["Refreshed", "#DCEEFB", NAVY], ["Needs review", "#FFF2CC", INK]]
+  var stRng = sh.getRange(FIRST_DATA_ROW, colOf_("Research Status"), dataRows, 1);
+  [["New", PALE, "#1E40AF"], ["Refreshed", "#E0F2FE", "#075985"], ["Needs review", "#FEF3C7", "#78350F"]]
     .forEach(function (m) { rules.push(cf_(m[0], m[1], m[2], stRng)); });
   try {
     sh.setConditionalFormatRules(rules);
-    rng.setBorder(null, null, true, null, false, true, SOFTBORDER, SpreadsheetApp.BorderStyle.SOLID);
+    rng.setBorder(null, null, true, null, false, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
   } catch (e) { if (!colError) colError = e; colProblems.push("row colours"); }
   try {
     if (sh.getMaxColumns() > n) sh.deleteColumns(n + 1, sh.getMaxColumns() - n);
@@ -225,161 +293,373 @@ function ensureLeads_(ss) {
   }
 }
 
+/** Paint one band of the Leads header row and note who owns it. */
+function bandHeader_(sh, startCol, count, bg, fg, note) {
+  var r = sh.getRange(HEADER_ROW, startCol, 1, count);
+  r.setBackground(bg).setFontColor(fg);
+  for (var i = 0; i < count; i++) sh.getRange(HEADER_ROW, startCol + i).setNote(note);
+}
+
+/** Remove the old script's literal FALSE values, but only while Leads is empty. */
+function clearStrayCheckboxValues_(sh) {
+  var last = sh.getLastRow();
+  if (last < FIRST_DATA_ROW) return;
+  var count = last - HEADER_ROW;
+  var names = sh.getRange(FIRST_DATA_ROW, 1, count, 1).getValues();
+  for (var i = 0; i < names.length; i++) {
+    if (String(names[i][0]).trim() !== "") return; // real leads present, leave the ticks alone
+  }
+  sh.getRange(FIRST_DATA_ROW, colOf_("Reached Out"), count, 2).clearContent();
+}
+
 // --- Start Here (static) ---------------------------------------------------
 function rebuildStartHere_(ss) {
   var sh = ss.getSheetByName("Start Here") || ss.insertSheet("Start Here");
-  sh.clear(); sh.clearNotes(); sh.setHiddenGridlines(true);
-  var W = 4; sh.setColumnWidth(1, 40); for (var c = 2; c <= W; c++) sh.setColumnWidth(c, 230);
-  bigBanner_(sh, W, "AIDGENT OS", "Local, human-approved prospect research ");
-  var r = 4;
-  section_(sh, r++, W, "Today at a glance");
-  metric_(sh, r++, "Prospects", "=COUNTA(Leads!A" + FIRST_DATA_ROW + ":A)");
-  metric_(sh, r++, "Reached out", "=COUNTIF(Leads!H" + FIRST_DATA_ROW + ":H,TRUE)");
-  metric_(sh, r++, "Replies", "=COUNTIF(Leads!I" + FIRST_DATA_ROW + ":I,TRUE)");
-  metric_(sh, r++, "Positive", '=COUNTIF(Leads!J' + FIRST_DATA_ROW + ':J,"Positive")');
-  r++;
-  section_(sh, r++, W, "How it runs");
-  [
-    "This is a LOCAL system. Your computer stays on and awake and Codex desktop stays running.",
-    "A dedicated Chrome profile that you sign into once does read-only research. It never sends, connects, reacts, comments, or posts.",
-    "Each run researches profiles, recent posts, and comments, prefers the last 7 days, and maintains this Sheet.",
-    "The worker writes agent (A-G) and system (O-Y) fields. It never touches your human columns H-N.",
-  ].forEach(function (t) { bullet_(sh, r++, W, t); });
-  r++;
-  section_(sh, r++, W, "First-time setup");
-  [
-    "1. Fill ICP + Schedule, then create a private persona (see Personas tab).",
-    "2. npm run setup-login -- --persona <slug>  (sign into LinkedIn manually in the opened Chrome).",
-    "3. npm run pilot -- --persona <slug> --headless  (review the 10-lead result).",
-    "4. npm run source -- --persona <slug> --target 50 --headless --update-sheet  (schedule this locally).",
-  ].forEach(function (t) { bullet_(sh, r++, W, t); });
-  r++;
-  sh.getRange(r, 2, 1, W - 1).merge().setValue("Safety: the agent reads and drafts. It never sends, connects, comments, or posts. Every outward action is yours.")
-    .setFontColor(INK).setFontFamily(FONT).setFontSize(10).setWrap(true).setBackground(SOFT)
-    .setBorder(true, true, true, true, false, false, SOFTBORDER, SpreadsheetApp.BorderStyle.SOLID);
-  sh.setRowHeight(r, 42);
+  resetSheet_(sh);
+  var W = 8;
+  if (sh.getMaxColumns() < W) sh.insertColumnsAfter(sh.getMaxColumns(), W - sh.getMaxColumns());
+  sh.setColumnWidth(1, 31);
+  for (var c = 2; c <= 7; c++) sh.setColumnWidth(c, 143);
+  sh.setColumnWidth(8, 242);
+  banner_(sh, W, "OUTREACH AIDGENT 🤖", "A human-approved prospecting system by Aidgentic", 30);
+
+  // --- today at a glance
+  sectionBar_(sh, 4, 2, 6, "TODAY AT A GLANCE");
+  var labels = ["Prospects", "Ready to review", "Reached out", "Replies", "Positive", "Reply rate"];
+  var formulas = [
+    "=COUNTA(Leads!A" + FIRST_DATA_ROW + ":A)",
+    "=COUNTA(Leads!A" + FIRST_DATA_ROW + ":A)-COUNTIF(Leads!H" + FIRST_DATA_ROW + ":H,TRUE)",
+    "=COUNTIF(Leads!H" + FIRST_DATA_ROW + ":H,TRUE)",
+    "=COUNTIF(Leads!I" + FIRST_DATA_ROW + ":I,TRUE)",
+    '=COUNTIF(Leads!J' + FIRST_DATA_ROW + ':J,"Positive")',
+    "=IFERROR(COUNTIF(Leads!I" + FIRST_DATA_ROW + ":I,TRUE)/COUNTIF(Leads!H" + FIRST_DATA_ROW + ":H,TRUE),0)",
+  ];
+  sh.getRange(5, 2, 1, 6).setValues([labels])
+    .setBackground(GRAYBG).setFontColor(MUTED).setFontFamily(FACE).setFontSize(10)
+    .setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.getRange(6, 2, 1, 6).setFormulas([formulas])
+    .setBackground(WHITE).setFontColor(INK).setFontFamily(DISP).setFontSize(18)
+    .setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle");
+  sh.getRange(6, 7).setNumberFormat("0.0%");
+  sh.getRange(5, 2, 2, 6).setBorder(true, true, true, true, true, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
+  sh.setRowHeight(5, 32); sh.setRowHeight(6, 50); sh.setRowHeight(7, 20);
+
+  // --- the daily loop
+  sectionBar_(sh, 8, 2, 6, "THE DAILY LOOP");
+  var loop = [
+    ["1", "Open Leads", "Review the newest names and the evidence behind them."],
+    ["2", "Check the fit", "Read Why Them, then open the profile and the post link."],
+    ["3", "Make it yours", "Edit the Suggested Comment and the Suggested Intro DM."],
+    ["4", "Reach out", "You send it yourself. Nothing auto-sends."],
+    ["5", "Track reality", "Tick Reached Out and Replied, then pick an Outcome."],
+    ["6", "Say what is off", "If the wrong people showed up, write it on the Feedback tab."],
+  ];
+  // Row numbers below are COMPUTED, never hard-coded. Adding a step to either
+  // list used to silently overwrite the block underneath it.
+  var loopTop = 9;
+  var r = loopTop;
+  loop.forEach(function (row) {
+    sh.getRange(r, 2).setValue(row[0]).setBackground(PALE).setFontColor(BLUE)
+      .setFontFamily(DISP).setFontSize(14).setFontWeight("bold")
+      .setHorizontalAlignment("center").setVerticalAlignment("middle");
+    sh.getRange(r, 3).setValue(row[1]).setFontColor(BODY).setFontFamily(FACE)
+      .setFontSize(10).setFontWeight("bold").setVerticalAlignment("middle");
+    sh.getRange(r, 4, 1, 4).merge().setValue(row[2]).setFontColor(BODY).setFontFamily(FACE)
+      .setFontSize(10).setWrap(true).setVerticalAlignment("middle");
+    sh.setRowHeight(r, 34);
+    r++;
+  });
+  sh.getRange(loopTop, 2, loop.length, 6)
+    .setBorder(null, null, true, null, false, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
+  sh.setRowHeight(r, 20); r++;   // spacer
+
+  // --- first-time setup
+  var setupBar = r;
+  sectionBar_(sh, setupBar, 2, 6, "FIRST-TIME SETUP");
+  // Everything here is phrased as something to ASK FOR, not something to type.
+  // Nobody using this sheet runs commands: they talk to their agent and the
+  // agent runs them. A terminal command on this tab is a wall, not a help.
+  var setup = [
+    ["1. Ask where you are up to", "Your agent checks the setup and tells you the single next thing to do. Ask again after each step."],
+    ["2. Fill in ICP + Schedule", "The yellow cells on that tab. Then ask your agent to turn them into your targeting."],
+    ["3. Connect this sheet", "Share it with your service account address as an Editor, then ask your agent to connect this sheet."],
+    ["4. Ask for a test run of ten", "Ten people, so you can read real rows here before there are fifty of them."],
+    ["5. Ask for today's run", "About 25 new people, then a check on who accepted and who replied. Nothing is sent."],
+  ];
+  r = setupBar + 1;
+  var setupTop = r;
+  setup.forEach(function (row) {
+    sh.getRange(r, 2).setValue(row[0]).setFontColor(BODY).setFontFamily(FACE)
+      .setFontSize(10).setFontWeight("bold").setWrap(true).setVerticalAlignment("middle");
+    sh.getRange(r, 3, 1, 5).merge().setValue(row[1]).setFontColor(BODY).setFontFamily(FACE)
+      .setFontSize(10).setWrap(true).setVerticalAlignment("middle");
+    sh.setRowHeight(r, 42);
+    r++;
+  });
+  sh.getRange(setupTop, 2, setup.length, 6)
+    .setBorder(null, null, true, null, false, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
+
+  // --- safety rule + footer
+  var safety = r;
+  sh.getRange(safety, 2, 2, 6).merge()
+    .setValue("SAFETY RULE  •  The agent reads and drafts. It never sends, connects, comments, or posts. " +
+      "Every outward action is something you do yourself.")
+    .setBackground(PALE).setFontColor(DEEP).setFontFamily(FACE).setFontSize(10)
+    .setFontWeight("bold").setWrap(true).setVerticalAlignment("middle");
+  sh.setRowHeight(safety, 26); sh.setRowHeight(safety + 1, 26); sh.setRowHeight(safety + 2, 20);
+  var footer = safety + 3;
+  sh.getRange(footer, 2, 1, 6).merge()
+    .setValue("Aidgentic  •  AI automation for founder-led businesses  •  aidgentic.com  •  hello@aidgentic.com")
+    .setFontColor(MUTED).setFontFamily(FACE).setFontSize(9).setHorizontalAlignment("center");
+  sh.setRowHeight(footer, 30);
+
   sh.setFrozenRows(2);
   trimCols_(sh, W);
+  trimRows_(sh, footer + 6);
 }
 
-// --- ICP + Schedule (create if missing; preserve user inputs) ---------------
+// --- ICP + Schedule (rebuilds the layout, keeps your answers) ---------------
 function ensureIcpSchedule_(ss) {
-  if (ss.getSheetByName("ICP + Schedule")) return; // never overwrite user inputs
-  var sh = ss.insertSheet("ICP + Schedule");
-  sh.setHiddenGridlines(true);
-  var W = 4; sh.setColumnWidth(1, 30); sh.setColumnWidth(2, 190); sh.setColumnWidth(3, 380); sh.setColumnWidth(4, 200);
-  bigBanner_(sh, W, "ICP + SCHEDULE", "Yellow cells are yours to edit. This mirrors a persona under private/personas/.");
   var rows = [
-    ["", "BUSINESS SNAPSHOT", "", ""],
-    ["", "Business / offer", "", "yellow"],
-    ["", "Website URL", "https://", "yellow"],
-    ["", "Customer outcome", "", "yellow"],
-    ["", "Target industries", "", "yellow"],
-    ["", "Company sizes", "", "yellow"],
-    ["", "", "", ""],
-    ["", "LOCKED ICP  •  FIVE LINES", "", ""],
-    ["", "1. Who I sell to", "", "yellow"],
-    ["", "2. Exact titles", "", "yellow"],
-    ["", "3. Geography (include / exclude)", "", "yellow"],
-    ["", "4. Buying signal", "", "yellow"],
-    ["", "5. Opener voice", "", "yellow"],
-    ["", "", "", ""],
-    ["", "SOURCING + SCHEDULE", "", ""],
-    ["", "Prospects per manual run", "25", "yellow"],
-    ["", "Prospects per scheduled run", "50", "yellow"],
-    ["", "Weekdays", "Monday–Friday", "yellow"],
-    ["", "Run time + timezone", "8:00 AM America/New_York", "yellow"],
-    ["", "Recency preference", "Prefer last 7 days; allow strong older matches", ""],
-    ["", "Mode", "Local LinkedIn (signed-in profile) or Public-web fallback", ""],
+    ["sec", "BUSINESS SNAPSHOT", "", ""],
+    ["input", "Business / offer", "What do you sell, in plain English?", ""],
+    ["input", "Website URL", "https://", "Your agent reads this first when it drafts your ICP."],
+    ["input", "Outcome you deliver", "What changes for the buyer after working with you?", ""],
+    ["input", "Industries / company type", "Who is most likely to value this?", ""],
+    ["input", "Company size", "Employees, revenue, stage, or another useful boundary", ""],
+    ["gap", "", "", ""],
+    ["sec", "LOCKED ICP  •  FIVE LINES", "", ""],
+    ["input", "1. Who I sell to", "Industry + size + situation", ""],
+    ["input", "2. Exact titles", "Exact job titles, not broad departments", "Titles drive the search. Vague titles give vague leads."],
+    ["input", "3. Geography", "City, state, country, or time zone", ""],
+    ["input", "4. Buying signal", "The observable fact that makes this person worth reaching", ""],
+    ["input", "5. Opener voice", "Warm, concise, curious, no pitch", ""],
+    ["gap", "", "", ""],
+    ["sec", "SOURCING + SCHEDULE", "", ""],
+    ["input", "Prospects per manual run", "25", "A test run is ten. Keep normal runs near 25."],
+    ["input", "Prospects per scheduled run", "50", "Fresh people only. Existing leads are refreshed, not duplicated."],
+    ["input", "Weekdays", "Monday to Friday", "Recommended while you build the review habit."],
+    ["input", "Run time", "8:00 AM", "Your local time when you create the schedule."],
+    ["input", "Timezone", "America/New_York", "Change this if needed."],
+    ["fixed", "Recency preference", "Prefer the last 7 days", "Strong older matches are still accepted and marked as older."],
+    ["fixed", "Mode", "Local LinkedIn (signed-in profile)", "Or the public-web fallback."],
+    ["gap", "", "", ""],
+    ["sec", "CHANGING ANY OF THIS", "", ""],
+    ["fixed", "Where your targeting lives", "As a file on your computer, not in this sheet", "Your agent names it and keeps it up to date."],
+    ["fixed", "To change it", "Write what you want on the Feedback tab, or just tell your agent", "Both work. Feedback keeps a record of what changed and when."],
+    ["fixed", "Selling more than one thing?", "Ask your agent for a second set of targeting", "It can switch between them without you redoing any setup."],
+    ["gap", "", "", ""],
+    ["note", "Fresh means not already in Leads by name or canonical profile URL. Scheduled runs append new rows and " +
+      "refresh existing ones. They never erase your tracking in H to N.", "", ""],
   ];
-  writeLabeled_(sh, rows, W);
-  sh.setFrozenRows(2);
-  trimCols_(sh, W);
+  labeledTab_(ss, "ICP + Schedule", "ICP + SCHEDULE",
+    "Yellow cells are yours. Keep the targeting specific enough that a stranger could apply it consistently.",
+    rows, [31, 250, 470, 300]);
 }
 
-// --- Personas (create if missing) ------------------------------------------
-function ensurePersonas_(ss) {
-  if (ss.getSheetByName("Personas")) return;
-  var sh = ss.insertSheet("Personas");
+// --- Feedback (you write A-C, your agent writes D-F) -----------------------
+//
+// The point of this tab: the deterministic sourcing code must NOT read free
+// text. If a language model sat inside the sourcing loop deciding who
+// qualifies, the no-fabrication guarantee would be gone. So the person writes
+// plain English here, the AGENT reads it and turns it into concrete targeting
+// changes, and the unchanged code reads that targeting. This tab is the audit
+// trail of why the targeting looks the way it does.
+var FEEDBACK_COLS = [
+  ["Date", 110, "date", "human"],
+  ["What to change", 430, "text", "human"],
+  ["Must / Prefer / Avoid", 150, "kind", "human"],
+  ["Status", 140, "status", "agent"],
+  ["Applied on", 110, "date", "agent"],
+  ["What your agent changed", 380, "text", "agent"],
+];
+var FEEDBACK_KINDS = ["Must", "Prefer", "Avoid"];
+var FEEDBACK_STATUS = ["New", "Applied", "Needs a decision"];
+
+function ensureFeedback_(ss) {
+  var sh = ss.getSheetByName("Feedback") || ss.insertSheet("Feedback");
   sh.setHiddenGridlines(true);
-  var W = 4; sh.setColumnWidth(1, 30); sh.setColumnWidth(2, 200); sh.setColumnWidth(3, 420); sh.setColumnWidth(4, 160);
-  bigBanner_(sh, W, "PERSONAS", "Personas are private and local (private/personas/<slug>.yaml). One skill switches between them.");
-  var rows = [
-    ["", "ACTIVE PERSONA", "", ""],
-    ["", "Active slug", "", "yellow"],
-    ["", "Last run", "(filled by the worker's Run Log)", ""],
-    ["", "", "", ""],
-    ["", "COMMANDS", "", ""],
-    ["", "List", "npm run list-personas", ""],
-    ["", "Select", "npm run select-persona -- --persona <slug>", ""],
-    ["", "Validate", "npm run validate-persona -- --persona <slug>", ""],
-    ["", "Create from approved ICP", "npm run create-persona -- --from approved-icp.json --slug <slug>", ""],
-    ["", "", "", ""],
-    ["", "RULES", "", ""],
-    ["", "Private", "Real personas live under private/ and are git-ignored.", ""],
-    ["", "Public", "The repo ships only a fake example (personas/example-generic.yaml).", ""],
-  ];
-  writeLabeled_(sh, rows, W);
-  sh.setFrozenRows(2);
-  trimCols_(sh, W);
+  var n = FEEDBACK_COLS.length;
+  if (sh.getMaxColumns() < n) sh.insertColumnsAfter(sh.getMaxColumns(), n - sh.getMaxColumns());
+
+  banner_(sh, n, "FEEDBACK",
+    "Write what you want changed, in plain English. Your agent reads this before every run.", 22);
+
+  sh.getRange(HEADER_ROW, 1, 1, n)
+    .setValues([FEEDBACK_COLS.map(function (c) { return c[0]; })])
+    .setFontFamily(FACE).setFontWeight("bold").setFontSize(9)
+    .setHorizontalAlignment("center").setVerticalAlignment("middle").setWrap(true);
+  sh.getRange(HEADER_ROW, 1, 1, 3).setBackground(HUMAN_HDR).setFontColor(HUMAN_TXT);
+  sh.getRange(HEADER_ROW, 4, 1, 3).setBackground(SYS_HDR).setFontColor(SYS_TXT);
+  for (var i = 0; i < n; i++) {
+    var note = FEEDBACK_COLS[i][3] === "human"
+      ? "Yours. Write here any time."
+      : "Your agent fills this in when it applies your note.";
+    if (FEEDBACK_COLS[i][0] === "What to change") {
+      note = "Plain English. Examples:\n" +
+        "  No leads outside the US\n" +
+        "  Prefer people who comment on posts often\n" +
+        "  Only people with a PMP certification\n" +
+        "  Stop showing me recruiters\n\n" +
+        "Do not leave example rows in the table. Your agent reads every row as a real instruction.";
+    }
+    sh.getRange(HEADER_ROW, i + 1).setNote(note);
+  }
+  sh.setRowHeight(HEADER_ROW, 34);
+
+  var dataRows = sh.getMaxRows() - HEADER_ROW;
+  for (var c = 0; c < n; c++) {
+    sh.setColumnWidth(c + 1, FEEDBACK_COLS[c][1]);
+    var body = sh.getRange(FIRST_DATA_ROW, c + 1, dataRows, 1);
+    body.setFontFamily(FACE).setFontColor(BODY).setFontSize(10).setVerticalAlignment("top");
+    var type = FEEDBACK_COLS[c][2];
+    body.setWrapStrategy(type === "text" ? SpreadsheetApp.WrapStrategy.WRAP : SpreadsheetApp.WrapStrategy.CLIP);
+    if (type === "date") { body.setNumberFormat("yyyy-mm-dd"); body.setHorizontalAlignment("center"); }
+    else if (type === "kind") setListValidation_(body, FEEDBACK_KINDS);
+    else if (type === "status") setListValidation_(body, FEEDBACK_STATUS);
+  }
+  // The yours/theirs split, same idea as Leads.
+  sh.getRange(FIRST_DATA_ROW, 1, dataRows, 3).setBackground("#FFFDF5");
+
+  var rng = sh.getRange(FIRST_DATA_ROW, 1, dataRows, n);
+  var rules = [];
+  [["Applied", "#DCFCE7", "#14532D"], ["Needs a decision", "#FEF3C7", "#78350F"], ["New", PALE, "#1E40AF"]]
+    .forEach(function (m) {
+      rules.push(cf_(m[0], m[1], m[2], sh.getRange(FIRST_DATA_ROW, 4, dataRows, 1)));
+    });
+  sh.setConditionalFormatRules(rules);
+  rng.setBorder(null, null, true, null, false, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
+  try { sh.setFrozenRows(HEADER_ROW); } catch (e) {}
+  trimCols_(sh, n);
 }
 
 // --- Prompt Library (static) -----------------------------------------------
 function rebuildPromptLibrary_(ss) {
   var sh = ss.getSheetByName("Prompt Library") || ss.insertSheet("Prompt Library");
-  sh.clear(); sh.setHiddenGridlines(true);
-  var W = 3; sh.setColumnWidth(1, 30); sh.setColumnWidth(2, 230); sh.setColumnWidth(3, 620);
-  bigBanner_(sh, W, "PROMPT LIBRARY", "Use 1–2 to build a persona. Sourcing (3) and scheduling (4) run via the Codex skill / npm commands, not by pasting.");
+  resetSheet_(sh);
+  var W = 4;
+  if (sh.getMaxColumns() < W) sh.insertColumnsAfter(sh.getMaxColumns(), W - sh.getMaxColumns());
+  sh.setColumnWidth(1, 31); sh.setColumnWidth(2, 300); sh.setColumnWidth(3, 330); sh.setColumnWidth(4, 330);
+  banner_(sh, W, "PROMPT LIBRARY",
+    "Use 1 and 2 to build a persona. Sourcing and scheduling run through the skill and the npm commands, not by pasting.", 22);
+
   var items = [
-    ["1  SCAN (build the ICP)", "Scan this business and tell me who its best-fit prospects are. Website: {{URL}}. Read the homepage, about, and services or pricing pages. Draft a tight ICP I can correct: what they sell, the outcome, who buys it (industry, size, titles), where they are, and the one buying signal. Six short lines. Then ask me five quick questions to lock it. Do not contact anyone."],
-    ["2  LOCK THE ICP -> PERSONA", "Here are my corrections: {{ANSWERS}}. Lock the ICP in five lines (who I sell to, exact titles, geography, buying signal, opener voice), then create a private persona at private/personas/{{SLUG}}.yaml with keywords, exclusions, and my Google Sheet id. Do not source yet."],
-    ["3  SOURCE (run the skill)", "Use the research-outreach-prospects skill with persona {{SLUG}}. Pilot 10 first, then run headless with --update-sheet. Read-only research: prefer the last 7 days, never send/connect/comment, never touch my human columns H-N, and stop on any login/CAPTCHA/checkpoint/rate-limit page."],
-    ["4  SCHEDULE (local)", "Create a local Codex scheduled task that runs: npm run source -- --persona {{SLUG}} --target 50 --headless --update-sheet — every weekday at my chosen time, computer on and awake, desktop app running."],
+    ["1  SCAN THE BUSINESS", "Understand the business and draft an ICP for you to correct.",
+      "Scan this business and tell me who its best-fit prospects are. Website: {{URL}}. Read the homepage, the about " +
+      "page, and the services or pricing pages. Then draft a tight ICP I can correct: what they sell, the outcome they " +
+      "deliver, who buys it (industry, size, titles), where those buyers are, and the one signal that says someone is a " +
+      "fit. Six short lines. Do not contact anyone.\n\nThen ask me five quick questions: did you get who I sell to right, " +
+      "which exact titles, what geography, what signal means someone is worth reaching, and how should the opener sound?"],
+    ["2  LOCK THE ICP INTO A PERSONA", "Turn your corrections into a private persona the worker can run.",
+      "Here are my corrections: {{ANSWERS}}. Lock the ICP in five lines: who I sell to, the exact titles, the geography, " +
+      "the buying signal, and my opener voice. Then create a private persona at private/personas/{{SLUG}}.yaml with " +
+      "keywords, exclusions, and my Google Sheet id. Do not source anything yet."],
+    ["3  ASK FOR A RUN", "You do not paste anything for this one. You just ask.",
+      "Do a test run of ten people first, then show me what landed in the sheet. Read-only research only: prefer the " +
+      "last 7 days, never send, connect or comment on my behalf, never touch my columns H to N, and stop and tell me if " +
+      "you hit a login, CAPTCHA, checkpoint or rate-limit page."],
+    ["4  SCHEDULE IT", "Same job, every weekday, still nothing auto-sent.",
+      "Set up a scheduled task that does the daily run for me every weekday morning, about 25 people. Remind me what has " +
+      "to be true for it to actually fire: this computer on, awake, and running the agent app at that hour."],
   ];
   var r = 4;
   items.forEach(function (it) {
-    sh.getRange(r, 2).setValue(it[0]).setFontColor(NAVY).setFontWeight("bold").setFontFamily(FONT).setVerticalAlignment("top").setWrap(true);
-    sh.getRange(r, 3).setValue(it[1]).setFontColor(INK).setFontFamily(FONT).setFontSize(10).setWrap(true).setVerticalAlignment("top");
-    sh.setRowHeight(r, 96); r++;
+    sectionBar_(sh, r, 2, W - 1, it[0]);
+    sh.getRange(r + 1, 2, 1, W - 1).merge().setValue(it[1])
+      .setBackground(GRAYBG).setFontColor(MUTED).setFontFamily(FACE).setFontSize(9)
+      .setFontStyle("italic").setVerticalAlignment("middle");
+    sh.setRowHeight(r + 1, 26);
+    sh.getRange(r + 2, 2, 3, W - 1).merge().setValue(it[2])
+      .setBackground(WHITE).setFontColor(BODY).setFontFamily(FACE).setFontSize(10)
+      .setWrap(true).setVerticalAlignment("top")
+      .setBorder(true, true, true, true, false, false, BOX, SpreadsheetApp.BorderStyle.SOLID);
+    sh.setRowHeight(r + 2, 44); sh.setRowHeight(r + 3, 44); sh.setRowHeight(r + 4, 44);
+    sh.setRowHeight(r + 5, 18);
+    r += 6;
   });
   sh.setFrozenRows(2);
   trimCols_(sh, W);
+  trimRows_(sh, r + 2);
 }
 
 // --- Lists (static) --------------------------------------------------------
 function rebuildLists_(ss) {
   var sh = ss.getSheetByName("Lists") || ss.insertSheet("Lists");
-  sh.clear(); sh.setHiddenGridlines(true);
-  var W = 3; sh.setColumnWidth(1, 30); sh.setColumnWidth(2, 200); sh.setColumnWidth(3, 460);
-  bigBanner_(sh, W, "LISTS + FIELD GUIDE", "Dropdown values and the quality bar for every sourced row.");
-  var rows = [
-    ["", "OUTCOME (col J)", OUTCOMES.join(" · ")],
-    ["", "SOURCE TYPE (col L)", SOURCE_TYPES.join(" · ")],
-    ["", "RESEARCH STATUS (col U)", RESEARCH_STATUS.join(" · ")],
-    ["", "CONNECTION STATUS (col V)", CONNECTION_STATUS.join(" · ")],
-    ["", "REPLY STATUS (col W)", REPLY_STATUS.join(" · ")],
-    ["", "", ""],
-    ["", "QUALITY BAR", ""],
-    ["", "Identity", "A real person with a current title and company."],
-    ["", "ICP fit", "Title, company, geography, and situation match the locked persona."],
-    ["", "Evidence", "Prefer verifiable activity from the last 7 days; strong older evidence is allowed."],
-    ["", "No fabrication", "Never invent activity, dates, quotes, geography, titles, or URLs."],
+  resetSheet_(sh);
+  var W = 2;
+  if (sh.getMaxColumns() < W) sh.insertColumnsAfter(sh.getMaxColumns(), W - sh.getMaxColumns());
+  sh.setColumnWidth(1, 240); sh.setColumnWidth(2, 660);
+  banner_(sh, W, "LISTS + FIELD GUIDE",
+    "Dropdown values, outcome definitions, and the quality bar every sourced row has to clear.", 22);
+
+  var blocks = [
+    ["DROPDOWN VALUES", ["Column", "Allowed values"], [
+      ["Outcome (J)", OUTCOMES.join(" · ")],
+      ["Source Type (L)", SOURCE_TYPES.join(" · ")],
+      ["Research Status (U)", RESEARCH_STATUS.join(" · ")],
+      ["Connection Status (V)", CONNECTION_STATUS.join(" · ")],
+      ["Reply Status (W)", REPLY_STATUS.join(" · ")]]],
+    ["OUTCOME DEFINITIONS", ["Outcome", "Use when"], [
+      ["No response", "Enough time has passed and there is no reply."],
+      ["Neutral", "A reply without clear interest or rejection."],
+      ["Positive", "A real conversation, referral, or next step opened."],
+      ["Not a fit", "The targeting was wrong or they explicitly declined."],
+      ["Follow up", "There is a concrete reason and a date to re-engage."]]],
+    ["LEAD QUALITY BAR", ["Check", "Pass condition"], [
+      ["Identity", "A real person with a current title and company."],
+      ["ICP fit", "Title, company, geography and situation match the locked persona."],
+      ["Evidence", "Prefer verifiable activity from the last 7 days. Strong older evidence is allowed."],
+      ["Why Them", "Names the specific fit signal, not generic praise."],
+      ["No fabrication", "Never invent activity, dates, quotes, geography, titles or URLs."]]],
+    ["WHO WRITES WHAT", ["Columns", "Owner"], [
+      ["A to G", "The agent. Refreshed on every run."],
+      ["H to N", "You. The worker never writes these."],
+      ["O to Y", "System research and the read-only follow-up pass."]]],
   ];
-  writeLabeled_(sh, rows, W);
+  var r = 4;
+  blocks.forEach(function (b) {
+    sectionBar_(sh, r, 1, W, b[0]);
+    sh.getRange(r + 1, 1, 1, W).setValues([b[1]])
+      .setBackground(INK).setFontColor(WHITE).setFontFamily(FACE).setFontSize(10)
+      .setFontWeight("bold").setVerticalAlignment("middle");
+    sh.setRowHeight(r + 1, 29);
+    sh.getRange(r + 2, 1, b[2].length, W).setValues(b[2])
+      .setFontColor(BODY).setFontFamily(FACE).setFontSize(10).setWrap(true).setVerticalAlignment("middle");
+    sh.getRange(r + 2, 1, b[2].length, 1).setFontWeight("bold");
+    sh.getRange(r + 1, 1, b[2].length + 1, W)
+      .setBorder(null, null, true, null, false, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
+    for (var i = 0; i < b[2].length; i++) sh.setRowHeight(r + 2 + i, 38);
+    sh.setRowHeight(r + 2 + b[2].length, 18);
+    r += 3 + b[2].length;
+  });
   sh.setFrozenRows(2);
   trimCols_(sh, W);
+  trimRows_(sh, r + 2);
 }
 
 // --- Run Log (create if missing; preserve history) -------------------------
 function ensureRunLog_(ss) {
-  var sh = ss.getSheetByName("Run Log");
-  if (sh) return;
-  sh = ss.insertSheet("Run Log");
+  var sh = ss.getSheetByName("Run Log") || ss.insertSheet("Run Log");
   sh.setHiddenGridlines(true);
-  sh.getRange(1, 1, 1, RUN_LOG_HEADERS.length).setValues([RUN_LOG_HEADERS])
-    .setBackground(NAVY).setFontColor(WHITE).setFontFamily(FONT).setFontWeight("bold").setWrap(true);
+  var n = RUN_LOG_HEADERS.length;
+  if (sh.getMaxColumns() < n) sh.insertColumnsAfter(sh.getMaxColumns(), n - sh.getMaxColumns());
+  // Headers live on row 1 because the worker appends at "Run Log!A1"; a banner
+  // above them would push every appended row into the wrong columns.
+  sh.getRange(1, 1, 1, n).setValues([RUN_LOG_HEADERS])
+    .setBackground(INK).setFontColor(WHITE).setFontFamily(FACE).setFontSize(9)
+    .setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle").setWrap(true);
+  sh.setRowHeight(1, 36);
+  var rows = sh.getMaxRows() - 1;
+  sh.getRange(2, 1, rows, n).setFontFamily(FACE).setFontColor(BODY).setFontSize(10)
+    .setVerticalAlignment("middle");
+  sh.setColumnWidth(1, 150); sh.setColumnWidth(2, 170); sh.setColumnWidth(3, 150);
+  for (var i = 4; i <= n; i++) sh.setColumnWidth(i, 120);
+  var rng = sh.getRange(2, 1, rows, n);
+  sh.setConditionalFormatRules([SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied("=ISEVEN(ROW())").setBackground(ZEBRA).setRanges([rng]).build()]);
+  rng.setBorder(null, null, true, null, false, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
   sh.setFrozenRows(1);
-  for (var i = 1; i <= RUN_LOG_HEADERS.length; i++) sh.setColumnWidth(i, i === 2 ? 170 : 120);
+  trimCols_(sh, n);
 }
 
 // --- Clear Leads (explicit confirmation required) --------------------------
@@ -414,56 +694,120 @@ function aboutAidgentOs() {
 }
 
 // --- shared helpers --------------------------------------------------------
-function banner_(sh, title, subtitle, n) {
-  sh.getRange(1, 1, 1, n).merge().setValue(title).setBackground(NAVY).setFontColor(WHITE)
-    .setFontFamily(FONT).setFontSize(14).setFontWeight("bold").setVerticalAlignment("middle");
-  sh.setRowHeight(1, 40);
-  sh.getRange(2, 1, 1, n).merge().setValue(subtitle).setBackground(SOFT).setFontColor(INK)
-    .setFontFamily(FONT).setFontSize(10).setFontStyle("italic");
-  sh.setRowHeight(2, 24);
+
+/** Rows 1-2 of every tab: title bar, subtitle strip, and a breathing row 3. */
+function banner_(sh, W, title, subtitle, size) {
+  sh.getRange(1, 1, 1, W).breakApart().merge().setValue(title)
+    .setBackground(INK).setFontColor(WHITE).setFontFamily(DISP).setFontSize(size)
+    .setFontWeight("bold").setVerticalAlignment("middle");
+  sh.setRowHeight(1, 48);
+  sh.getRange(2, 1, 1, W).breakApart().merge().setValue(subtitle)
+    .setBackground(DEEP).setFontColor(SUBTLE).setFontFamily(FACE)
+    .setFontSize(size >= 30 ? 12 : 10).setFontStyle(size >= 30 ? "italic" : "normal")
+    .setVerticalAlignment("middle");
+  sh.setRowHeight(2, 40);
+  sh.setRowHeight(3, 20);
 }
-function bigBanner_(sh, W, title, subtitle) {
-  sh.getRange(1, 1, 1, W).merge().setValue(title).setBackground(NAVY).setFontColor(WHITE)
-    .setFontFamily(FONT).setFontSize(20).setFontWeight("bold").setHorizontalAlignment("center").setVerticalAlignment("middle");
-  sh.setRowHeight(1, 50);
-  sh.getRange(2, 1, 1, W).merge().setValue(subtitle).setBackground(SOFT).setFontColor(INK)
-    .setFontFamily(FONT).setFontSize(11).setFontStyle("italic").setHorizontalAlignment("center");
-  sh.setRowHeight(2, 26);
+
+/** A blue full-width bar that opens a section. */
+function sectionBar_(sh, row, startCol, count, label) {
+  sh.getRange(row, startCol, 1, count).breakApart().merge().setValue(label)
+    .setBackground(BLUE).setFontColor(WHITE).setFontFamily(DISP).setFontSize(13)
+    .setFontWeight("bold").setVerticalAlignment("middle");
+  sh.setRowHeight(row, 33);
 }
-function section_(sh, row, W, label) {
-  sh.getRange(row, 1, 1, W).merge().setValue(label.toUpperCase()).setFontColor(NAVY).setFontWeight("bold")
-    .setFontFamily(FONT).setFontSize(11).setVerticalAlignment("middle")
-    .setBorder(false, false, true, false, false, false, CYAN, SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-  sh.setRowHeight(row, 26);
-}
-function metric_(sh, row, label, formula) {
-  sh.getRange(row, 2).setValue(label).setFontColor(INK).setFontFamily(FONT).setFontSize(11).setVerticalAlignment("middle");
-  sh.getRange(row, 3).setFormula(formula).setFontColor(NAVY).setFontWeight("bold").setFontFamily(FONT).setFontSize(16)
-    .setHorizontalAlignment("center").setBackground(SOFT)
-    .setBorder(true, true, true, true, false, false, SOFTBORDER, SpreadsheetApp.BorderStyle.SOLID);
-  sh.setRowHeight(row, 28);
-}
-function bullet_(sh, row, W, text) {
-  sh.getRange(row, 2).setValue("•").setFontColor(CYAN).setFontWeight("bold").setFontFamily(FONT).setHorizontalAlignment("center");
-  sh.getRange(row, 3, 1, W - 2).merge().setValue(text).setFontColor(INK).setFontFamily(FONT).setFontSize(10).setWrap(true).setVerticalAlignment("middle");
-  sh.setRowHeight(row, 30);
-}
-function writeLabeled_(sh, rows, W) {
+
+/**
+ * Build a label / value / note tab, keeping whatever the person already typed.
+ *
+ * The old version bailed out early when the tab existed, so a sheet built by an
+ * earlier release kept that release's layout for ever and never picked up new
+ * rows or a new look. Instead: remember the current values by their label,
+ * rebuild the tab from scratch, then put the remembered values back. A label
+ * that no longer exists is dropped; a label that is new starts on its hint.
+ */
+function labeledTab_(ss, name, title, subtitle, rows, widths) {
+  var sh = ss.getSheetByName(name);
+  var saved = sh ? readLabeledValues_(sh) : {};
+  if (!sh) sh = ss.insertSheet(name);
+  resetSheet_(sh);
+  var W = widths.length;
+  if (sh.getMaxColumns() < W) sh.insertColumnsAfter(sh.getMaxColumns(), W - sh.getMaxColumns());
+  for (var i = 0; i < W; i++) sh.setColumnWidth(i + 1, widths[i]);
+  banner_(sh, W, title, subtitle, 22);
+
   var r = 4;
   rows.forEach(function (row) {
-    var label = row[1], value = row[2], mark = row[3];
-    if (label && !value && (mark === "" || mark === undefined) && label === label.toUpperCase()) {
-      section_(sh, r, W, label);
-    } else if (label) {
-      sh.getRange(r, 2).setValue(label).setFontColor(NAVY).setFontWeight("bold").setFontFamily(FONT).setFontSize(10).setVerticalAlignment("middle");
-      var vcell = sh.getRange(r, 3, 1, W - 2).merge().setValue(value).setFontFamily(FONT).setFontSize(10).setWrap(true).setVerticalAlignment("middle")
-        .setBorder(true, true, true, true, false, false, SOFTBORDER, SpreadsheetApp.BorderStyle.SOLID);
-      if (mark === "yellow") vcell.setBackground(YELLOW).setFontColor(INK);
-      else vcell.setFontColor(GRAY);
+    var kind = row[0], label = row[1], value = row[2], note = row[3];
+    if (kind === "sec") {
+      sectionBar_(sh, r, 2, W - 1, label);
+    } else if (kind === "gap") {
+      sh.setRowHeight(r, 18);
+    } else if (kind === "note") {
+      sh.getRange(r, 2, 2, W - 1).merge().setValue(label)
+        .setBackground(PALE).setFontColor(DEEP).setFontFamily(FACE).setFontSize(10)
+        .setFontWeight("bold").setWrap(true).setVerticalAlignment("middle");
+      sh.setRowHeight(r, 26); sh.setRowHeight(r + 1, 26);
+      r++; // this block is two rows tall
+    } else {
+      var kept = Object.prototype.hasOwnProperty.call(saved, label) ? saved[label] : value;
+      sh.getRange(r, 2).setValue(label)
+        .setBackground(GRAYBG).setFontColor(BODY).setFontFamily(FACE).setFontSize(10)
+        .setFontWeight("bold").setWrap(true).setVerticalAlignment("middle");
+      var cell = sh.getRange(r, 3).setValue(kept)
+        .setFontFamily(FACE).setFontSize(10).setWrap(true).setVerticalAlignment("middle");
+      if (kind === "input") {
+        // Untouched inputs still show their hint, so grey it; anything the
+        // person actually typed gets normal ink.
+        cell.setBackground(YEL).setFontColor(kept === value ? MUTED : BODY);
+      } else {
+        cell.setBackground(WHITE).setFontColor(MUTED);
+      }
+      sh.getRange(r, 4, 1, W - 3).setValue(note)
+        .setBackground(WHITE).setFontColor(MUTED).setFontFamily(FACE).setFontSize(9)
+        .setFontStyle("italic").setWrap(true).setVerticalAlignment("middle");
+      sh.setRowHeight(r, 42);
     }
-    sh.setRowHeight(r, 28); r++;
+    r++;
   });
+  sh.getRange(4, 2, r - 4, W - 1)
+    .setBorder(null, null, null, null, false, true, LINE, SpreadsheetApp.BorderStyle.SOLID);
+  sh.setFrozenRows(2);
+  trimCols_(sh, W);
+  trimRows_(sh, r + 2);
 }
+
+/** Snapshot a labeled tab as { label: value } so a rebuild can restore it. */
+function readLabeledValues_(sh) {
+  var out = {};
+  var last = sh.getLastRow();
+  if (last < 4 || sh.getMaxColumns() < 3) return out;
+  var vals = sh.getRange(4, 2, last - 3, 2).getValues();
+  for (var i = 0; i < vals.length; i++) {
+    var k = String(vals[i][0]).trim();
+    var v = vals[i][1];
+    if (k && v !== "" && v !== null) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * Wipe a static tab back to blank before rebuilding it.
+ *
+ * clear() drops values and formats but leaves MERGES behind, and a merge that
+ * survives into a layout whose blocks moved makes the next merge() throw
+ * "you can't merge across an existing merge" — which, thanks to safeStep_,
+ * shows up as one tab silently missing rather than an obvious failure. So
+ * break every merge on the sheet first.
+ */
+function resetSheet_(sh) {
+  sh.getRange(1, 1, sh.getMaxRows(), sh.getMaxColumns()).breakApart();
+  sh.clear();
+  sh.clearNotes();
+  sh.clearConditionalFormatRules();
+  sh.setHiddenGridlines(true);
+}
+
 function setListValidation_(range, values) {
   range.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(values, true).setAllowInvalid(true).build());
 }
@@ -472,6 +816,7 @@ function cf_(text, bg, fg, range) {
 }
 function colOf_(name) { for (var i = 0; i < LEADS_COLS.length; i++) if (LEADS_COLS[i][0] === name) return i + 1; return 1; }
 function trimCols_(sh, W) { if (sh.getMaxColumns() > W) sh.deleteColumns(W + 1, sh.getMaxColumns() - W); }
+function trimRows_(sh, R) { if (sh.getMaxRows() > R) sh.deleteRows(R + 1, sh.getMaxRows() - R); }
 function orderTabs_(ss, order) {
   order.forEach(function (name, idx) {
     var sh = ss.getSheetByName(name);
