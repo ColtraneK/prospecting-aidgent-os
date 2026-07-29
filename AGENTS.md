@@ -149,7 +149,19 @@ things, asked once, because they change what a run does:
   ever works that list. Default is no (net-new only). If yes, connections are
   searched first and land in the sheet labelled "Connection" so warm rows are
   obvious at a glance.
-- *Which Google Sheet should this fill in?* Their existing one. Get the URL.
+- *Which Google Sheet should this fill in?* Ask for the URL of a sheet they own,
+  and put the copy link in that same message rather than waiting to find out
+  they do not have one. Most people running this for the first time do not:
+
+  ```
+  https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy
+  ```
+
+  Clicking **Make a copy** puts one in their own Drive, owned by them, with
+  every tab already built and nothing in it. They then paste back the URL of
+  *their copy*, not the template. A bare "which sheet should I use?" is a dead
+  end for somebody who has never seen this before, and it is the single most
+  common place a first setup stalls.
 
 Then, and only then, write it:
 
