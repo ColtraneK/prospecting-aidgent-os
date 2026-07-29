@@ -99,6 +99,16 @@ test("the sheet copy link is identical everywhere it appears", () => {
   }
 });
 
+test("every CLI path that needs a sheet offers the copy link", () => {
+  // "Bind your existing sheet" is a dead end for someone who has never had one,
+  // and that is most people on their first run. Putting the offer in the code
+  // means it cannot be lost when an agent paraphrases the docs.
+  const cli = read("src/cli.mjs");
+  const uses = [...cli.matchAll(/sheetSetupHelp\(\)/g)].length;
+  assert.ok(uses >= 6, `cli.mjs offers the copy link on only ${uses} of its no-sheet paths`);
+  assert.match(read("src/persona.mjs"), /SHEET_TEMPLATE_COPY_URL/);
+});
+
 test("the template is never used as a stand-in for someone's own bound sheet", () => {
   // The template is a thing you COPY. The moment a fixture binds to it
   // directly, the tests stop distinguishing "the sheet you own" from "the

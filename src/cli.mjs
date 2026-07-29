@@ -22,7 +22,7 @@ import { parseFlags, resolveConfig, loadDotEnv, REPO_ROOT } from "./config.mjs";
 import {
   getPersona, validatePersona, listPersonaSlugs, personaSheetId,
   personaTemplate, PRIVATE_PERSONA_DIR, resolvePersonaPath, loadPersonaFile,
-  extractSheetId, isPlaceholderSheetId, isSharedTemplateId,
+  extractSheetId, isPlaceholderSheetId, isSharedTemplateId, sheetSetupHelp,
 } from "./persona.mjs";
 import { runPipeline } from "./pipeline.mjs";
 import { toCsv } from "./csv.mjs";
@@ -127,7 +127,7 @@ async function cmdBindSheet(flags) {
   const slug = resolvePersonaSlug(flags);
   if (!slug) fail("Usage: npm run bind-sheet -- --persona <slug> --sheet <id-or-url>");
   const arg = flags.sheet || flags.url;
-  if (!arg || arg === true) fail("Provide --sheet <google-sheet-id-or-url> (your EXISTING sheet).");
+  if (!arg || arg === true) fail("Provide --sheet <google-sheet-id-or-url> (your EXISTING sheet)." + sheetSetupHelp());
   const p = resolvePersonaPath(slug);
   if (!p) fail(`persona not found: ${slug}. Create it first with create-persona.`);
   if (!p.includes(path.join("private", "personas"))) {
@@ -146,6 +146,7 @@ async function cmdBindSheet(flags) {
       "",
       "Open the template link, click File > Make a copy, then copy the URL of the NEW",
       "sheet from your browser's address bar and bind that one instead.",
+      sheetSetupHelp(),
     ].join("\n"));
   }
   persona.sheet_id = id;
@@ -162,10 +163,10 @@ async function cmdCheckSheet(flags) {
   const persona = slug ? (await getPersona(slug)).persona : null;
   const sheetId = config.sheetId || (persona && personaSheetId(persona)) || "";
   if (isPlaceholderSheetId(sheetId)) {
-    fail("No real sheet bound. Run bind-sheet or set GOOGLE_SHEET_ID to your existing sheet. This tool never creates a new one.");
+    fail("No real sheet bound. Run bind-sheet or set GOOGLE_SHEET_ID to your existing sheet." + sheetSetupHelp());
   }
   if (isSharedTemplateId(sheetId)) {
-    fail("The bound sheet is the shared TEMPLATE, which you can only view. Make a copy of it and bind the copy: npm run bind-sheet -- --persona <slug> --sheet <url-of-your-copy>");
+    fail("The bound sheet is the shared TEMPLATE, which you can only view. Bind your own copy instead." + sheetSetupHelp());
   }
   const { getSheets } = await import("./sheet.mjs");
   const sheets = await getSheets(config.credentialsPath);
@@ -200,7 +201,8 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
       "No real Google Sheet is bound, so nothing would be maintained.\n" +
       "This tool NEVER creates a new spreadsheet. Bind your existing sheet:\n" +
       `  npm run bind-sheet -- --persona ${slug} --sheet <your-sheet-id-or-url>\n` +
-      "or set GOOGLE_SHEET_ID / persona.sheet_id, then: npm run check-sheet -- --persona " + slug
+      "or set GOOGLE_SHEET_ID / persona.sheet_id, then: npm run check-sheet -- --persona " + slug +
+      sheetSetupHelp()
     );
   }
 
@@ -298,7 +300,8 @@ async function cmdFollowUp(flags) {
     if (isPlaceholderSheetId(sheetId)) {
       fail(
         "No real Google Sheet is bound, so there is nothing to follow up on.\n" +
-        `  npm run bind-sheet -- --persona ${slug || "<slug>"} --sheet <your-sheet-id-or-url>`,
+        `  npm run bind-sheet -- --persona ${slug || "<slug>"} --sheet <your-sheet-id-or-url>` +
+        sheetSetupHelp(),
       );
     }
     const { getSheets, readLeads } = await import("./sheet.mjs");

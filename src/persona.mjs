@@ -94,6 +94,30 @@ export function isPlaceholderSheetId(id) {
 // re-exports it and builds the /copy URL from it.
 export const SHEET_TEMPLATE_ID = "1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g";
 
+export const SHEET_TEMPLATE_COPY_URL =
+  `https://docs.google.com/spreadsheets/d/${SHEET_TEMPLATE_ID}/copy`;
+
+/**
+ * What to say whenever the system needs a sheet and has not been given one.
+ *
+ * "Bind your existing sheet" is a dead end for someone who has never had one,
+ * and that is most people on their first run. Every path that discovers a
+ * missing sheet prints this, so the offer does not depend on an agent
+ * remembering to make it.
+ */
+export function sheetSetupHelp() {
+  return [
+    "",
+    "This tool never creates a spreadsheet. It only writes to one you own.",
+    "If you do not have one yet, open this and click \"Make a copy\":",
+    "",
+    "  " + SHEET_TEMPLATE_COPY_URL,
+    "",
+    "That drops a ready-made, empty copy into your own Drive, owned by you, with",
+    "every tab already built. Then bind the URL of YOUR COPY, not the template.",
+  ].join("\n");
+}
+
 /**
  * True when someone bound the shared template instead of their own copy.
  *

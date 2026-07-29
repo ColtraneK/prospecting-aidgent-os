@@ -149,19 +149,30 @@ things, asked once, because they change what a run does:
   ever works that list. Default is no (net-new only). If yes, connections are
   searched first and land in the sheet labelled "Connection" so warm rows are
   obvious at a glance.
-- *Which Google Sheet should this fill in?* Ask for the URL of a sheet they own,
-  and put the copy link in that same message rather than waiting to find out
-  they do not have one. Most people running this for the first time do not:
+- *Which Google Sheet should this fill in?* They need one they own. Most people
+  running this for the first time do not have one, so offer the copy link in the
+  same breath rather than waiting to be told.
 
-  ```
-  https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy
-  ```
+Ask both at once, and send it close to verbatim. A paraphrase is where the copy
+link goes missing:
 
-  Clicking **Make a copy** puts one in their own Drive, owned by them, with
-  every tab already built and nothing in it. They then paste back the URL of
-  *their copy*, not the template. A bare "which sheet should I use?" is a dead
-  end for somebody who has never seen this before, and it is the single most
-  common place a first setup stalls.
+```
+Two last things before I write this up.
+
+1. Should runs also look through people you are already connected to?
+   Default is no, net-new only. Some of your best-fit prospects are already
+   in your network, warm, and nobody ever works that list. If you say yes,
+   those get searched first and land in the sheet labelled "Connection" so
+   they are obvious at a glance.
+
+2. Which Google Sheet should this fill in? Paste the URL of one you own.
+   If you do not have one yet, open this and click "Make a copy":
+
+   https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy
+
+   That puts an empty copy in your own Drive with every tab already built.
+   Send me the URL of your copy, not the template.
+```
 
 Then, and only then, write it:
 

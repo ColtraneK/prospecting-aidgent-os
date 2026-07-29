@@ -16,7 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { REPO_ROOT, loadDotEnv } from "./config.mjs";
-import { listPersonaSlugs, resolvePersonaPath, loadPersonaFile, validatePersona, personaSheetId, isPlaceholderSheetId, SHEET_TEMPLATE_ID } from "./persona.mjs";
+import { listPersonaSlugs, resolvePersonaPath, loadPersonaFile, validatePersona, personaSheetId, isPlaceholderSheetId, SHEET_TEMPLATE_ID, SHEET_TEMPLATE_COPY_URL } from "./persona.mjs";
 
 const SELECTED_FILE = path.join(REPO_ROOT, "private", "selected-persona.txt");
 
@@ -27,9 +27,7 @@ const NO = "[ ]";
 // sheet in the person's OWN Drive, owned by them — this tool still never
 // creates a Sheet through the API, and never touches a sheet it was not given.
 // The id itself lives in persona.mjs so bind-sheet can refuse it cheaply.
-export { SHEET_TEMPLATE_ID };
-export const SHEET_TEMPLATE_COPY_URL =
-  `https://docs.google.com/spreadsheets/d/${SHEET_TEMPLATE_ID}/copy`;
+export { SHEET_TEMPLATE_ID, SHEET_TEMPLATE_COPY_URL };
 
 // Step 6 is where every first-time setup stalls, and the person driving it is
 // usually not a developer. An agent reading this output has to be able to
