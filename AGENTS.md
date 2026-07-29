@@ -56,10 +56,16 @@ plausible-looking prospect list, stop — that is fabrication, and it is the exa
 failure this repo exists to prevent.
 
 **You must not substitute your own tools for this repo.** You may have web
-search, a browser tool, file connectors, Drive access. Do not use any of them to
-gather prospects. The sourcing path is `npm run source` and nothing else. Your
-own search results are not reproducible, not paced, not rate-limited, not
-logged, and not subject to the read-only guarantees the person was promised.
+search, a browser tool, file connectors, Drive access. There is exactly one
+thing you may use your own browser for, and section 5b describes it: reading a
+LinkedIn results page and reporting the profile URLs that were on it, so the
+repo can go and open them. That is the whole carve-out.
+
+**You must not decide who qualifies.** Not from that reading, not from anything
+else. You may not score anyone, judge fit, write a "why them", or put a row in
+the sheet from your own eyes. Those come from the repo's code, from pages the
+repo opened itself. Your judgement is not reproducible, not paced, not logged,
+and not checkable by the person paying for it.
 
 **You must not create a Google Sheet.** Not through the API, not through a
 connector, not with sheets.new. The person owns the sheet; the system binds to
@@ -283,6 +289,64 @@ anything up.
 
 ---
 
+## 5b. When the search page will not parse — read it yourself
+
+If a run comes back with `parse_failed` (see section 7), LinkedIn has changed
+its search markup and the repo's parser cannot see the results. You can see
+them. This is the one place your own browser belongs in the loop.
+
+**The split is absolute: you read, the code decides.** You are reporting what
+was on a page. You are not choosing who is a good lead, and you are not writing
+anything into the sheet.
+
+1. Open the LinkedIn people-search in your own browser tab. The person is
+   already signed in there — do not sign in for them, and if the tab is signed
+   out, stop and have them run `npm run setup-login`.
+2. Read the result cards. For each person, take **only** what is visibly on the
+   page: their name, the URL their name links to, and their headline if one is
+   shown.
+3. Write them to a file, `observed.json` in the repo root:
+
+```json
+[
+  { "name": "Ada Lovelace",
+    "url": "https://www.linkedin.com/in/ada-lovelace-7b21/",
+    "title": "Head of Operations at Analytical Engines",
+    "location": "London, United Kingdom" }
+]
+```
+
+4. Hand it to the repo:
+
+```bash
+npm run pilot  -- --persona their-slug --observed observed.json
+npm run source -- --persona their-slug --observed observed.json --target 25 --update-sheet
+```
+
+The worker then opens **every one of those profile URLs itself**, with the
+person's signed-in Chrome profile, captures the headline and recent activity
+first-hand, scores against the persona, and writes the sheet. Your file decides
+who gets *looked at*. It does not decide who gets *written down*.
+
+Rules that are not negotiable here:
+
+- **Never write a URL you did not see on the page.** A row without a real
+  `linkedin.com/in/` URL is rejected, and it should be — an unverifiable row is
+  indistinguishable from an invented one.
+- **Leave a field blank rather than fill it in.** No headline shown means no
+  `title`. Do not infer a company from a name, or a location from a surname.
+- **Do not filter.** Report everyone the search returned, including people you
+  think are a bad fit. Filtering is the scorer's job and it is deterministic.
+  If you drop the people you dislike, the fit scores in the sheet become a
+  record of your taste rather than of the persona.
+- **Do not paginate forever.** One or two pages is plenty; the target caps the
+  run anyway.
+
+Every rejected row is printed with its reason. If you see rejections, fix the
+file — do not work around them.
+
+---
+
 ## 6. The sheet contract — who owns which columns
 
 The Leads tab runs A through Y. Three bands, and the boundaries matter.
@@ -351,8 +415,9 @@ in the Run Log's Blocker column, and you must repeat it to the person:
 - **`parse_failed`** — the page was full of profile links and the collector read
   none of them. LinkedIn changed its markup. A screenshot and the page HTML are
   saved in `run-artifacts/`. **Do not hand-edit selectors on the person's
-  machine mid-call.** Say plainly that the tool needs a fix, and that their
-  sheet and settings are untouched.
+  machine mid-call.** Read the results page yourself instead — section 5b —
+  and hand the profile URLs back to the repo with `--observed`. Their sheet and
+  settings are untouched either way.
 - **`page_not_rendered`** / **`no_results_visible`** — the page loaded but was
   not the search page. Usually a signed-out or half-loaded profile. Have them
   run `npm run setup-login`, confirm the feed loads, then re-run.

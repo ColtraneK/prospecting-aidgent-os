@@ -214,6 +214,27 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
     existingSheet = fx.existingSheet || { headers: LEADS_HEADERS, rows: [] };
     inspected = candidates.length;
     console.log(`[fixture] ${flags.fixture}: ${candidates.length} candidates, ${existingSheet.rows.length} existing rows`);
+  } else if (flags.observed) {
+    // AGENT-READ path. The agent read the search page in its own browser and
+    // wrote the rows to a file; we verify every URL by opening it ourselves.
+    const { parseObserved, describeObserved } = await import("./observed.mjs");
+    const parsed = parseObserved(JSON.parse(fs.readFileSync(flags.observed, "utf8")));
+    console.log(describeObserved(parsed));
+    if (!parsed.rows.length) {
+      fail("No usable rows in " + flags.observed + ". Every row needs a real linkedin.com/in/ URL that you actually saw on the page.");
+    }
+    const { runAgentRead } = await import("./worker.mjs");
+    const res = await runAgentRead({ observed: parsed.rows, config });
+    candidates = res.candidates;
+    blocker = res.blocker;
+    inspected = res.inspected;
+    if (res.unreachable?.length) {
+      console.error(`${res.unreachable.length} profile(s) could not be opened and were dropped rather than guessed at.`);
+    }
+    const { getSheets, readLeads } = await import("./sheet.mjs");
+    if (!sheetId) fail("No Google Sheet id (persona.sheet_id/url or GOOGLE_SHEET_ID).");
+    const sheets = await getSheets(config.credentialsPath);
+    existingSheet = await readLeads(sheets, sheetId);
   } else {
     // LIVE path (local-linkedin) — never runs during automated tests.
     const { runResearch } = await import("./worker.mjs");
@@ -221,6 +242,14 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
     candidates = res.candidates;
     blocker = res.blocker;
     inspected = res.inspected;
+    // When nothing was found, say what each search page actually looked like.
+    if (!candidates.length && Array.isArray(res.sourceReports) && res.sourceReports.length) {
+      console.error("\nWhat each search page looked like:");
+      for (const r of res.sourceReports.slice(0, 8)) {
+        console.error(`  ${r.kind}${r.profileLinks ? ` (${r.profileLinks} profile links)` : ""} — ${r.url}`);
+      }
+      console.error("");
+    }
     const { getSheets, readLeads } = await import("./sheet.mjs");
     if (!sheetId) fail("No Google Sheet id (persona.sheet_id/url or GOOGLE_SHEET_ID).");
     const sheets = await getSheets(config.credentialsPath);

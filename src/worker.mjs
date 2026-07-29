@@ -160,6 +160,68 @@ export async function runResearch({ persona, config }) {
   return { candidates, blocker, inspected: pacer.inspected, sourceReports };
 }
 
+/**
+ * AGENT-READ run. The agent opened LinkedIn in its own browser tab, read the
+ * search results, and handed back rows. We do not trust those rows — we trust
+ * that the profile URLs were on a page — so this opens each one with the
+ * signed-in profile and captures the evidence itself, exactly as a search-driven
+ * run would. Scoring still happens in the pipeline, on facts this code observed.
+ *
+ * This exists because LinkedIn's search markup changes and a hardcoded parser
+ * goes to zero when it does. Reading the page is the part an agent is good at.
+ * Deciding who qualifies is the part it must never do.
+ */
+export async function runAgentRead({ observed, config }) {
+  const pacer = createPacer({
+    minDelayMs: config.minDelayMs,
+    maxDelayMs: config.maxDelayMs,
+    dailyCap: config.dailyCap,
+  });
+  const context = await launch({
+    profilePath: config.chromeProfile,
+    channel: config.chromeChannel,
+    headless: config.headless,
+  });
+  const page = context.pages()[0] || (await context.newPage());
+  const candidates = [];
+  const unreachable = [];
+  let blocker = null;
+
+  try {
+    for (const row of observed) {
+      if (candidates.length >= config.target || pacer.capReached) break;
+      if (!pacer.tick()) break; // daily cap
+      try {
+        const profile = await inspectProfile(page, row.url, pacer);
+        candidates.push({ ...row, ...profile, url: row.url });
+      } catch (err) {
+        if (err instanceof BlockerError) throw err;
+        // One dead profile is not a dead run: record it and keep going.
+        unreachable.push({ url: row.url, reason: err.message });
+      }
+    }
+  } catch (err) {
+    blocker = err instanceof BlockerError
+      ? { kind: err.kind, reason: err.message }
+      : { kind: "error", reason: err.message };
+  } finally {
+    await context.close().catch(() => {});
+  }
+
+  if (!candidates.length && !blocker) {
+    blocker = {
+      kind: "no_candidates",
+      reason:
+        `the agent supplied ${observed.length} row(s) and none of them opened. ` +
+        (unreachable.length
+          ? `First failure: ${unreachable[0].reason}`
+          : "Nothing was attempted — check the target and the daily cap."),
+    };
+  }
+
+  return { candidates, blocker, inspected: pacer.inspected, unreachable };
+}
+
 function summarize(reports) {
   const counts = {};
   for (const r of reports) counts[r.kind] = (counts[r.kind] || 0) + 1;
