@@ -223,7 +223,7 @@ export async function runResearch({ persona, config }) {
         seen.add(canon);
         if (!pacer.tick()) break; // daily cap
         const profile = await inspectProfile(page, canon, pacer);
-        candidates.push({ ...r, ...profile, url: canon, fromConnection: source.kind === "connections" });
+        candidates.push({ ...mergeProfile(r, profile), url: canon, fromConnection: source.kind === "connections" });
         fromThisSource++;
       }
     }
@@ -289,7 +289,7 @@ export async function runAgentRead({ observed, config }) {
       if (!pacer.tick()) break; // daily cap
       try {
         const profile = await inspectProfile(page, row.url, pacer);
-        candidates.push({ ...row, ...profile, url: row.url });
+        candidates.push({ ...mergeProfile(row, profile), url: row.url });
       } catch (err) {
         if (err instanceof BlockerError) throw err;
         // One dead profile is not a dead run: record it and keep going.
@@ -316,6 +316,24 @@ export async function runAgentRead({ observed, config }) {
   }
 
   return { candidates, blocker, inspected: pacer.inspected, unreachable };
+}
+
+/**
+ * Fold first-hand profile observations into a search/observed row WITHOUT
+ * letting an empty field erase a captured one. The old spread ({...row,
+ * ...profile}) quietly wiped the search card's location with the profile
+ * page's "" whenever the profile parse missed — which zeroed everyone's
+ * geography points. A blank never overwrites a fact.
+ */
+function mergeProfile(base, profile) {
+  const merged = { ...base };
+  for (const [k, v] of Object.entries(profile || {})) {
+    if (v !== "" && v !== null && v !== undefined) merged[k] = v;
+  }
+  // A search card sometimes carries no title line; the profile headline is the
+  // same fact observed first-hand, so it may stand in. Never the reverse.
+  if (!merged.title && merged.headline) merged.title = merged.headline;
+  return merged;
 }
 
 function summarize(reports) {
@@ -494,16 +512,22 @@ export function extractActivityFromDom() {
     for (const a of root.querySelectorAll("a[href*='/feed/update/'], a[href*='/posts/'], a[href*='/pulse/']")) {
       const href = a.href || "";
       if (!href || seen.has(href)) continue;
-      // Walk up to the card: the nearest ancestor that reads like a whole
-      // update (enough text) without swallowing the entire feed.
+      // Walk up to the card: the LARGEST ancestor that still contains only this
+      // one update. The moment a parent holds a second update's permalink, we
+      // have left the card and entered the feed — that boundary is structural
+      // and survives any redesign, unlike text-length guesses (which stopped
+      // short of the timestamp on the live page and cost every candidate
+      // their recency points).
       let card = a;
       while (card.parentElement && card.parentElement !== root) {
         const next = card.parentElement;
-        const len = (next.innerText || "").length;
-        if (len > 2500 && (card.innerText || "").length > 120) break; // next level is the whole list
+        const links = new Set(
+          [...next.querySelectorAll("a[href*='/feed/update/'], a[href*='/posts/'], a[href*='/pulse/']")]
+            .map((x) => (x.href || "").split("?")[0]),
+        );
+        if (links.size > 1) break; // next level holds a second update
         card = next;
         if (card.tagName === "LI" || card.tagName === "ARTICLE") break;
-        if (len > 140 && /\n/.test(next.innerText || "")) break;
       }
       const cardText = (card.innerText || "").trim();
       if (!cardText) continue;
@@ -515,7 +539,11 @@ export function extractActivityFromDom() {
         /^\d[\d,.]*\s*(likes?|comments?|reposts?|reactions?|impressions?)?$/i.test(s) ||
         /followers?$|connections?$/i.test(s) ||
         /^(\d+(st|nd|rd|th))\b/.test(s) ||
-        /^\d+\s*(m|h|d|w|mo|yr?)\b/i.test(s) && s.length < 12;
+        (/^\d+\s*(m|h|d|w|mo|yr?)\b/i.test(s) && s.length < 12) ||
+        // The actor header renders as ONE glued innerText line — name, badge,
+        // headline, timestamp, audience — so any of its unmistakable fragments
+        // disqualifies the whole line from being the post body.
+        /visible to anyone|•\s*(1st|2nd|3rd)\b|\b\d+\s*(minutes?|hours?|days?|weeks?|months?|years?)\s+ago\b/i.test(s);
       const summary = lines
         .filter((s) => !isChrome(s))
         .sort((x, y) => y.length - x.length)[0] || "";
@@ -547,29 +575,42 @@ async function inspectProfile(page, profileUrl, pacer) {
 
   const info = await page.evaluate(() => {
     const text = (sel) => document.querySelector(sel)?.textContent?.trim() || "";
-    // Known class names first, then structure: on every profile layout the
-    // headline is the first substantial text line after the <h1> name in <main>.
+    // Known class names first, then structure. The structural anchor is the
+    // top card's "Contact info" link — a profile cannot stop offering it, and
+    // the lines directly above it are exactly headline (long), company
+    // (short, optional) and location (has a comma), in that order, after
+    // pronouns and degree badges are dropped. This survives profile videos,
+    // which flood the top of <main> with media-player chrome.
     let headline = text("div.text-body-medium.break-words") || text(".pv-text-details__left-panel .text-body-medium");
     let location = text("span.text-body-small.inline.t-black--light.break-words");
-    if (!headline) {
-      const h1 = document.querySelector("main h1");
-      const block = h1 ? (h1.closest("section") || h1.parentElement?.parentElement || h1.parentElement) : null;
-      if (h1 && block) {
-        const name = (h1.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
-        const lines = (block.innerText || "").split("\n").map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean);
-        const rest = lines.filter((s) =>
-          s.toLowerCase() !== name &&
-          !/^(\d+(st|nd|rd|th))\b/.test(s) &&
-          !/^(contact info|connect|message|follow|more|pending|·|•)/i.test(s) &&
-          !/\b(followers|connections|mutual)\b/i.test(s));
-        headline = rest[0] || "";
-        if (!location) location = rest.find((s) => /,/.test(s) && s !== headline) || "";
+    let company = "";
+    if (!headline || !location) {
+      const main = document.querySelector("main") || document.body;
+      const lines = (main.innerText || "").split("\n").map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean);
+      const ci = lines.findIndex((s) => /^contact info$/i.test(s));
+      if (ci > 0) {
+        const win = lines.slice(Math.max(0, ci - 6), ci).filter((s) =>
+          !/^[·•]/.test(s) &&
+          !/^(she\/her|he\/him|they\/them)$/i.test(s) &&
+          !/^\d+(st|nd|rd|th)\b/.test(s) &&
+          !/^(visit website|message|connect|follow|more|pending)$/i.test(s) &&
+          !/\b(followers|connections|mutual)\b/i.test(s) &&
+          s.length > 1);
+        if (win.length) {
+          if (!location) location = win[win.length - 1] || "";
+          const above = win.slice(0, -1);
+          if (!headline && above.length) {
+            headline = above.reduce((a, b) => (b.length > a.length ? b : a), "");
+            company = above.find((s) => s !== headline) || "";
+          }
+        }
       }
     }
-    return { headline, location };
+    return { headline, location, company };
   }).catch(() => ({}));
   out.headline = info.headline || "";
   out.location = info.location || out.location;
+  out.company = info.company || out.company;
 
   // Recent activity (posts + comments). Read-only; capture date/type/summary/url.
   const activityUrl = profileUrl.replace(/\/$/, "") + "/recent-activity/all/";
