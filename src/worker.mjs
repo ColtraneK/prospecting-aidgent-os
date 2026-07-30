@@ -106,6 +106,35 @@ export async function checkLogin({ config }) {
   }
 }
 
+/**
+ * Diagnostic: open ONE LinkedIn URL with the signed-in session, read-only, and
+ * save its rendered HTML + a screenshot to run-artifacts. This exists so that
+ * when extraction misses something on the live DOM, a copy of that DOM can be
+ * captured once and turned into a fixture — instead of anyone hand-editing
+ * selectors against a page only they can see.
+ */
+export async function savePageCopy({ config, url, label = "page" }) {
+  const context = await launch({
+    profilePath: config.chromeProfile,
+    liAt: config.liAt,
+    channel: config.chromeChannel,
+    headless: true,
+  });
+  try {
+    const page = context.pages()[0] || (await context.newPage());
+    const resp = await page.goto(url, { waitUntil: "domcontentloaded" }).catch(() => null);
+    await page.waitForTimeout(4000); // let lazy content render
+    await guard(page, resp ? resp.status() : 0);
+    const shot = await saveSnapshot(page, config.outDir, `copy-${label}`);
+    return { ok: true, snapshot: shot };
+  } catch (err) {
+    if (err instanceof BlockerError) return { ok: false, kind: err.kind, reason: err.message };
+    return { ok: false, kind: "error", reason: err.message };
+  } finally {
+    await context.close().catch(() => {});
+  }
+}
+
 /** Read the current page state and throw BlockerError if we must stop. */
 async function guard(page, status = 0) {
   const [url, title, bodyTextSample] = await Promise.all([
@@ -352,6 +381,7 @@ export function extractPeopleFromDom() {
           if (/^\d+(st|nd|rd|th)\b/.test(s)) return false;
           if (/^(view|message|connect|follow|see more|status is)\b/i.test(s)) return false;
           if (/^[•·|]/.test(s)) return false;
+          if (/mutual connection/i.test(s)) return false; // social proof, not a title
           return true;
         });
 
@@ -493,10 +523,10 @@ export function extractActivityFromDom() {
       const timeEl = card.querySelector("time");
       let dateText = timeEl?.getAttribute("datetime") || timeEl?.textContent?.trim() || "";
       if (!dateText) {
-        for (const s of lines.slice(0, 6)) {
-          const m = s.match(/\b(\d+\s*(?:m|h|d|w|mo|yr?)o?)\b\s*(?:•|·|ago|$)/i);
-          if (m) { dateText = m[1]; break; }
-        }
+        // The stamp can sit anywhere in the card ("2d •", "1w • Edited", "3d ago"),
+        // including glued into the actor line — scan the whole card text.
+        const m = (card.innerText || "").match(/(?:^|\s|•|·)(\d+\s*(?:mo|m|h|d|w|yr?))(?=\s*(?:•|·|ago|Edited|\s|$))/i);
+        if (m) dateText = m[1];
       }
       const header = lines.slice(0, 3).join(" ").toLowerCase();
       const type = /comment/.test(header) ? "comment"

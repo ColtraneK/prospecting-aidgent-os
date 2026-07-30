@@ -40,6 +40,7 @@ async function main() {
     case "start": return cmdStart();
     case "setup-login": return cmdSetupLogin(flags);
     case "check-login": return cmdCheckLogin(flags);
+    case "snapshot": return cmdSnapshot(flags);
     case "feedback": return cmdFeedback(flags);
     case "source": return cmdSource(flags, {});
     case "follow-up": return cmdFollowUp(flags);
@@ -95,6 +96,28 @@ async function cmdCheckLogin(flags) {
   console.error(`NOT SIGNED IN (${v.kind}): ${v.reason}`);
   console.error("Fix: run `npm run setup-login` and sign in yourself, or paste a fresh li_at cookie into AIDGENT_LI_AT in .env.");
   process.exit(1);
+}
+
+/**
+ * snapshot — save a read-only copy (HTML + screenshot) of ONE LinkedIn page to
+ * run-artifacts, using the signed-in session. For turning live-DOM extraction
+ * misses into fixtures. Usage: npm run snapshot -- --url <url> [--label name]
+ */
+async function cmdSnapshot(flags) {
+  const config = resolveConfig(flags);
+  const url = flags.url;
+  if (!url || url === true || !/^https:\/\/(www\.)?linkedin\.com\//.test(String(url))) {
+    fail("Usage: npm run snapshot -- --url https://www.linkedin.com/... [--label profile]");
+  }
+  const { savePageCopy } = await import("./worker.mjs");
+  const label = (flags.label && flags.label !== true ? String(flags.label) : "page").replace(/[^a-z0-9-]/gi, "-");
+  const r = await savePageCopy({ config, url: String(url), label });
+  if (r.ok) {
+    console.log(`Saved: ${r.snapshot} (+ .html next to it)`);
+  } else {
+    console.error(`Could not copy the page (${r.kind}): ${r.reason}`);
+    process.exit(1);
+  }
 }
 
 /**

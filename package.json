@@ -13,6 +13,7 @@
     "start": "node src/cli.mjs start",
     "setup-login": "node src/cli.mjs setup-login",
     "check-login": "node src/cli.mjs check-login",
+    "snapshot": "node src/cli.mjs snapshot",
     "feedback": "node src/cli.mjs feedback",
     "source": "node src/cli.mjs source",
     "follow-up": "node src/cli.mjs follow-up",
