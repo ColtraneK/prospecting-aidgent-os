@@ -18,7 +18,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { parseFlags, resolveConfig, loadDotEnv, REPO_ROOT } from "./config.mjs";
+import { parseFlags, resolveConfig, loadDotEnv, upsertDotEnv, DOTENV_PATH, REPO_ROOT } from "./config.mjs";
+import { preflightSession, formatSessionRefusal, isPlaceholderProfilePath, shouldRememberProfile } from "./session.mjs";
 import {
   getPersona, validatePersona, listPersonaSlugs, personaSheetId,
   personaTemplate, PRIVATE_PERSONA_DIR, resolvePersonaPath, loadPersonaFile,
@@ -59,6 +60,58 @@ async function main() {
   }
 }
 
+/**
+ * Refuse, before a browser exists, any run that cannot have a LinkedIn
+ * session. Without this the first navigation lands on the login wall and the
+ * run report says `login: login page detected` — which reads as LinkedIn
+ * blocking us, not as "this machine was never configured".
+ *
+ * Offline paths (`--fixture`) never call this: the fixture demo has to keep
+ * working on a laptop with no session and no network at all.
+ */
+function assertSession(config) {
+  const v = preflightSession({ chromeProfile: config.chromeProfile, liAt: config.liAt });
+  if (!v.ok) fail(formatSessionRefusal(v));
+  return v;
+}
+
+/**
+ * Write the profile path a command just PROVED works back into .env.
+ *
+ * A session verified through --profile or a shell variable is real, but it
+ * belongs to that one terminal. Persisting it is what stops `npm run start`
+ * from reporting READY on a configuration the next command cannot reproduce.
+ * Only the path is ever written; a pasted li_at cookie is a secret and stays
+ * wherever the person put it.
+ */
+function rememberProfilePath(config, { quiet = false, proven = true } = {}) {
+  // `proven` means a session was actually demonstrated through this profile,
+  // which is the bar for check-login. setup-login passes proven:false: the
+  // folder is about to be signed into, so it cannot pass the signed-in test
+  // yet, but it is unambiguously the path the person chose.
+  if (proven && !shouldRememberProfile({ chromeProfile: config.chromeProfile, liAt: config.liAt })) return null;
+  if (typeof config.chromeProfile !== "string") return null;
+  const p = config.chromeProfile.trim();
+  if (!p || isPlaceholderProfilePath(p)) return null;
+  const fileEnv = loadDotEnv(DOTENV_PATH);
+  const onFile = String(fileEnv.AIDGENT_CHROME_PROFILE || "").trim();
+  const wanted = p.replace(/\\/g, "/");
+  if (onFile.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase() === wanted.replace(/\/+$/, "").toLowerCase()) return null;
+  try {
+    const r = upsertDotEnv("AIDGENT_CHROME_PROFILE", wanted);
+    if (!quiet) {
+      console.log(`Wrote AIDGENT_CHROME_PROFILE=${wanted} into .env, so the next command finds this session too.`);
+    }
+    return r;
+  } catch (err) {
+    // Never fatal: a read-only .env is a worse reason to fail than the thing
+    // this is trying to prevent. Say it plainly and let the run continue.
+    console.error(`Could not update .env automatically (${err.message}).`);
+    console.error(`Set this by hand or the next terminal will not have it:  AIDGENT_CHROME_PROFILE=${wanted}`);
+    return null;
+  }
+}
+
 function resolvePersonaSlug(flags) {
   const env = { ...loadDotEnv(), ...process.env };
   if (flags.persona) return flags.persona;
@@ -78,19 +131,40 @@ async function cmdStart() {
 async function cmdSetupLogin(flags) {
   const config = resolveConfig(flags);
   if (!config.chromeProfile) fail("Set AIDGENT_CHROME_PROFILE (a path OUTSIDE this repo) or pass --profile.");
+  // Signing into the placeholder would "succeed" — Chrome creates the folder —
+  // and leave a signed-in profile at a path nobody meant, while every later
+  // run keeps reading the same placeholder and finding nothing.
+  if (isPlaceholderProfilePath(config.chromeProfile)) {
+    fail(formatSessionRefusal(preflightSession({ chromeProfile: config.chromeProfile })));
+  }
   const { setupLogin } = await import("./worker.mjs");
+  // Write the chosen path into .env BEFORE opening the browser, not after.
+  // setupLogin waits forever by design — the person ends it with Ctrl+C or by
+  // closing the window — so nothing after the await ever runs. Recording it
+  // here is also the more honest moment: this is the folder they just told us
+  // to sign into, whatever happens next in the window.
+  if (typeof config.chromeProfile === "string" && !isPlaceholderProfilePath(config.chromeProfile)) {
+    rememberProfilePath(config, { proven: false });
+  }
   console.log(`Opening a headed Chrome on profile: ${config.chromeProfile}`);
   console.log("Sign in to LinkedIn manually. This tool never types your credentials or MFA.");
+  console.log("When your feed has loaded and you have closed the window, confirm it took:  npm run check-login");
   await setupLogin({ profilePath: config.chromeProfile, channel: config.chromeChannel });
 }
 
 /** Preflight: verify the LinkedIn session works before anything depends on it. */
 async function cmdCheckLogin(flags) {
   const config = resolveConfig(flags);
+  // Answer from local facts first. Opening a browser to discover that the
+  // profile path is a placeholder wastes the person's time and returns a
+  // verdict about LinkedIn for a problem that is entirely in .env.
+  assertSession(config);
   const { checkLogin } = await import("./worker.mjs");
   const v = await checkLogin({ config });
   if (v.ok) {
     console.log(`OK: ${v.reason}`);
+    // This is the moment the session is known-good. Pin it down.
+    rememberProfilePath(config);
     return;
   }
   console.error(`NOT SIGNED IN (${v.kind}): ${v.reason}`);
@@ -109,6 +183,9 @@ async function cmdSnapshot(flags) {
   if (!url || url === true || !/^https:\/\/(www\.)?linkedin\.com\//.test(String(url))) {
     fail("Usage: npm run snapshot -- --url https://www.linkedin.com/... [--label profile]");
   }
+  // A snapshot taken without a session saves a picture of the login wall and
+  // files it as a fixture, which then teaches the extractor the wrong shape.
+  assertSession(config);
   const { savePageCopy } = await import("./worker.mjs");
   const label = (flags.label && flags.label !== true ? String(flags.label) : "page").replace(/[^a-z0-9-]/gi, "-");
   const r = await savePageCopy({ config, url: String(url), label });
@@ -275,6 +352,11 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
   const config = resolveConfig(flags);
   const slug = resolvePersonaSlug(flags);
   if (!slug) fail("No persona. Use --persona <slug>, AIDGENT_PERSONA, or select-persona.");
+
+  // Before the Sheet, before the feedback gate, before anything opens: can
+  // this run have a LinkedIn session at all? --fixture is exempt because the
+  // offline demo must run on a machine with no session and no network.
+  if (!flags.fixture) assertSession(config);
 
   // A fixture may pin the clock so the offline demo stays deterministic as real
   // time passes. Live runs always use the real clock.
@@ -456,6 +538,9 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
  */
 async function cmdFollowUp(flags) {
   const config = resolveConfig(flags);
+  // Follow-up reads LinkedIn too. Without this it would record a confident
+  // "no reply" for everyone, sourced entirely from a login page.
+  if (!flags.fixture) assertSession(config);
   const slug = resolvePersonaSlug(flags);
   const nowIso = fixtureNowIso(flags) || new Date().toISOString();
   fs.mkdirSync(config.outDir, { recursive: true });

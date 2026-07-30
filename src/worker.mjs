@@ -10,6 +10,7 @@
 // require it to be installed.
 
 import { detectBlocker, diagnoseEmptyResults } from "./blockers.mjs";
+import { preflightSession, PROFILE_MISSING, PROFILE_NEVER_SIGNED_IN } from "./session.mjs";
 import { parseActivityDate } from "./recency.mjs";
 import { createPacer } from "./pacing.mjs";
 import { canonicalizeLinkedInUrl, canonicalKey } from "./url.mjs";
@@ -42,18 +43,46 @@ export class BlockerError extends Error {
  * Chromium rather than erroring — a launch error here is exactly the kind of
  * friction that sends an agent looking for a workaround.
  */
-async function launch({ profilePath, liAt = "", channel = "chrome", headless = true }) {
+async function launch({ profilePath, liAt = "", channel = "chrome", headless = true, allowNewProfile = false }) {
   if (!profilePath && !liAt) {
     throw new Error("No LinkedIn session: set AIDGENT_CHROME_PROFILE (and run `npm run setup-login`) or paste your li_at cookie into AIDGENT_LI_AT in .env.");
+  }
+  // Last line of defence, below the CLI preflight. launchPersistentContext
+  // CREATES whatever directory it is handed, so an unreal profile path is not
+  // an error here — it is a brand-new signed-out Chrome, and the run only
+  // finds out at the login wall. Refuse instead of manufacturing a profile.
+  //
+  // setup-login is the one caller that legitimately makes a profile that does
+  // not exist yet, so it passes allowNewProfile. Even then the placeholder is
+  // refused: signing into it would leave a real session at a path nobody meant.
+  //
+  // With an li_at cookie the profile line is optional, and .env.example ships
+  // the placeholder — so a perfectly valid cookie-only setup routinely carries
+  // a junk path. That must not be fatal, and it must not be persisted to disk
+  // either: drop the profile and run the cookie through a plain context, so
+  // nothing gets created at a path nobody chose.
+  let usableProfile = "";
+  if (profilePath) {
+    const v = preflightSession({ chromeProfile: profilePath });
+    const creating = allowNewProfile &&
+      (v.kind === PROFILE_MISSING || v.kind === PROFILE_NEVER_SIGNED_IN);
+    if (v.ok || creating) {
+      usableProfile = profilePath;
+    } else if (liAt) {
+      console.error(`Ignoring AIDGENT_CHROME_PROFILE: ${v.reason}`);
+      console.error("Running on the li_at cookie instead. No profile folder was created.");
+    } else {
+      throw new Error(`${v.reason}\n${v.fix}`);
+    }
   }
   const { chromium } = await import("playwright");
   const opts = { headless, viewport: { width: 1280, height: 900 } };
   // Never load automation-evasion tricks; we do not bypass bot detection.
   let context;
-  if (profilePath) {
+  if (usableProfile) {
     context = await chromium
-      .launchPersistentContext(profilePath, { ...opts, channel })
-      .catch(() => chromium.launchPersistentContext(profilePath, opts)); // bundled Chromium fallback
+      .launchPersistentContext(usableProfile, { ...opts, channel })
+      .catch(() => chromium.launchPersistentContext(usableProfile, opts)); // bundled Chromium fallback
   } else {
     const browser = await chromium
       .launch({ headless, channel })
@@ -151,7 +180,7 @@ async function guard(page, status = 0) {
  * credentials or complete login. We wait until the user has a session, then exit.
  */
 export async function setupLogin({ profilePath, channel = "chrome", waitMs = 0 }) {
-  const context = await launch({ profilePath, channel, headless: false });
+  const context = await launch({ profilePath, channel, headless: false, allowNewProfile: true });
   const page = context.pages()[0] || (await context.newPage());
   await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded" }).catch(() => {});
   console.log("A Chrome window is open. Sign in to LinkedIn manually (including any MFA).");

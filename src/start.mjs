@@ -17,6 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { REPO_ROOT, loadDotEnv } from "./config.mjs";
 import { listPersonaSlugs, resolvePersonaPath, loadPersonaFile, validatePersona, personaSheetId, isPlaceholderSheetId, SHEET_TEMPLATE_ID, SHEET_TEMPLATE_COPY_URL } from "./persona.mjs";
+import { profileState, envFileReproducesSession, provenanceOf, describeProvenance, FROM_ENV_FILE } from "./session.mjs";
 
 const SELECTED_FILE = path.join(REPO_ROOT, "private", "selected-persona.txt");
 
@@ -55,8 +56,13 @@ export const SERVICE_ACCOUNT_WALKTHROUGH = [
  * Gather every fact the checklist needs. Pure-ish: reads the local filesystem
  * only. Injected paths make it testable.
  */
-export async function inspectSetup({ repoRoot = REPO_ROOT, env } = {}) {
-  const e = env || { ...loadDotEnv(path.join(repoRoot, ".env")), ...process.env };
+export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEnv } = {}) {
+  // .env and the shell are kept apart on purpose. Merged, they hide the one
+  // state that looks perfect here and fails on the next command: a session
+  // that exists only as a variable in the terminal you are standing in.
+  const file = fileEnv || loadDotEnv(path.join(repoRoot, ".env"));
+  const shell = shellEnv || process.env;
+  const e = env || { ...file, ...shell };
 
   const nodeMajor = Number(String(process.versions.node).split(".")[0]) || 0;
   const depsInstalled = fs.existsSync(path.join(repoRoot, "node_modules", "playwright")) &&
@@ -66,14 +72,40 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env } = {}) {
   // A pasted li_at session cookie is a complete alternative to the profile:
   // with it, runs are headless from the first one and no login window opens.
   const liAt = !!String(e.AIDGENT_LI_AT || "").trim();
-  const profileDirExists = !!chromeProfile && fs.existsSync(chromeProfile);
-  // A profile dir that has never been signed into has no cookie store.
-  const profileSignedIn = profileDirExists && (
-    fs.existsSync(path.join(chromeProfile, "Default", "Cookies")) ||
-    fs.existsSync(path.join(chromeProfile, "Default", "Network", "Cookies"))
-  );
-  const profileExists = profileDirExists || liAt;
-  const signedIn = profileSignedIn || liAt;
+  // profileState knows that the .env.example placeholder is not a folder, so a
+  // never-edited .env fails this step instead of passing it on a path that
+  // would be created empty at launch.
+  const profile = profileState(chromeProfile);
+  const profileExists = profile.exists || liAt;
+  const signedIn = profile.signedIn || liAt;
+  const profilePlaceholder = profile.placeholder;
+  const profileFrom = provenanceOf("AIDGENT_CHROME_PROFILE", { shellEnv: shell, fileEnv: file });
+  // Report where the value is AVAILABLE from, not merely which layer won.
+  // When .env carries the same value the shell does, saying "NOT from .env" is
+  // false, and it is the sentence doing all the warning work — firing it on a
+  // safe setup is how a warning gets tuned out.
+  // Path normalisation (case, slash direction, trailing slash) is right for a
+  // folder and wrong for a cookie, where case is significant.
+  const samePathish = (a, b) =>
+    String(a).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase() ===
+    String(b).replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+  const inFile = (key, value, isPath) => {
+    const onFile = String(file[key] || "").trim();
+    if (!onFile) return false;
+    return isPath ? samePathish(onFile, String(value || "").trim()) : onFile === String(value || "").trim();
+  };
+  const sessionKey = liAt ? "AIDGENT_LI_AT" : "AIDGENT_CHROME_PROFILE";
+  const sessionValue = liAt ? String(e.AIDGENT_LI_AT || "").trim() : chromeProfile;
+  const sessionFrom = inFile(sessionKey, sessionValue, !liAt)
+    ? FROM_ENV_FILE
+    : provenanceOf(sessionKey, { shellEnv: shell, fileEnv: file });
+  // The check that catches a green checklist standing on a value the next
+  // terminal will not have.
+  const reproduce = envFileReproducesSession({
+    fileEnv: file,
+    resolvedProfile: chromeProfile,
+    resolvedLiAt: String(e.AIDGENT_LI_AT || "").trim(),
+  });
 
   const credsPath = e.GOOGLE_APPLICATION_CREDENTIALS || "";
   const credsExist = !!credsPath && fs.existsSync(credsPath);
@@ -112,6 +144,11 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env } = {}) {
     depsInstalled,
     envFileExists: fs.existsSync(path.join(repoRoot, ".env")),
     chromeProfile, profileExists, signedIn, liAt,
+    profilePlaceholder,
+    profileFrom, sessionFrom,
+    envReproduces: reproduce.ok,
+    envReproducesReason: reproduce.reason,
+    envReproducesFix: reproduce.fix,
     credsPath, credsExist,
     activeSlug,
     privatePersonaCount: personas.length,
@@ -147,14 +184,31 @@ export function buildChecklist(s) {
     {
       label: "A LinkedIn session source is set (Chrome profile folder, or an li_at cookie)",
       done: s.profileExists,
-      next: s.chromeProfile
-        ? `AIDGENT_CHROME_PROFILE points at "${s.chromeProfile}", which does not exist yet. Create that folder (it must be OUTSIDE this repo), then run \`npm run start\` again. Alternative with no folder and no login window: paste your LinkedIn li_at cookie into AIDGENT_LI_AT in .env (see .env.example for where to copy it from).`
-        : "Two ways to give this tool a LinkedIn session; either is enough.\nSimplest: paste your li_at cookie into AIDGENT_LI_AT in .env (.env.example says where to copy it from) — headless, no login window ever.\nOr: Set AIDGENT_CHROME_PROFILE in .env to a NEW empty folder outside this repo, then sign in once with `npm run setup-login`.",
+      next: s.profilePlaceholder
+        ? `AIDGENT_CHROME_PROFILE reads as a fill-this-in placeholder rather than a folder (${s.chromeProfile}). The line shipped in .env.example looks like this and is the usual source of it. Open .env and replace it with a real path outside this repo, then run \`npm run setup-login\`. This step refuses a placeholder on purpose: an unreal profile path is CREATED empty when Chrome launches, so the run would open a signed-out browser and report a LinkedIn login wall instead of naming this.`
+        : s.chromeProfile
+          ? `AIDGENT_CHROME_PROFILE points at "${s.chromeProfile}", which does not exist yet. Create that folder (it must be OUTSIDE this repo), then run \`npm run start\` again. Alternative with no folder and no login window: paste your LinkedIn li_at cookie into AIDGENT_LI_AT in .env (see .env.example for where to copy it from).`
+          : "Two ways to give this tool a LinkedIn session; either is enough.\nSimplest: paste your li_at cookie into AIDGENT_LI_AT in .env (.env.example says where to copy it from) — headless, no login window ever.\nOr: Set AIDGENT_CHROME_PROFILE in .env to a NEW empty folder outside this repo, then sign in once with `npm run setup-login`.",
     },
     {
       label: "You are signed into LinkedIn (profile signed in, or li_at cookie set)",
       done: s.signedIn,
       next: "Run `npm run setup-login`. A Chrome window opens; sign into LinkedIn yourself (including any 2-factor step), wait for your feed, then close the window. This tool never types your password and never handles your 2FA. No window available: paste your li_at cookie into AIDGENT_LI_AT in .env instead, then verify with `npm run check-login`.",
+    },
+    {
+      // The step that exists because everything above it can be green on a
+      // configuration that only this terminal has. A shell variable makes the
+      // two steps above pass and the next command fail, and the run report
+      // blames LinkedIn rather than the setup.
+      label: "That session is written in .env, so a new terminal has it too",
+      done: s.envReproduces,
+      next: [
+        `Right now ${s.envReproducesReason}`,
+        "",
+        s.envReproducesFix,
+        "",
+        "Why this is its own step: settings can come from a --flag, from a variable set in this terminal, or from .env, and only .env survives into the next command. A session that lives in your shell makes this checklist say READY and the very next run stop at a LinkedIn login page.",
+      ].join("\n"),
     },
     {
       label: "Google service-account key file is set and exists",
@@ -212,6 +266,9 @@ export function formatStatus(s, checklist = buildChecklist(s)) {
     lines.push("");
     lines.push(`  Persona:  ${s.activeSlug}`);
     lines.push(`  Sheet:    ${s.sheetId}`);
+    // Printing WHERE the session came from, not just that there is one. READY
+    // has to be a claim about this machine, not about this terminal.
+    lines.push(`  Session:  ${s.liAt ? "li_at cookie" : s.chromeProfile || "none"} (${describeProvenance(s.sessionFrom)})`);
     lines.push(`  Warm-first: ${s.includeConnections ? "yes — your existing connections are mined too" : "no — net-new people only"}`);
     lines.push("");
     lines.push("Do a small run first so you can see what lands in the sheet:");

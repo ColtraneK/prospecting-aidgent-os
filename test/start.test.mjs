@@ -12,11 +12,28 @@ import { inspectSetup, buildChecklist, formatStatus, SHEET_TEMPLATE_COPY_URL, SE
 
 /** Facts for a setup where everything is done. */
 function readyFacts(over = {}) {
+  const f = baseFacts(over);
+  // Keep the flipped state COHERENT. Setting envReproduces:false while leaving
+  // the happy-path reason in place renders "Right now .env names a signed-in
+  // profile." above an empty fix — a next step no real run can produce and
+  // nobody could act on, which would let the item pass review untested.
+  if (f.envReproduces === false && over.envReproducesReason === undefined) {
+    f.envReproducesReason = ".env has a fill-this-in placeholder where the profile path goes (/absolute/path/outside/repo/aidgent-chrome-profile), not a real folder.";
+    f.envReproducesFix = "Replace it with AIDGENT_CHROME_PROFILE=/home/me/aidgent-chrome-profile.";
+  }
+  return f;
+}
+
+function baseFacts(over = {}) {
   return {
     nodeMajor: 22, nodeOk: true,
     depsInstalled: true,
     envFileExists: true,
     chromeProfile: "/home/me/aidgent-chrome-profile", profileExists: true, signedIn: true,
+    profilePlaceholder: false, profileFrom: "env-file", sessionFrom: "env-file",
+    envReproduces: true,
+    envReproducesReason: ".env names a signed-in profile (/home/me/aidgent-chrome-profile).",
+    envReproducesFix: "",
     credsPath: "/home/me/keys/svc.json", credsExist: true,
     activeSlug: "acme", privatePersonaCount: 1,
     persona: { persona: "acme" }, personaValid: true, personaErrors: [],
@@ -28,7 +45,7 @@ function readyFacts(over = {}) {
 
 test("the checklist is in dependency order — you never install Node after binding a sheet", () => {
   const items = buildChecklist(readyFacts()).map((i) => i.label);
-  assert.equal(items.length, 9);
+  assert.equal(items.length, 10);
   const idx = (needle) => items.findIndex((l) => l.includes(needle));
   assert.ok(idx("Node 20") < idx("dependencies"));
   assert.ok(idx("dependencies") < idx(".env"));
@@ -42,7 +59,7 @@ test("the FIRST unmet item is the one named as the next step", () => {
   // never sent to do something that depends on an earlier missing piece.
   const facts = readyFacts({ envFileExists: false, credsExist: false, credsPath: "" });
   const out = formatStatus(facts);
-  assert.match(out, /NEXT STEP \(3 of 9\)/);
+  assert.match(out, /NEXT STEP \(3 of 10\)/);
   assert.match(out, /Copy \.env\.example to \.env/);
   assert.ok(!out.includes("service account"), out);
 });
@@ -56,7 +73,7 @@ test("READY appears only when every single item is done", () => {
   assert.match(out, /npm run daily/);
   assert.ok(!out.includes("NEXT STEP"));
 
-  for (const key of ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "signedIn", "credsExist", "personaValid", "sheetBound"]) {
+  for (const key of ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "signedIn", "envReproduces", "credsExist", "personaValid", "sheetBound"]) {
     const broken = formatStatus(readyFacts({ [key]: false }));
     assert.ok(!broken.includes("READY."), `READY leaked when ${key} was false`);
     assert.match(broken, /NEXT STEP/);
@@ -95,7 +112,7 @@ test("the status text never asks the user a question", () => {
   // service-account walkthrough and the sheet copy link) are exactly where a
   // stray question mark would creep in.
   const states = ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "signedIn",
-    "credsExist", "personaValid", "sheetBound"];
+    "envReproduces", "credsExist", "personaValid", "sheetBound"];
   const samples = [formatStatus(readyFacts()),
     formatStatus(readyFacts({ credsExist: false, credsPath: "" })),
     ...states.map((k) => formatStatus(readyFacts({ [k]: false })))];
@@ -119,7 +136,7 @@ test("the paused output carries the whole service-account procedure, not a point
   // Codex relays this verbatim to someone who is not a developer. If it says
   // "see README.md" they have to go find it, and setup stalls right here.
   const out = formatStatus(readyFacts({ credsExist: false, credsPath: "" }));
-  assert.match(out, /NEXT STEP \(6 of 9\)/);
+  assert.match(out, /NEXT STEP \(7 of 10\)/);
   for (const beat of [/console\.cloud\.google\.com/, /Google Sheets API/,
     /Service account/i, /JSON/, /GOOGLE_APPLICATION_CREDENTIALS/,
     /client_email/, /Editor/]) {
@@ -139,7 +156,7 @@ test("a wrong credentials path is a path problem, not a fresh walkthrough", () =
 
 test("someone with no sheet is given a copy link, not told to make one", () => {
   const out = formatStatus(readyFacts({ sheetBound: false }));
-  assert.match(out, /NEXT STEP \(9 of 9\)/);
+  assert.match(out, /NEXT STEP \(10 of 10\)/);
   assert.ok(out.includes(SHEET_TEMPLATE_COPY_URL), out);
   assert.match(out, /Make a copy/);
   assert.match(out, /bind-sheet/);
@@ -166,6 +183,48 @@ test("inspectSetup only reads the filesystem — an empty folder is simply not r
   assert.equal(s.credsExist, false);
   assert.equal(s.sheetBound, false);
   assert.ok(buildChecklist(s).some((i) => !i.done));
+  fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("a session that lives only in this terminal never reports READY", async () => {
+  // The exact field failure, driven through the real inspectSetup rather than
+  // hand-built facts: .env untouched, the working profile exported in the
+  // shell. Every earlier step goes green — the merged environment really does
+  // have a signed-in profile — and the run in the NEXT shell reads .env, finds
+  // the placeholder, and stops at a LinkedIn login page.
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "aidgent-start-"));
+  const profile = path.join(tmp, "real-profile");
+  fs.mkdirSync(path.join(profile, "Default"), { recursive: true });
+  fs.writeFileSync(path.join(profile, "Default", "Cookies"), "");
+
+  const s = await inspectSetup({
+    repoRoot: tmp,
+    fileEnv: { AIDGENT_CHROME_PROFILE: "/absolute/path/outside/repo/aidgent-chrome-profile" },
+    shellEnv: { AIDGENT_CHROME_PROFILE: profile },
+  });
+  assert.equal(s.profileExists, true, "the shell value is genuinely usable right now");
+  assert.equal(s.signedIn, true);
+  assert.equal(s.envReproduces, false, "but .env cannot reproduce it, and that must be visible");
+
+  assert.ok(!formatStatus(s).includes("READY."), "a shell-only session is not READY");
+  // Assert on the item itself: this tmp repo is missing node_modules and .env
+  // too, so the single next step the status prints is an earlier one.
+  const item = buildChecklist(s).find((i) => i.label.includes("written in .env"));
+  assert.equal(item.done, false);
+  assert.match(item.next, /placeholder/);
+  assert.ok(item.next.includes(profile), "the fix must name the path to write into .env");
+  assert.ok(!item.next.includes("?"), item.next);
+
+  // And once .env names it, this step stops complaining.
+  const fixed = await inspectSetup({
+    repoRoot: tmp,
+    fileEnv: { AIDGENT_CHROME_PROFILE: profile },
+    shellEnv: { AIDGENT_CHROME_PROFILE: profile },
+  });
+  assert.equal(fixed.envReproduces, true);
+  assert.equal(fixed.sessionFrom, "env-file",
+    "a value present in .env must not be reported as terminal-only just because the shell also has it");
+
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 

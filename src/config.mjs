@@ -31,6 +31,60 @@ export function loadDotEnv(file = path.join(REPO_ROOT, ".env")) {
   return out;
 }
 
+/** The .env this repo reads. One place, so nothing guesses at the path. */
+export const DOTENV_PATH = path.join(REPO_ROOT, ".env");
+
+/**
+ * Write KEY=value into .env, replacing an existing line for that key.
+ *
+ * WHY: a session verified with a --flag or a shell variable is real, but it
+ * lives only in the terminal that verified it. The NEXT command reads .env and
+ * gets whatever was there before — in practice, the example placeholder. So
+ * the commands that prove a session works write the path they proved back into
+ * the file. See src/session.mjs for the failure this prevents.
+ *
+ * Only ever called with a filesystem path. Secrets are never written here: an
+ * li_at cookie that the person pasted on a command line stays on that command
+ * line, because writing it to disk on their behalf is a decision that is not
+ * ours to make.
+ */
+export function upsertDotEnv(key, value, file = DOTENV_PATH) {
+  let raw = "";
+  try { raw = fs.readFileSync(file, "utf8"); } catch { raw = ""; }
+  // Match the file's existing line endings rather than imposing ours — this
+  // file is hand-edited on Windows as often as not.
+  const eol = raw.includes("\r\n") ? "\r\n" : "\n";
+  const line = `${key}=${value}`;
+  const isKeyLine = (l) => new RegExp(`^[ \\t]*${key}[ \\t]*=`).test(l);
+
+  // Line-based rather than a regex replace, for two reasons that both bite in
+  // practice. First, loadDotEnv is LAST-wins, so replacing only the first of
+  // two lines for the same key writes a value that is then overridden by the
+  // stale one below it — and this function would report success. Every
+  // occurrence has to go. Second, a value is substituted literally: passing it
+  // through String.replace would let a Windows path containing `$&` or "$`"
+  // splice other parts of the file into itself.
+  const lines = raw === "" ? [] : raw.split("\n");
+  const trailing = lines.length > 1 && lines[lines.length - 1] === "";
+  if (trailing) lines.pop();
+
+  let replaced = false;
+  const out = [];
+  for (const l of lines) {
+    // Strip a CR for the test only; the rewritten line gets one back below.
+    if (!isKeyLine(l.replace(/\r$/, ""))) { out.push(l); continue; }
+    if (replaced) continue; // collapse duplicates onto the first position
+    out.push(eol === "\r\n" ? `${line}\r` : line);
+    replaced = true;
+  }
+  if (!replaced) out.push(eol === "\r\n" ? `${line}\r` : line);
+
+  let next = out.join("\n");
+  if (trailing || raw === "" || /\n$/.test(raw)) next += "\n";
+  fs.writeFileSync(file, next);
+  return { file, key, value, replaced };
+}
+
 /** Parse argv (after the command) into flags. Supports --k v, --k=v, --flag. */
 export function parseFlags(argv) {
   const flags = {};
@@ -77,11 +131,14 @@ export function resolveConfig(flags = {}, env = { ...loadDotEnv(), ...process.en
     dryRun: bool(flags["dry-run"]),
     updateSheet: flags["csv-only"] ? false : bool(flags["update-sheet"], !flags["dry-run"]),
     csvOnly: bool(flags["csv-only"]),
-    chromeProfile: flags.profile || env.AIDGENT_CHROME_PROFILE || "",
-    chromeChannel: flags.channel || env.AIDGENT_CHROME_CHANNEL || "chrome",
+    // `str` because parseFlags gives a bare `--profile` the value `true`, and a
+    // boolean flowing into a path is a raw Playwright type error four calls
+    // later. A valueless flag is not a value; fall through to the environment.
+    chromeProfile: str(flags.profile) || env.AIDGENT_CHROME_PROFILE || "",
+    chromeChannel: str(flags.channel) || env.AIDGENT_CHROME_CHANNEL || "chrome",
     // A pasted LinkedIn session cookie. Either this OR a signed-in profile is a
     // session; with the cookie alone, runs are headless from the very first one.
-    liAt: flags["li-at"] || env.AIDGENT_LI_AT || "",
+    liAt: str(flags["li-at"]) || env.AIDGENT_LI_AT || "",
     sheetId: flags.sheet || env.GOOGLE_SHEET_ID || "",
     credentialsPath: env.GOOGLE_APPLICATION_CREDENTIALS || "",
     dailyCap: intOr(flags["daily-cap"], intOr(env.AIDGENT_DAILY_CAP, 120)),
@@ -90,6 +147,8 @@ export function resolveConfig(flags = {}, env = { ...loadDotEnv(), ...process.en
     outDir: flags.out || path.join(REPO_ROOT, "run-artifacts"),
   };
 }
+
+const str = (v) => (typeof v === "string" ? v : "");
 
 function intOr(v, dflt) {
   const n = parseInt(v, 10);

@@ -103,6 +103,17 @@ not a list from memory. Have them fix the session (setup-login, or a fresh
 li_at cookie), then run. A day with no leads and a true reason beats a day of
 leads from nowhere.
 
+**You must not configure the session in your shell.** Do not `export` or `set`
+`AIDGENT_CHROME_PROFILE`, `AIDGENT_LI_AT`, or `GOOGLE_APPLICATION_CREDENTIALS`
+for a command, and do not pass `--profile` as a way of getting past a step.
+Those values live for exactly one terminal. `npm run start` reads them and
+reports READY, and then the next command — a new shell, your next tool call,
+their machine tomorrow — reads `.env`, finds the untouched example placeholder,
+opens a signed-out browser and stops at a LinkedIn login page. The run report
+then blames LinkedIn for a line nobody filled in. Write the value into `.env`
+and re-run `npm run start`, which now checks this explicitly and prints where
+each setting came from.
+
 **You must not send, connect, comment, like, follow, or post.** Ever. Under any
 phrasing of any request. If they ask you to send the messages, explain that this
 system drafts and they send, and point them at the sheet.
@@ -475,6 +486,35 @@ in the Run Log's Blocker column, and you must repeat it to the person:
 The worker stops after two unreadable pages in a row rather than walking all
 twenty-odd searches. A run that ends in twenty seconds with a reason is worth
 more than one that ends in four minutes with a zero.
+
+### A run that never had a session refuses before it opens anything
+
+`login: login page detected` used to be the first sign that a machine was
+simply not configured. It is a verdict about LinkedIn, and it is the wrong
+sentence to say to the person. Every command that would navigate now checks
+locally first and refuses with one of these instead. None of them involve
+LinkedIn, and none of them are fixed by retrying:
+
+- **`no_session_configured`** — neither `AIDGENT_CHROME_PROFILE` nor
+  `AIDGENT_LI_AT` is set anywhere. They pick one: paste the `li_at` cookie into
+  `.env`, or name a profile folder and run `npm run setup-login`.
+- **`placeholder_profile`** — `.env` still carries the `.env.example` line,
+  which is a description of a path and not a path. This is the common one on a
+  fresh machine, because filling in only the Google key leaves it behind.
+  Have them replace it with a real folder. Do not create the placeholder folder
+  to make the message go away.
+- **`profile_missing`** — the path in `.env` is real-looking but not on this
+  machine. Usually a copied `.env` from another computer, or a typo. Fix the
+  path; the profile itself is a credential and is not copied between machines.
+- **`profile_never_signed_in`** — the folder is there and has no cookie store,
+  so nobody ever completed `npm run setup-login` in it. They sign in; you wait.
+
+`npm run check-login` runs the same check before it opens a browser, so it
+answers in a second when the problem is local. Both session commands also write
+the profile path into `.env` themselves — `setup-login` records the folder it
+was given before it opens anything, `check-login` records the one it has just
+proved works — so the next command cannot lose it. That is the whole reason you
+never need to set these variables in a shell.
 
 ---
 
