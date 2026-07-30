@@ -4,10 +4,10 @@
 // Commands:
 //   start             where am I? a checklist and exactly one next step
 //   setup-login       headed: open Chrome so YOU sign into LinkedIn manually
-//   source            run research + maintain the Sheet (the scheduled command)
-//   follow-up         read-only: did they accept / did they reply (fills V-Y)
+//   source            add 25 qualified leads + maintain the Sheet (the scheduled command)
+//   follow-up         read-only: did they accept / did they reply (fills Y-AB)
 //   daily             source, then follow-up — one command for the daily schedule
-//   pilot             a 10-person run to sanity-check before 25/50 runs
+//   pilot             a 10-lead run to sanity-check before full 25-lead runs
 //   dry-run           plan only; writes nothing; use --fixture for an offline demo
 //   list-personas     list available personas (private + public)
 //   select-persona    set the active persona for later runs
@@ -317,53 +317,68 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
   }
 
   // 2) Candidates + existing sheet: fixture (offline) or live worker + Sheets.
-  let candidates, existingSheet, blocker = null, inspected = 0;
+  //
+  // The sheet is read FIRST on the live paths, because `--target` now counts
+  // rows ADDED, and "added" is only knowable against the rows already there.
+  let candidates, existingSheet, blocker = null, inspected = 0, added = null, shortfall = null;
   if (flags.fixture) {
     const fx = JSON.parse(fs.readFileSync(flags.fixture, "utf8"));
     candidates = fx.candidates || [];
     existingSheet = fx.existingSheet || { headers: LEADS_HEADERS, rows: [] };
     inspected = candidates.length;
     console.log(`[fixture] ${flags.fixture}: ${candidates.length} candidates, ${existingSheet.rows.length} existing rows`);
-  } else if (flags.observed) {
-    // AGENT-READ path. The agent read the search page in its own browser and
-    // wrote the rows to a file; we verify every URL by opening it ourselves.
-    const { parseObserved, describeObserved } = await import("./observed.mjs");
-    const parsed = parseObserved(JSON.parse(fs.readFileSync(flags.observed, "utf8")));
-    console.log(describeObserved(parsed));
-    if (!parsed.rows.length) {
-      fail("No usable rows in " + flags.observed + ". Every row needs a real linkedin.com/in/ URL that you actually saw on the page.");
-    }
-    const { runAgentRead } = await import("./worker.mjs");
-    const res = await runAgentRead({ observed: parsed.rows, config });
-    candidates = res.candidates;
-    blocker = res.blocker;
-    inspected = res.inspected;
-    if (res.unreachable?.length) {
-      console.error(`${res.unreachable.length} profile(s) could not be opened and were dropped rather than guessed at.`);
-    }
-    const { getSheets, readLeads } = await import("./sheet.mjs");
-    if (!sheetId) fail("No Google Sheet id (persona.sheet_id/url or GOOGLE_SHEET_ID).");
-    const sheets = await getSheets(config.credentialsPath);
-    existingSheet = await readLeads(sheets, sheetId);
   } else {
-    // LIVE path (local-linkedin) — never runs during automated tests.
-    const { runResearch } = await import("./worker.mjs");
-    const res = await runResearch({ persona, config });
-    candidates = res.candidates;
-    blocker = res.blocker;
-    inspected = res.inspected;
-    // When nothing was found, say what each search page actually looked like.
-    if (!candidates.length && Array.isArray(res.sourceReports) && res.sourceReports.length) {
-      console.error("\nWhat each search page looked like:");
-      for (const r of res.sourceReports.slice(0, 8)) {
-        console.error(`  ${r.kind}${r.profileLinks ? ` (${r.profileLinks} profile links)` : ""} — ${r.url}`);
-      }
-      console.error("");
-    }
-    const { getSheets, readLeads } = await import("./sheet.mjs");
     if (!sheetId) fail("No Google Sheet id (persona.sheet_id/url or GOOGLE_SHEET_ID).");
+    const { getSheets, readLeads } = await import("./sheet.mjs");
     const sheets = await getSheets(config.credentialsPath);
     existingSheet = await readLeads(sheets, sheetId);
+
+    // The worker's stop condition. This is the SAME pure scorer the pipeline
+    // runs, on the same clock, over facts the worker's own browser observed —
+    // so moving it inside the collection loop changes when we stop walking and
+    // nothing at all about who qualifies.
+    const { buildExistingIndex } = await import("./merge.mjs");
+    const { scoreCandidate } = await import("./scoring.mjs");
+    const existingKeys = new Set(buildExistingIndex(existingSheet).keys());
+    const accept = (c) => scoreCandidate(persona, c, { nowMs }).accepted;
+
+    if (flags.observed) {
+      // AGENT-READ path. The agent read the search page in its own browser and
+      // wrote the rows to a file; we verify every URL by opening it ourselves.
+      const { parseObserved, describeObserved } = await import("./observed.mjs");
+      const parsed = parseObserved(JSON.parse(fs.readFileSync(flags.observed, "utf8")));
+      console.log(describeObserved(parsed));
+      if (!parsed.rows.length) {
+        fail("No usable rows in " + flags.observed + ". Every row needs a real linkedin.com/in/ URL that you actually saw on the page.");
+      }
+      const { runAgentRead } = await import("./worker.mjs");
+      const res = await runAgentRead({ observed: parsed.rows, config, accept, existingKeys });
+      candidates = res.candidates;
+      blocker = res.blocker;
+      inspected = res.inspected;
+      added = res.added;
+      shortfall = res.shortfall;
+      if (res.unreachable?.length) {
+        console.error(`${res.unreachable.length} profile(s) could not be opened and were dropped rather than guessed at.`);
+      }
+    } else {
+      // LIVE path (local-linkedin) — never runs during automated tests.
+      const { runResearch } = await import("./worker.mjs");
+      const res = await runResearch({ persona, config, accept, existingKeys });
+      candidates = res.candidates;
+      blocker = res.blocker;
+      inspected = res.inspected;
+      added = res.added;
+      shortfall = res.shortfall;
+      // When nothing was found, say what each search page actually looked like.
+      if (!candidates.length && Array.isArray(res.sourceReports) && res.sourceReports.length) {
+        console.error("\nWhat each search page looked like:");
+        for (const r of res.sourceReports.slice(0, 8)) {
+          console.error(`  ${r.kind}${r.profileLinks ? ` (${r.profileLinks} profile links)` : ""} — ${r.url}`);
+        }
+        console.error("");
+      }
+    }
   }
 
   // 2b) An unreadable activity page must be said out loud: those candidates are
@@ -388,6 +403,14 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
   const csvPath = path.join(config.outDir, `${runId}.csv`);
   fs.writeFileSync(csvPath, toCsv(LEADS_HEADERS, csvRows));
 
+  // A run that stopped short of its target says so in the Blocker / Failure
+  // column. Not because a short day is a failure — it is the correct outcome
+  // when the cap bites — but because "14" sitting next to a target of 25 with
+  // an empty reason column is how a number quietly becomes a mystery.
+  const blockerText = blocker
+    ? `${blocker.kind}: ${blocker.reason}`
+    : (shortfall ? `${shortfall.kind}: ${shortfall.text}` : "");
+
   // 5) Apply to the Sheet unless dry-run / csv-only.
   let applied = null;
   if (!config.dryRun && !config.csvOnly && config.updateSheet && !flags.fixture) {
@@ -396,19 +419,21 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
     applied = await applyPlan(sheets, sheetId, plan, {
       headerRow: existingSheet.headerRow || 3,
       firstDataRow: existingSheet.firstDataRow || 4,
+      headers: existingSheet.rawHeaders,
     });
-    const report0 = buildRunReport({ runId, persona: slug, requestedTarget: config.target, counts, blocker: blocker ? `${blocker.kind}: ${blocker.reason}` : "", startedMs, endedMs: Date.now(), nowIso });
+    const report0 = buildRunReport({ runId, persona: slug, requestedTarget: config.target, counts, blocker: blockerText, startedMs, endedMs: Date.now(), nowIso });
     await appendRunLog(sheets, sheetId, report0);
   }
 
   // 6) Report.
   const report = buildRunReport({
     runId, persona: slug, requestedTarget: config.target, counts,
-    blocker: blocker ? `${blocker.kind}: ${blocker.reason}` : "",
+    blocker: blockerText,
     startedMs, endedMs: Date.now(), nowIso,
   });
-  fs.writeFileSync(path.join(config.outDir, `${runId}.report.json`), JSON.stringify({ report, activityUnreadable: unreadable, plan, rejected: plan.rejected.map(r => ({ name: r.candidate.name, reason: r.reason })) }, null, 2));
+  fs.writeFileSync(path.join(config.outDir, `${runId}.report.json`), JSON.stringify({ report, activityUnreadable: unreadable, added, shortfall, plan, rejected: plan.rejected.map(r => ({ name: r.candidate.name, reason: r.reason })) }, null, 2));
   console.log(formatRunReport(report));
+  if (shortfall) console.log(`  ${shortfall.text}`);
   console.log(`CSV: ${csvPath}`);
   if (config.dryRun || flags.fixture) console.log("(dry-run / fixture: no Sheet was modified)");
   else if (applied) console.log(`Sheet: appended ${applied.appended}, updated ${applied.updated}`);
@@ -423,11 +448,11 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
 /**
  * follow-up — the "did it land?" pass.
  *
- * For every row where YOU ticked "Reached Out" (column H), this looks at your
+ * For every row where YOU ticked "Reached Out" (column K), this looks at your
  * own LinkedIn pages read-only and fills in four columns: whether they accepted
  * the connection, whether they replied, the verbatim text of their latest
  * message, and the date checked. It never sends, accepts, withdraws or replies
- * to anything, and it never writes your columns H:N.
+ * to anything, and it never writes your columns K:Q.
  */
 async function cmdFollowUp(flags) {
   const config = resolveConfig(flags);
@@ -463,7 +488,7 @@ async function cmdFollowUp(flags) {
 
   const { updates, counts, skipped } = planFollowUp(existingSheet, observations, { nowIso });
 
-  // Apply — updates only, no new rows, V:Y only (followup.mjs asserts that).
+  // Apply — updates only, no new rows, Y:AB only (followup.mjs asserts that).
   let applied = null;
   if (!config.dryRun && !config.csvOnly && config.updateSheet && !flags.fixture && updates.length) {
     const { getSheets, applyPlan } = await import("./sheet.mjs");
@@ -471,6 +496,7 @@ async function cmdFollowUp(flags) {
     applied = await applyPlan(sheets, sheetId, { newRows: [], updates }, {
       headerRow: existingSheet.headerRow || 3,
       firstDataRow: existingSheet.firstDataRow || 4,
+      headers: existingSheet.rawHeaders,
     });
   }
 
@@ -526,6 +552,12 @@ function slugify(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-")
 function fail(msg) { console.error(msg); process.exit(2); }
 
 main().catch(async (e) => {
+  // An old-layout sheet already carries the whole explanation and the fix, and
+  // a stack trace under it would only bury them.
+  if (e && e.name === "LeadsLayoutError") {
+    console.error(e.message);
+    process.exit(1);
+  }
   // A raw GaxiosError stack here is the single least useful thing we could show
   // a non-developer, and the two common causes have exact, sayable fixes.
   try {

@@ -3,7 +3,7 @@
 // accepted ones, and plan the sheet update. No network, no browser.
 
 import { scoreCandidate } from "./scoring.mjs";
-import { recentPostCell, composeWhyThem, composeComment, composeIntroDM } from "./evidence.mjs";
+import { recentPostCell, postLinkCell, composeWhyThem, composeComment, composeIntroDM } from "./evidence.mjs";
 import { planSheetUpdate } from "./merge.mjs";
 
 export function runPipeline({ persona, existingSheet, candidates, nowMs = Date.now(), nowIso = new Date().toISOString(), sourceType = "LinkedIn", threshold } = {}) {
@@ -20,6 +20,7 @@ export function runPipeline({ persona, existingSheet, candidates, nowMs = Date.n
     };
     if (s.accepted) {
       out.recentPost = c.recentPost || recentPostCell(c, s.recent);
+      out.postLink = c.postLink || postLinkCell(c);
       out.whyThem = c.whyThem || composeWhyThem(c);
       out.comment = c.comment || composeComment(c);
       out.introDM = c.introDM || composeIntroDM(c, persona);

@@ -46,11 +46,17 @@ export function toRunLogRow(report) {
   ];
 }
 
+/**
+ * The two numbers now diverge BY DESIGN: the target counts leads ADDED, and
+ * reaching it can mean opening two to ten times as many profiles. Printing only
+ * one of them is how "25" turns into either a false alarm or a false success,
+ * so both are always on the first line and labelled.
+ */
 export function formatRunReport(report) {
   const lines = [
     `Run ${report.runId} (${report.persona})`,
-    `  target: ${report.requestedTarget}   inspected: ${report.candidatesInspected}`,
-    `  new: ${report.newLeads}   updated: ${report.updatedLeads}   dupes: ${report.duplicatesSkipped}   rejected: ${report.rejectedCandidates}`,
+    `  target: ${report.requestedTarget} added   added: ${report.newLeads}   inspected: ${report.candidatesInspected}`,
+    `  updated: ${report.updatedLeads}   dupes: ${report.duplicatesSkipped}   rejected: ${report.rejectedCandidates}`,
     `  duration: ${report.durationSec}s`,
   ];
   if (report.blocker) lines.push(`  BLOCKER: ${report.blocker}`);

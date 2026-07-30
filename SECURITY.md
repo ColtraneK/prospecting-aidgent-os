@@ -43,7 +43,7 @@ minutes of real work. Raising the target does not produce more conversations.
 ## Data hygiene
 
 - Real personas, prospect exports, run artifacts, screenshots, traces, and the Chrome profile are all git-ignored. The public repo may contain **only fake examples**.
-- The worker preserves your human columns (H–N) and never deletes leads.
+- The worker preserves your human columns (K–Q) and never deletes leads.
 
 ## Operating requirements (not a security feature, but be honest)
 

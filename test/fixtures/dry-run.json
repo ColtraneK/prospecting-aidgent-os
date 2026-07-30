@@ -1,12 +1,15 @@
 {
-  "note": "Fake data. Demonstrates: 1 new lead, 1 within-batch duplicate, 1 existing lead refreshed, preserved human tracking, 1 rejected out-of-ICP candidate. Use nowMs ~ 2026-07-23 in tests.",
+  "note": "Fake data. Demonstrates: 1 new lead, 1 within-batch duplicate, 1 existing lead refreshed, preserved human tracking, 1 rejected out-of-ICP candidate, and the v4 columns (Post Link, Degree, Score 1-10). Use nowMs ~ 2026-07-23 in tests.",
   "nowIso": "2026-07-23T12:00:00.000Z",
   "existingSheet": {
     "headers": [
       "Name",
       "Title / Company",
       "LinkedIn (or profile URL)",
-      "Recent Post (verbatim + link)",
+      "Recent Post (verbatim + date)",
+      "Post Link",
+      "Degree",
+      "Score (1-10)",
       "Why Them",
       "Suggested Comment",
       "Suggested Intro DM",
@@ -36,7 +39,10 @@
           "Name": "Dana Lopez",
           "Title / Company": "Owner @ Lopez Studio",
           "LinkedIn (or profile URL)": "https://www.linkedin.com/in/dana-lopez-fake",
-          "Recent Post (verbatim + link)": "",
+          "Recent Post (verbatim + date)": "",
+          "Post Link": "",
+          "Degree": "",
+          "Score (1-10)": "",
           "Why Them": "old note",
           "Suggested Comment": "old comment",
           "Suggested Intro DM": "old dm",
@@ -74,7 +80,8 @@
         "type": "post",
         "url": "https://www.linkedin.com/feed/update/urn:li:activity:1111",
         "summary": "Sharing how we cut our weekly ops busywork in half."
-      }
+      },
+      "degree": "2nd"
     },
     {
       "name": "Sam Rivera",
@@ -95,7 +102,8 @@
         "type": "comment",
         "url": "https://www.linkedin.com/feed/update/urn:li:activity:2222",
         "summary": "Commented on a thread about scaling operations."
-      }
+      },
+      "degree": "1st"
     },
     {
       "name": "Riya Patel",

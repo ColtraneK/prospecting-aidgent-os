@@ -100,7 +100,7 @@ You run one command a day, or schedule it to run itself:
 npm run daily
 ```
 
-It researches about 25 people who match your ICP, and writes them into your
+It keeps researching until 25 qualified leads have been added, and writes them into your
 sheet with, for each one: their name and role, their profile link, their most
 recent post quoted word for word with a link to it, why they are a fit, a
 suggested comment on that post, and a suggested intro message.

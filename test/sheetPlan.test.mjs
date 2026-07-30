@@ -1,7 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { groupContiguous, buildValueUpdates, rowArray } from "../src/sheetPlan.mjs";
-import { LEADS_HEADERS } from "../src/schema.mjs";
+import { LEADS_HEADERS, HUMAN_FIELDS, COLS } from "../src/schema.mjs";
+
+const humanLetters = new Set(HUMAN_FIELDS.map((h) => COLS[h].letter));
+const colOf = (range) => range.match(/^Leads!([A-Z]+)/)[1];
 
 test("groupContiguous groups runs and splits at gaps", () => {
   // B(1), D(3),E(4),F(5), N(13)..Q(16), S(18),T(19)  (R=17 excluded)
@@ -17,7 +20,7 @@ test("buildValueUpdates emits correct A1 ranges and never a human column", () =>
       rowNumber: 4,
       set: {
         "Title / Company": "Owner @ Lopez",
-        "Recent Post (verbatim + link)": "u",
+        "Recent Post (verbatim + date)": "u",
         "Why Them": "w",
         "Suggested Comment": "c",
         "Suggested Intro DM": "d",
@@ -36,11 +39,12 @@ test("buildValueUpdates emits correct A1 ranges and never a human column", () =>
   assert.equal(appends[0][0], "Sam");
 
   const ranges = cellUpdates.map((c) => c.range);
-  // B4 (title), D4:G4 (post/why/comment/dm), O4:R4 (activity+score+verified), T4:U4 (source+status)
-  assert.deepEqual(ranges, ["Leads!B4", "Leads!D4:G4", "Leads!O4:R4", "Leads!T4:U4"]);
-  // none of H..N (human columns) appear
+  // B4 (title), D4 (post), H4:J4 (why/comment/dm),
+  // R4:U4 (activity+score+verified), W4:X4 (source+status)
+  assert.deepEqual(ranges, ["Leads!B4", "Leads!D4", "Leads!H4:J4", "Leads!R4:U4", "Leads!W4:X4"]);
+  // none of K..Q (human columns) appear
   for (const r of ranges) {
-    assert.ok(!/![H-N]\d/.test(r), `range ${r} must not touch human columns H:N`);
+    assert.ok(!humanLetters.has(colOf(r)), `range ${r} must not touch human columns K:Q`);
   }
 });
 

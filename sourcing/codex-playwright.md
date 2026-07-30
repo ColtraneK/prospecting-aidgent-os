@@ -30,7 +30,7 @@ npm run setup-login -- --persona my-persona
 
 # headless research runs
 npm run pilot  -- --persona my-persona --headless
-npm run source -- --persona my-persona --target 50 --headless --update-sheet
+npm run source -- --persona my-persona --target 25 --headless --update-sheet
 ```
 
 ## Selectors drift

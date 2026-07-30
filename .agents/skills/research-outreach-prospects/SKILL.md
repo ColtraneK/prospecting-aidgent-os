@@ -16,8 +16,8 @@ the sourcing code.
 - Never assume whose business this is. The branding in this repo and in the sheet belongs to whoever built the tool, not to the user. Never infer their company, website, offer or audience from it. Ask for their website and wait for the answer.
 - Never fabricate activity, dates, quotes, geography, titles, or URLs. Omit what was not verified. If there is no recent post, leave the Recent Post cell and Suggested Comment empty rather than inventing one.
 - PRIORITIZE prospects with a post or relevant comment about a persona core topic within the last 7 days. This is a ranking boost, not a gate — still allow strong ICP matches with older or no recent activity.
-- For each lead: put the verbatim recent post (if within 7 days) with its link after it in column D, an evidence-based Why Them (E), a Suggested Comment replying to their recent activity (F), and a short no-pitch Suggested Intro DM (G).
-- Preserve the Sheet's human columns H:N. Only write agent (A:G) and system (O:Y) fields.
+- For each lead: put the verbatim recent post with its date in column D, its bare permalink in Post Link (E), the observed connection Degree (F), the 1-10 Score (G), an evidence-based Why Them (H), a Suggested Comment replying to their recent activity (I), and a short no-pitch Suggested Intro DM (J).
+- Preserve the Sheet's human columns K:Q. Only write agent (A:J) and system (R:AB) fields.
 - The Sheet has a **Feedback** tab. Columns A:C are the user's (Date, What to change, Must / Prefer / Avoid). Columns D:F are yours (Status, Applied on, What your agent changed). Never write A:C, never invent a row.
 - Requires: computer on and awake, Codex desktop running, a signed-in dedicated Chrome profile. This does NOT run with the computer off.
 
@@ -56,8 +56,8 @@ to any one business.
    `Avoid` becomes an exclusion, `Prefer` is a ranking boost and never a gate.
    See AGENTS.md section 4b.
 3. First-time only: `npm run setup-login -- --persona <slug>` and have the user sign in manually.
-4. Pilot: `npm run pilot -- --persona <slug> --headless`. Review the 10-lead output before scaling.
-5. Full run / scheduled: `npm run source -- --persona <slug> --target 50 --headless --update-sheet`.
+4. Pilot: `npm run pilot -- --persona <slug> --headless`. It runs until 10 leads have been ADDED. Review them before scaling.
+5. Full run / scheduled: `npm run source -- --persona <slug> --target 25 --headless --update-sheet`. `--target` counts rows ADDED, not profiles inspected; both numbers are reported and are expected to differ. Never raise `AIDGENT_DAILY_CAP` or shorten the pacing to reach a target.
 6. Report: read the run report and Run Log. If a blocker was hit (login, CAPTCHA, checkpoint, rate limit, expiry), stop and tell the user to re-run setup-login or wait.
 
 ## Offline check

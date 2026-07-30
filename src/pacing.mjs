@@ -12,10 +12,16 @@ export function createPacer({ minDelayMs = 3500, maxDelayMs = 9000, dailyCap = 1
     async wait() {
       await new Promise((r) => setTimeout(r, this.nextDelay()));
     },
-    /** Register one inspected profile; returns false when the daily cap is hit. */
+    /**
+     * Register one inspected profile; returns false when the daily cap is hit.
+     * Checks BEFORE counting, so the tick that refuses does not also inflate the
+     * count — the refused profile is never opened, and a run that reports
+     * inspecting 121 profiles under a cap of 120 makes its own report look wrong.
+     */
     tick() {
+      if (inspected >= dailyCap) return false;
       inspected += 1;
-      return inspected <= dailyCap;
+      return true;
     },
     get inspected() {
       return inspected;

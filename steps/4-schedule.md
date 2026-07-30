@@ -34,18 +34,18 @@ It does **not** run with the computer off. There is no cloud worker.
 
 Appends fresh, deduped leads and refreshes existing ones in your Sheet,
 prioritizes prospects with a last-7-day post or relevant comment about a core
-topic, never sends or connects, never touches your human columns H–N, and writes
+topic, never sends or connects, never touches your human columns K–Q, and writes
 a Run Log row. If it hits a blocker it stops and exits nonzero, so a scheduler
 can surface the failure.
 
 ## Your daily loop
 
 Open the Sheet. For each new person: read Why Them, read the verbatim recent post
-in column D and open its link, use or edit the Suggested Comment (F) and Suggested
-Intro DM (G), reach out yourself, then tick **Reached Out (H)**.
+in column D and open its link in E, use or edit the Suggested Comment (I) and Suggested
+Intro DM (J), reach out yourself, then tick **Reached Out (K)**.
 
 That tick matters beyond your own tracking — it is what tells tomorrow's
-follow-up pass to watch that person. The next morning, **V–Y** will tell you who
+follow-up pass to watch that person. The next morning, **Y–AB** will tell you who
 accepted and who replied, so you can spend your twenty minutes on the
 conversations that are actually live rather than re-reading the whole list.
 

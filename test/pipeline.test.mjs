@@ -5,7 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runPipeline } from "../src/pipeline.mjs";
 import { buildValueUpdates } from "../src/sheetPlan.mjs";
-import { HUMAN_FIELDS } from "../src/schema.mjs";
+import { HUMAN_FIELDS, COLS } from "../src/schema.mjs";
+
+const humanLetters = new Set(HUMAN_FIELDS.map((h) => COLS[h].letter));
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const fx = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "dry-run.json"), "utf8"));
@@ -42,8 +44,13 @@ test("dry-run fixture: 1 new, 1 duplicate, 1 refreshed existing, 1 rejected", ()
   assert.ok(sam["Suggested Comment"].length > 0, "recent activity yields a suggested comment");
   assert.ok(sam["Suggested Intro DM"].length > 0);
   // Sam's post is within 7 days -> verbatim recent post + link lands in column D.
-  assert.ok(sam["Recent Post (verbatim + link)"].length > 0);
-  assert.match(sam["Recent Post (verbatim + link)"], /linkedin\.com\/feed\/update/);
+  assert.ok(sam["Recent Post (verbatim + date)"].length > 0);
+  // The permalink lives in its own column now, and D no longer carries it.
+  assert.equal(sam["Post Link"], "https://www.linkedin.com/feed/update/urn:li:activity:1111");
+  assert.ok(!sam["Recent Post (verbatim + date)"].includes("linkedin.com"), sam["Recent Post (verbatim + date)"]);
+  // Degree observed on the card, and the 1-10 score derived from the raw one.
+  assert.equal(sam["Degree"], "2nd");
+  assert.equal(sam["Score (1-10)"], Math.max(1, Math.min(10, Math.round(Number(sam["Fit Score"]) / 10))));
   assert.equal(sam["Canonical Key"], "https://www.linkedin.com/in/sam-rivera-fake");
 
   // Recency: Sam's activity is within 7 days -> recent boost recorded.
@@ -54,7 +61,7 @@ test("dry-run fixture: 1 new, 1 duplicate, 1 refreshed existing, 1 rejected", ()
   assert.match(plan.rejected[0].reason, /geography|buyer-title/i);
 });
 
-test("existing human tracking (H:N) is preserved after applying the refresh", () => {
+test("existing human tracking (K:Q) is preserved after applying the refresh", () => {
   const { plan } = runPipeline({ persona, existingSheet: fx.existingSheet, candidates: fx.candidates, nowMs, nowIso: fx.nowIso });
   const update = plan.updates[0];
   // The update set never contains a human field.
@@ -72,7 +79,10 @@ test("existing human tracking (H:N) is preserved after applying the refresh", ()
   assert.equal(after["Research Status"], "Refreshed");
   assert.equal(after["Activity Date"], "2026-07-22");
 
-  // And the concrete Sheets writes never target H:N.
+  // And the concrete Sheets writes never target the human band.
   const { cellUpdates } = buildValueUpdates(plan);
-  for (const c of cellUpdates) assert.ok(!/![H-N]\d/.test(c.range), `${c.range} must avoid H:N`);
+  for (const c of cellUpdates) {
+    const col = c.range.match(/^Leads!([A-Z]+)/)[1];
+    assert.ok(!humanLetters.has(col), `${c.range} must avoid the human band K:Q`);
+  }
 });

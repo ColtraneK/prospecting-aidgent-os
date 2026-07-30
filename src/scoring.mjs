@@ -81,6 +81,17 @@ export function scoreCandidate(persona, candidate, { nowMs = Date.now(), thresho
   const evidencePts = activity && (activity.url || activity.summary) ? 8 : 0;
   add("evidence_strength", evidencePts, evidencePts ? "verifiable activity captured" : "no captured activity evidence");
 
+  // Network distance, when it was actually observed on the page. A 1st or 2nd
+  // degree connection is warmer and ranks higher; 3rd degree still qualifies on
+  // the other signals, and an unobserved degree costs nobody anything — it is a
+  // gap in what we saw, not a fact about the person.
+  const degree = String(candidate.degree || "").trim().toLowerCase();
+  const degPts = degree === "1st" ? 10 : degree === "2nd" ? 8 : 0;
+  const degDetail = degree
+    ? (degPts ? `${degree}-degree connection` : `${degree}-degree connection (no bonus)`)
+    : "connection degree not observed";
+  add("degree_match", degPts, degDetail);
+
   let score = Math.max(0, Math.min(100, factors.reduce((s, f) => s + f.points, 0)));
   const accepted = score >= threshold && !!titleHit;
   const rejectedReason = accepted ? null : !titleHit ? "no buyer-title match" : `score ${score} below threshold ${threshold}`;

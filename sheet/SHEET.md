@@ -7,7 +7,7 @@ existing ones, and it never touches your human tracking. Nothing is auto-sent.
 ## Tabs (built by `BuildLeadSheet.gs`)
 
 - **Start Here** — how the local system runs and the daily loop.
-- **Leads** — the working list. A–G agent output, H–N your tracking, O–Y system research and follow-up.
+- **Leads** — the working list. A–J agent output, K–Q your tracking, R–AB system research and follow-up.
 - **Feedback** — plain-English notes from you about what to change. You write A–C, the agent writes D–F.
 - **ICP + Schedule** — your business snapshot, the locked five-line ICP, and run settings. Mirrors a persona.
 - **Prompt Library** — prompts to build a persona; sourcing and scheduling run via the skill / npm, not by pasting.
@@ -23,45 +23,60 @@ existing ones, and it never touches your human tracking. Nothing is auto-sent.
 | A | Name | agent |
 | B | Title / Company | agent |
 | C | LinkedIn (or profile URL) | agent (canonical) |
-| D | Recent Post (verbatim + link) | agent (verbatim if within 7 days, link after) |
-| E | Why Them | agent |
-| F | Suggested Comment | agent (reply to their recent post/comment) |
-| G | Suggested Intro DM | agent (short, no pitch) |
-| H | Reached Out | you (checkbox) |
-| I | Replied | you (checkbox) |
-| J | Outcome | you (No response / Neutral / Positive / Not a fit / Follow up) |
-| K | Date Added | you / seeded on insert |
-| L | Source Type | you / seeded on insert |
-| M | Batch | you |
-| N | Notes | you |
-| O | Activity Date | system |
-| P | Activity Type | system (post / comment) |
-| Q | Fit Score | system |
-| R | Last Verified | system |
-| S | Canonical Key | system (dedup key) |
-| T | Research Source | system |
-| U | Research Status | system (New / Refreshed / Needs review) |
-| V | Connection Status | follow-up pass (connected / pending / not_connected / unknown) |
-| W | Reply Status | follow-up pass (replied / no_reply / unknown) |
-| X | Last Reply | follow-up pass (their latest message to you, verbatim, + date) |
-| Y | Follow-up Checked | follow-up pass (date it last observed this row) |
+| D | Recent Post (verbatim + date) | agent (verbatim text and its date) |
+| E | Post Link | agent (the bare permalink, so it stays one clean click) |
+| F | Degree | agent (1st / 2nd / 3rd, blank when the badge was not on the page) |
+| G | Score (1-10) | agent (the Fit Score in column T, at reading scale) |
+| H | Why Them | agent |
+| I | Suggested Comment | agent (reply to their recent post/comment) |
+| J | Suggested Intro DM | agent (short, no pitch) |
+| K | Reached Out | you (checkbox) |
+| L | Replied | you (checkbox) |
+| M | Outcome | you (No response / Neutral / Positive / Not a fit / Follow up) |
+| N | Date Added | you / seeded on insert |
+| O | Source Type | you / seeded on insert |
+| P | Batch | you |
+| Q | Notes | you |
+| R | Activity Date | system |
+| S | Activity Type | system (post / comment) |
+| T | Fit Score | system (raw 0-100) |
+| U | Last Verified | system |
+| V | Canonical Key | system (dedup key) |
+| W | Research Source | system |
+| X | Research Status | system (New / Refreshed / Needs review) |
+| Y | Connection Status | follow-up pass (connected / pending / not_connected / unknown) |
+| Z | Reply Status | follow-up pass (replied / no_reply / unknown) |
+| AA | Last Reply | follow-up pass (their latest message to you, verbatim, + date) |
+| AB | Follow-up Checked | follow-up pass (date it last observed this row) |
 
-The worker writes **A–G and O–Y only**. On an existing lead it refreshes those
-fields and leaves **H–N exactly as you left them**. It never deletes rows.
+The worker writes **A–J and R–AB only**. On an existing lead it refreshes those
+fields and leaves **K–Q exactly as you left them**. It never deletes rows.
 
 Column **D** always shows whatever post was actually captured. If it is older
 than seven days it is shown anyway, explicitly marked `(date — older than 7
-days)`, so a suggested comment in F is never left pointing at a post you cannot
-see. A blank D means nothing was captured at all.
+days)`, so a suggested comment in I is never left pointing at a post you cannot
+see. A blank D means nothing was captured at all. The post's permalink sits on
+its own in **E**, where Sheets renders it as a single clickable link instead of
+burying it under a quoted paragraph.
 
-## The follow-up pass (V–Y)
+**Degree (F)** is copied from the badge LinkedIn shows on the card or profile.
+It is blank when no badge was visible, and never guessed. Everyone found through
+your own connections list is 1st by definition. A 1st or 2nd degree contact
+scores a few points higher, because they are warmer; a 3rd degree contact still
+qualifies on everything else.
+
+**Score (G)** is column T divided by ten and rounded, nothing more. It exists
+because "72" and "8 out of 10" take different amounts of effort to read at
+speed, and the raw score is still there in T when you want it.
+
+## The follow-up pass (Y–AB)
 
 `npm run follow-up` — also the second half of `npm run daily` — opens three of
 **your own** pages read-only: sent invitations, your connections list, and your
 message list. It records who accepted and who wrote back. It clicks nothing that
 accepts, withdraws, replies, sends, or withdraws an invite.
 
-Only rows where **you** ticked **Reached Out (H)** are watched. Ticking that box
+Only rows where **you** ticked **Reached Out (K)** are watched. Ticking that box
 is what opts a person in.
 
 Two behaviours that look like bugs and are not:
@@ -102,7 +117,7 @@ This tab is the audit trail of why the targeting looks the way it does.
 
 ## Dedup and merge
 
-Leads are matched by the canonical LinkedIn URL (column S), falling back to
+Leads are matched by the canonical LinkedIn URL (column V), falling back to
 normalized name + company. A match becomes an in-place refresh; a non-match
 becomes a new appended row; within-run duplicates are collapsed to the highest
 fit score.
@@ -141,14 +156,21 @@ brought your own sheet: open **that** Sheet (the one you bound) → Extensions >
 Apps Script → paste
 `BuildLeadSheet.gs` → run `buildAidgentOsSheet`. The script is container-bound and
 only edits the spreadsheet it lives in. **Re-running is safe:** it refreshes headers, formatting,
-validation, and the static tabs but preserves Leads data, your H–N tracking,
+validation, and the static tabs but preserves Leads data, your K–Q tracking,
 your ICP + Schedule inputs, and Run Log history. Clearing leads is a separate
 action that requires typing `CLEAR` to confirm.
 
 The builder places headers on **row 3** (data from row 4). The worker also
 auto-detects the header row, so it can maintain a sheet whose headers sit
-elsewhere and will add the O–Y columns if they are missing — an older sheet
-built before the follow-up columns existed gains them on its next run.
+elsewhere and will add the R–AB system columns if they are simply missing.
+
+It will **refuse to write a sheet built on the older 25-column layout.**
+v4 inserted Post Link, Degree and Score inside the agent band, so every column
+after D shifted; writing new values over old headers would put a suggested DM
+where your "Reached Out" ticks live, across every row, with no undo. Instead the
+run stops and tells you to re-run `buildAidgentOsSheet` from
+Extensions > Apps Script (safe and data-preserving on an empty or fresh sheet)
+or to take a fresh copy of the template.
 
 ## Sourcing from existing connections (optional)
 
@@ -161,4 +183,4 @@ You are also asked once during setup whether ordinary runs should mine your
 existing connections first — the warm, low-hanging-fruit list nobody works. That
 answer is saved as `include_connections` in your persona. When it is on, matches
 found among your connections are searched first and labelled **Connection** in
-Source Type (L), so warm rows are obvious at a glance.
+Source Type (O), so warm rows are obvious at a glance.

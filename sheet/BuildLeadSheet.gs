@@ -8,17 +8,18 @@
  *        Lists · Run Log
  *
  *  Leads columns (must match src/schema.mjs and sheet/SHEET.md):
- *    A-G  agent output  : Name · Title / Company · LinkedIn (or profile URL) ·
- *                         Recent Post (verbatim + link) · Why Them ·
- *                         Suggested Comment · Suggested Intro DM
- *    H-N  human tracking: Reached Out · Replied · Outcome · Date Added ·
- *                         Source Type · Batch · Notes
- *    O-Y  system fields : Activity Date · Activity Type · Fit Score ·
- *                         Last Verified · Canonical Key · Research Source · Research Status
- *    V-Y  follow-up     : Connection Status · Reply Status · Last Reply ·
- *                         Follow-up Checked
- *                         (filled by the read-only follow-up pass, for rows where
- *                          YOU ticked Reached Out. It observes; it never sends.)
+ *    A-J   agent output  : Name · Title / Company · LinkedIn (or profile URL) ·
+ *                          Recent Post (verbatim + date) · Post Link · Degree ·
+ *                          Score (1-10) · Why Them · Suggested Comment ·
+ *                          Suggested Intro DM
+ *    K-Q   human tracking: Reached Out · Replied · Outcome · Date Added ·
+ *                          Source Type · Batch · Notes
+ *    R-AB  system fields : Activity Date · Activity Type · Fit Score ·
+ *                          Last Verified · Canonical Key · Research Source · Research Status
+ *    Y-AB  follow-up     : Connection Status · Reply Status · Last Reply ·
+ *                          Follow-up Checked
+ *                          (filled by the read-only follow-up pass, for rows where
+ *                           YOU ticked Reached Out. It observes; it never sends.)
  *
  *  RE-RUNNING IS SAFE. buildAidgentOsSheet never clears Leads data, human tracking,
  *  your ICP + Schedule inputs, or Run Log history. It only refreshes headers,
@@ -55,9 +56,12 @@ var INK = "#111827",      // banner and table-header fill
     BOX = "#CBD5E1";      // prompt-box outline
 
 // Header fills for the three Leads bands, so who-owns-what reads at a glance.
-var AGENT_HDR = INK, AGENT_TXT = WHITE;
-var HUMAN_HDR = "#1F2937", HUMAN_TXT = "#FDE68A";
-var SYS_HDR = "#374151",  SYS_TXT = "#D1D5DB";
+// v4 lightens all three: the agent band is Aidgentic light blue, and the other
+// two keep their old hues at the same weight so "yours vs the agent's" still
+// reads instantly without the header row going dark.
+var AGENT_HDR = PALE,      AGENT_TXT = INK;        // #DBEAFE on near-black
+var HUMAN_HDR = "#FEF3C7", HUMAN_TXT = "#78350F";  // amber, kept as the human tint
+var SYS_HDR = "#F3F4F6",   SYS_TXT = "#374151";    // neutral grey
 
 var DISP = "Play";   // display face: banners, section bars, big numbers
 var FACE = "Aptos";  // everything else
@@ -70,34 +74,50 @@ var RESEARCH_STATUS = ["New", "Refreshed", "Needs review"];
 var CONNECTION_STATUS = ["connected", "pending", "not_connected", "unknown"];
 var REPLY_STATUS = ["replied", "no_reply", "unknown"];
 
-// [title, widthPx, type, group]  type: text|link|check|outcome|source|status|connstatus|replystatus|date|num
+// [title, widthPx, type, group]
+//
+// type drives width, wrap and alignment, and is the ONE place to change them:
+//   prose  long text, wraps, top-left      (reading a centred paragraph is work)
+//   text   short text, wraps, top-left
+//   link   a URL, clipped to one line so it stays a single clean click
+//   short  a tiny enum, clipped, centred
+//   num | check | date | outcome | source | status | connstatus | replystatus
+//          all centred; the last five also get their dropdown
 var LEADS_COLS = [
   ["Name", 159, "text", "agent"],
   ["Title / Company", 239, "text", "agent"],
   ["LinkedIn (or profile URL)", 223, "link", "agent"],
-  ["Recent Post (verbatim + link)", 239, "text", "agent"],
-  ["Why Them", 303, "text", "agent"],
-  ["Suggested Comment", 278, "text", "agent"],
-  ["Suggested Intro DM", 415, "text", "agent"],
+  ["Recent Post (verbatim + date)", 300, "prose", "agent"],
+  ["Post Link", 210, "link", "agent"],
+  ["Degree", 76, "short", "agent"],
+  ["Score (1-10)", 86, "num", "agent"],
+  ["Why Them", 330, "prose", "agent"],
+  ["Suggested Comment", 320, "prose", "agent"],
+  ["Suggested Intro DM", 430, "prose", "agent"],
   ["Reached Out", 111, "check", "human"],
   ["Replied", 95, "check", "human"],
   ["Outcome", 143, "outcome", "human"],
   ["Date Added", 111, "date", "human"],
   ["Source Type", 159, "source", "human"],
   ["Batch", 127, "text", "human"],
-  ["Notes", 287, "text", "human"],
+  ["Notes", 287, "prose", "human"],
   ["Activity Date", 110, "date", "system"],
   ["Activity Type", 110, "text", "system"],
   ["Fit Score", 90, "num", "system"],
   ["Last Verified", 110, "date", "system"],
-  ["Canonical Key", 230, "text", "system"],
+  ["Canonical Key", 230, "link", "system"],
   ["Research Source", 140, "text", "system"],
   ["Research Status", 130, "status", "system"],
   ["Connection Status", 130, "connstatus", "system"],
   ["Reply Status", 110, "replystatus", "system"],
-  ["Last Reply", 320, "text", "system"],
+  ["Last Reply", 320, "prose", "system"],
   ["Follow-up Checked", 130, "date", "system"],
 ];
+
+/** Columns whose values are short enough that centring them helps you scan. */
+var CENTERED_TYPES = ["short", "num", "check", "date", "outcome", "source", "status", "connstatus", "replystatus"];
+/** Columns that hold sentences. Centring these would be a readability bug. */
+var WRAPPED_TYPES = ["prose", "text"];
 
 var RUN_LOG_HEADERS = [
   "Run ID", "Timestamp", "Persona", "Requested Target", "Candidates Inspected",
@@ -213,17 +233,32 @@ function ensureLeads_(ss) {
     else sh.insertRowsBefore(1, HEADER_ROW - found);
   }
 
+  // A tab whose headers are from an OLDER layout, with leads underneath them.
+  //
+  // Writing the new names over the old ones relabels the columns and moves
+  // nothing: the tick in what used to be "Reached Out" ends up under a header
+  // that now says something else, on every row, and the sheet still looks fine.
+  // Silently mangling somebody's tracking is worse than any error message, and
+  // it is worse precisely because the worker's own refusal sends people here.
+  // So: relabel freely while the list is empty, refuse the moment it is not.
+  assertRelabelIsSafe_(sh);
+
   banner_(sh, n, "LEADS",
-    "Agent output A-G   ·   your tracking H-N   ·   system research O-Y   ·   the worker never overwrites H-N", 22);
+    "Agent output A-J   ·   your tracking K-Q   ·   system research R-AB   ·   the worker never overwrites K-Q", 22);
 
   var headers = LEADS_COLS.map(function (c) { return c[0]; });
   sh.getRange(HEADER_ROW, 1, 1, n).setValues([headers])
     .setFontFamily(FACE).setFontWeight("bold").setFontSize(9)
     .setHorizontalAlignment("center").setVerticalAlignment("middle").setWrap(true);
   // Three bands, so the ownership rule is visible without reading anything.
-  bandHeader_(sh, 1, 7, AGENT_HDR, AGENT_TXT, "Agent output. Refreshed on each run; safe to edit in your own copy.");
-  bandHeader_(sh, 8, 7, HUMAN_HDR, HUMAN_TXT, "Human-managed. The research worker NEVER writes this column.");
-  bandHeader_(sh, 15, 11, SYS_HDR, SYS_TXT, "System/agent-managed research field. Avoid hand-editing.");
+  // The spans are COUNTED from LEADS_COLS rather than written down, so adding a
+  // column inside a band can never leave the paint half a column out of step.
+  bandHeader_(sh, bandStart_("agent"), bandCount_("agent"), AGENT_HDR, AGENT_TXT,
+    "Agent output. Refreshed on each run; safe to edit in your own copy.");
+  bandHeader_(sh, bandStart_("human"), bandCount_("human"), HUMAN_HDR, HUMAN_TXT,
+    "Human-managed. The research worker NEVER writes this column.");
+  bandHeader_(sh, bandStart_("system"), bandCount_("system"), SYS_HDR, SYS_TXT,
+    "System/agent-managed research field. Avoid hand-editing.");
   sh.setRowHeight(HEADER_ROW, 34);
 
   var maxRows = sh.getMaxRows();
@@ -240,21 +275,25 @@ function ensureLeads_(ss) {
     sh.setColumnWidth(col, LEADS_COLS[c][1]);
     try {
       var body = sh.getRange(FIRST_DATA_ROW, col, dataRows, 1);
-      body.setFontFamily(FACE).setFontColor(BODY).setFontSize(10).setVerticalAlignment("top");
-      body.setWrapStrategy(type === "text" ? SpreadsheetApp.WrapStrategy.WRAP : SpreadsheetApp.WrapStrategy.CLIP);
+      var wraps = WRAPPED_TYPES.indexOf(type) !== -1;
+      var centred = CENTERED_TYPES.indexOf(type) !== -1;
+      body.setFontFamily(FACE).setFontColor(BODY).setFontSize(10);
+      // Sentences read top-left and grow the row; short values sit centred on a
+      // single line. Wrapping a permalink would turn one click into three lines.
+      body.setVerticalAlignment(centred ? "middle" : "top");
+      body.setHorizontalAlignment(centred ? "center" : "left");
+      body.setWrapStrategy(wraps ? SpreadsheetApp.WrapStrategy.WRAP : SpreadsheetApp.WrapStrategy.CLIP);
       // requireCheckbox(), NOT insertCheckboxes(). Both render a tickbox, but
       // insertCheckboxes() WRITES a literal FALSE into every data row. On a
-      // 1000-row sheet that is ~997 non-empty cells in H and I, which makes the
+      // 1000-row sheet that is ~997 non-empty cells in the two tick columns, which makes the
       // whole grid look like a populated table to the Sheets API: values.append
       // then lands the first real batch of leads below the last FALSE instead of
       // at row 4, and the person sees an empty sheet. A validation rule gives the
       // same tickbox with the cells genuinely empty.
       if (type === "check") {
         body.setDataValidation(SpreadsheetApp.newDataValidation().requireCheckbox().build());
-        body.setHorizontalAlignment("center");
       }
-      else if (type === "date") { body.setNumberFormat("yyyy-mm-dd"); body.setHorizontalAlignment("center"); }
-      else if (type === "num") { body.setHorizontalAlignment("center"); }
+      else if (type === "date") { body.setNumberFormat("yyyy-mm-dd"); }
       else if (type === "outcome") setListValidation_(body, OUTCOMES);
       else if (type === "source") setListValidation_(body, SOURCE_TYPES);
       else if (type === "status") setListValidation_(body, RESEARCH_STATUS);
@@ -272,7 +311,7 @@ function ensureLeads_(ss) {
   try { clearStrayCheckboxValues_(sh); } catch (e) { /* cosmetic only */ }
 
   // Freeze the header rows only. NOT the first column: the banner on rows 1-2 is
-  // one cell merged across all of A:Y, and Sheets refuses to freeze a column that
+  // one cell merged across all of A:AB, and Sheets refuses to freeze a column that
   // would cut a merged cell in half ("you can't freeze columns which contain only
   // part of a merged cell"). Asking for it threw on every single build.
   try { sh.setFrozenRows(HEADER_ROW); } catch (e) {}
@@ -302,6 +341,42 @@ function ensureLeads_(ss) {
   if (colProblems.length) {
     throw new Error("headers are correct, but formatting was skipped for " +
       colProblems.join(", ") + ". " + (colError ? colError.message : ""));
+  }
+}
+
+/**
+ * Refuse to rename columns out from under existing data.
+ *
+ * Safe cases, all of which pass: a brand-new tab, a tab with the current
+ * headers, a tab whose headers are simply missing some columns, and any tab
+ * with no lead rows at all.
+ */
+function assertRelabelIsSafe_(sh) {
+  if (sh.getLastRow() <= HEADER_ROW) return;           // no data rows: relabel away
+  var width = Math.min(sh.getMaxColumns(), LEADS_COLS.length);
+  if (width < 1) return;
+  var existing = sh.getRange(HEADER_ROW, 1, 1, width).getValues()[0];
+  var names = sh.getRange(FIRST_DATA_ROW, 1, sh.getLastRow() - HEADER_ROW, 1).getValues();
+  var hasLeads = false;
+  for (var r = 0; r < names.length; r++) {
+    if (String(names[r][0]).trim() !== "") { hasLeads = true; break; }
+  }
+  if (!hasLeads) return;                                // formatting only, no leads
+
+  for (var i = 0; i < width; i++) {
+    var found = String(existing[i] == null ? "" : existing[i]).trim();
+    if (!found || found === LEADS_COLS[i][0]) continue;
+    throw new Error(
+      'this tab is on an older column layout (column ' + colLetter_(i + 1) + ' says "' + found +
+      '", this version puts "' + LEADS_COLS[i][0] + '" there) and it already has leads in it. ' +
+      "Renaming the headers would leave every value one or more columns away from the " +
+      "header describing it, including your own Reached Out / Replied / Outcome / Notes, " +
+      "and there is no undo. Nothing was changed.\n\n" +
+      "To move to the new layout, either (a) copy your existing rows somewhere safe, use " +
+      '"Clear the Leads list…" from the ⚡ Aidgent OS menu, run this again, and let the ' +
+      "next run re-source those people with the new columns filled in, or (b) take a fresh " +
+      "copy of the template and keep this sheet as your archive."
+    );
   }
 }
 
@@ -338,13 +413,18 @@ function rebuildStartHere_(ss) {
   // --- today at a glance
   sectionBar_(sh, 4, 2, 6, "TODAY AT A GLANCE");
   var labels = ["Prospects", "Ready to review", "Reached out", "Replies", "Positive", "Reply rate"];
+  // Column letters are LOOKED UP, never typed. When v4 pushed the human band
+  // three columns to the right, a hard-coded "Leads!H" would have kept counting
+  // happily against the wrong column and shown everyone a dashboard of zeros.
+  var OUT = letterOf_("Reached Out"), REP = letterOf_("Replied"), OUTC = letterOf_("Outcome");
+  var col = function (L) { return "Leads!" + L + FIRST_DATA_ROW + ":" + L; };
   var formulas = [
-    "=COUNTA(Leads!A" + FIRST_DATA_ROW + ":A)",
-    "=COUNTA(Leads!A" + FIRST_DATA_ROW + ":A)-COUNTIF(Leads!H" + FIRST_DATA_ROW + ":H,TRUE)",
-    "=COUNTIF(Leads!H" + FIRST_DATA_ROW + ":H,TRUE)",
-    "=COUNTIF(Leads!I" + FIRST_DATA_ROW + ":I,TRUE)",
-    '=COUNTIF(Leads!J' + FIRST_DATA_ROW + ':J,"Positive")',
-    "=IFERROR(COUNTIF(Leads!I" + FIRST_DATA_ROW + ":I,TRUE)/COUNTIF(Leads!H" + FIRST_DATA_ROW + ":H,TRUE),0)",
+    "=COUNTA(" + col("A") + ")",
+    "=COUNTA(" + col("A") + ")-COUNTIF(" + col(OUT) + ",TRUE)",
+    "=COUNTIF(" + col(OUT) + ",TRUE)",
+    "=COUNTIF(" + col(REP) + ",TRUE)",
+    '=COUNTIF(' + col(OUTC) + ',"Positive")',
+    "=IFERROR(COUNTIF(" + col(REP) + ",TRUE)/COUNTIF(" + col(OUT) + ",TRUE),0)",
   ];
   sh.getRange(5, 2, 1, 6).setValues([labels])
     .setBackground(GRAYBG).setFontColor(MUTED).setFontFamily(FACE).setFontSize(10)
@@ -395,8 +475,8 @@ function rebuildStartHere_(ss) {
     ["1. Ask where you are up to", "Your agent checks the setup and tells you the single next thing to do. Ask again after each step."],
     ["2. Fill in ICP + Schedule", "The yellow cells on that tab. Then ask your agent to turn them into your targeting."],
     ["3. Connect this sheet", "Share it with your service account address as an Editor, then ask your agent to connect this sheet."],
-    ["4. Ask for a test run of ten", "Ten people, so you can read real rows here before there are fifty of them."],
-    ["5. Ask for today's run", "About 25 new people, then a check on who accepted and who replied. Nothing is sent."],
+    ["4. Ask for a test run of ten", "Ten leads added, so you can read real rows here before there are fifty of them."],
+    ["5. Ask for today's run", "It keeps going until 25 new leads are added, then checks who accepted and who replied. Nothing is sent."],
   ];
   r = setupBar + 1;
   var setupTop = r;
@@ -448,13 +528,13 @@ function ensureIcpSchedule_(ss) {
     ["input", "5. Opener voice", "Warm, concise, curious, no pitch", ""],
     ["gap", "", "", ""],
     ["sec", "SOURCING + SCHEDULE", "", ""],
-    ["input", "Prospects per manual run", "25", "A test run is ten. Keep normal runs near 25."],
-    ["input", "Prospects per scheduled run", "50", "Fresh people only. Existing leads are refreshed, not duplicated."],
+    ["input", "Leads added per manual run", "25", "This many NEW rows get added. A test run adds ten."],
+    ["input", "Leads added per scheduled run", "25", "New rows only. People already in Leads are refreshed, not counted again."],
     ["input", "Weekdays", "Monday to Friday", "Recommended while you build the review habit."],
     ["input", "Run time", "8:00 AM", "Your local time when you create the schedule."],
     ["input", "Timezone", "America/New_York", "Change this if needed."],
     ["fixed", "Recency preference", "Prefer the last 7 days", "Strong older matches are still accepted and marked as older."],
-    ["fixed", "Mode", "Local LinkedIn (signed-in profile)", "Or the public-web fallback."],
+    ["fixed", "Mode", "Local LinkedIn (signed-in profile)", "The only mode. A run without a signed-in session refuses to start."],
     ["gap", "", "", ""],
     ["sec", "CHANGING ANY OF THIS", "", ""],
     ["fixed", "Where your targeting lives", "As a file on your computer, not in this sheet", "Your agent names it and keeps it up to date."],
@@ -462,7 +542,7 @@ function ensureIcpSchedule_(ss) {
     ["fixed", "Selling more than one thing?", "Ask your agent for a second set of targeting", "It can switch between them without you redoing any setup."],
     ["gap", "", "", ""],
     ["note", "Fresh means not already in Leads by name or canonical profile URL. Scheduled runs append new rows and " +
-      "refresh existing ones. They never erase your tracking in H to N.", "", ""],
+      "refresh existing ones. They never erase your tracking in K to Q.", "", ""],
   ];
   labeledTab_(ss, "ICP + Schedule", "ICP + SCHEDULE",
     "Yellow cells are yours. Keep the targeting specific enough that a stranger could apply it consistently.",
@@ -568,7 +648,7 @@ function rebuildPromptLibrary_(ss) {
       "keywords, exclusions, and my Google Sheet id. Do not source anything yet."],
     ["3  ASK FOR A RUN", "You do not paste anything for this one. You just ask.",
       "Do a test run of ten people first, then show me what landed in the sheet. Read-only research only: prefer the " +
-      "last 7 days, never send, connect or comment on my behalf, never touch my columns H to N, and stop and tell me if " +
+      "last 7 days, never send, connect or comment on my behalf, never touch my columns K to Q, and stop and tell me if " +
       "you hit a login, CAPTCHA, checkpoint or rate-limit page."],
     ["4  SCHEDULE IT", "Same job, every weekday, still nothing auto-sent.",
       "Set up a scheduled task that does the daily run for me every weekday morning, about 25 people. Remind me what has " +
@@ -606,11 +686,11 @@ function rebuildLists_(ss) {
 
   var blocks = [
     ["DROPDOWN VALUES", ["Column", "Allowed values"], [
-      ["Outcome (J)", OUTCOMES.join(" · ")],
-      ["Source Type (L)", SOURCE_TYPES.join(" · ")],
-      ["Research Status (U)", RESEARCH_STATUS.join(" · ")],
-      ["Connection Status (V)", CONNECTION_STATUS.join(" · ")],
-      ["Reply Status (W)", REPLY_STATUS.join(" · ")]]],
+      ["Outcome (" + letterOf_("Outcome") + ")", OUTCOMES.join(" · ")],
+      ["Source Type (" + letterOf_("Source Type") + ")", SOURCE_TYPES.join(" · ")],
+      ["Research Status (" + letterOf_("Research Status") + ")", RESEARCH_STATUS.join(" · ")],
+      ["Connection Status (" + letterOf_("Connection Status") + ")", CONNECTION_STATUS.join(" · ")],
+      ["Reply Status (" + letterOf_("Reply Status") + ")", REPLY_STATUS.join(" · ")]]],
     ["OUTCOME DEFINITIONS", ["Outcome", "Use when"], [
       ["No response", "Enough time has passed and there is no reply."],
       ["Neutral", "A reply without clear interest or rejection."],
@@ -624,9 +704,9 @@ function rebuildLists_(ss) {
       ["Why Them", "Names the specific fit signal, not generic praise."],
       ["No fabrication", "Never invent activity, dates, quotes, geography, titles or URLs."]]],
     ["WHO WRITES WHAT", ["Columns", "Owner"], [
-      ["A to G", "The agent. Refreshed on every run."],
-      ["H to N", "You. The worker never writes these."],
-      ["O to Y", "System research and the read-only follow-up pass."]]],
+      ["A to J", "The agent. Refreshed on every run."],
+      ["K to Q", "You. The worker never writes these."],
+      ["R to AB", "System research and the read-only follow-up pass."]]],
   ];
   var r = 4;
   blocks.forEach(function (b) {
@@ -697,8 +777,8 @@ function aboutAidgentOs() {
   SpreadsheetApp.getUi().alert(
     "Aidgent OS",
     "Local, human-approved prospect research.\n\n" +
-    "Leads: A-G agent output, H-N your tracking, O-Y system research.\n" +
-    "The worker never writes H-N and never sends, connects, or comments.\n\n" +
+    "Leads: A-J agent output, K-Q your tracking, R-AB system research.\n" +
+    "The worker never writes K-Q and never sends, connects, or comments.\n\n" +
     "Rebuilding is safe: it preserves your data, tracking, ICP inputs, and Run Log.\n" +
     "Clearing leads is a separate, confirmed action.\n\nAn open, human-approved starter kit. MIT licensed.",
     SpreadsheetApp.getUi().ButtonSet.OK
@@ -827,6 +907,14 @@ function cf_(text, bg, fg, range) {
   return SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(text).setBackground(bg).setFontColor(fg).setRanges([range]).build();
 }
 function colOf_(name) { for (var i = 0; i < LEADS_COLS.length; i++) if (LEADS_COLS[i][0] === name) return i + 1; return 1; }
+/** 1-based first column of a band, counted from LEADS_COLS so it cannot drift. */
+function bandStart_(group) { for (var i = 0; i < LEADS_COLS.length; i++) if (LEADS_COLS[i][3] === group) return i + 1; return 1; }
+/** How many columns that band spans. */
+function bandCount_(group) { var n = 0; for (var i = 0; i < LEADS_COLS.length; i++) if (LEADS_COLS[i][3] === group) n++; return n; }
+/** Spreadsheet letter for a 1-based column index (handles AA/AB). */
+function colLetter_(col) { var s = "", n = col; while (n > 0) { var r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; }
+/** The letter of a named Leads column, so guidance text can never go stale. */
+function letterOf_(name) { return colLetter_(colOf_(name)); }
 function trimCols_(sh, W) { if (sh.getMaxColumns() > W) sh.deleteColumns(W + 1, sh.getMaxColumns() - W); }
 function trimRows_(sh, R) { if (sh.getMaxRows() > R) sh.deleteRows(R + 1, sh.getMaxRows() - R); }
 function orderTabs_(ss, order) {

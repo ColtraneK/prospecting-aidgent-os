@@ -66,15 +66,22 @@ export function includeConnections(persona) {
  * - persona opted in        -> connections first (capped share) then net-new search
  * - otherwise               -> net-new search only
  * Pure so it is testable without a browser.
+ *
+ * `limit` is a budget of profiles INSPECTED on that source, and the target now
+ * counts leads ADDED, so the two are no longer the same unit. `inspectionsPerAdd`
+ * converts: reaching one added lead costs several profiles opened, because most
+ * people inspected do not qualify. Without it, "40% of the run from your warm
+ * connections" quietly became "40% of the target opened from your connections",
+ * which is nearer 10%.
  */
-export function buildSources(persona, config = {}, { connectionShare = 0.4 } = {}) {
+export function buildSources(persona, config = {}, { connectionShare = 0.4, inspectionsPerAdd = 4 } = {}) {
   if (config.mode === "connections") {
     return [{ url: CONNECTIONS_URL, kind: "connections" }];
   }
   const searches = buildSearches(persona);
   if (!includeConnections(persona)) return searches;
   const target = Number(config.target) > 0 ? Number(config.target) : 25;
-  const limit = Math.max(1, Math.ceil(target * connectionShare));
+  const limit = Math.max(1, Math.ceil(target * connectionShare * inspectionsPerAdd));
   return [{ url: CONNECTIONS_URL, kind: "connections", limit }, ...searches];
 }
 

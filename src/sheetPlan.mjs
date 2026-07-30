@@ -1,5 +1,5 @@
 // sheetPlan.mjs — turn a merge plan into concrete Google Sheets value writes.
-// Pure and testable. Guarantees updates NEVER touch human columns H:N, because
+// Pure and testable. Guarantees updates NEVER touch human columns K:Q, because
 // it only emits ranges for the exact columns present in each update's `set`.
 
 import { LEADS_HEADERS, COLS, RANGE_HUMAN, colLetter } from "./schema.mjs";
@@ -36,7 +36,7 @@ function assertNoHumanColumns(indexes) {
   }
 }
 
-/** Full ordered row array (A:Y) for a new lead's cells map. */
+/** Full ordered row array (A:AB) for a new lead's cells map. */
 export function rowArray(cells) {
   return LEADS_HEADERS.map((h) => (cells[h] === undefined ? "" : cells[h]));
 }

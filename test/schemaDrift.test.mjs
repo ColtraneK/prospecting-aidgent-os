@@ -41,8 +41,8 @@ test("the builder groups columns into the same agent/human/system bands", () => 
   }
 });
 
-test("the follow-up columns land in V:Y and are the last four", () => {
-  assert.deepEqual(FOLLOWUP_FIELDS.map((f) => COLS[f].letter), ["V", "W", "X", "Y"]);
+test("the follow-up columns land in Y:AB and are the last four", () => {
+  assert.deepEqual(FOLLOWUP_FIELDS.map((f) => COLS[f].letter), ["Y", "Z", "AA", "AB"]);
   assert.deepEqual(LEADS_HEADERS.slice(-4), FOLLOWUP_FIELDS);
   for (const f of FOLLOWUP_FIELDS) assert.ok(SYSTEM_FIELDS.includes(f), `${f} must be a system field`);
 });
@@ -67,4 +67,27 @@ test("the builder's Run Log headers match runlog.mjs", () => {
 test("no column name is duplicated (COLS would silently collapse them)", () => {
   assert.equal(new Set(LEADS_HEADERS).size, LEADS_HEADERS.length);
   assert.equal(Object.keys(COLS).length, LEADS_HEADERS.length);
+});
+
+test("the builder refuses to rename columns out from under existing leads", () => {
+  // The worker's own refusal message sends people to buildAidgentOsSheet. If
+  // the builder then relabels a populated old-layout tab, the advice we give is
+  // the thing that destroys their tracking — so the guard has to stay, and it
+  // has to run before any header is written.
+  assert.match(gs, /function assertRelabelIsSafe_\(/, "the relabel guard is gone");
+  const inEnsure = gs.match(/function ensureLeads_\([\s\S]*?\n\}/)[0];
+  assert.match(inEnsure, /assertRelabelIsSafe_\(sh\)/, "ensureLeads_ no longer calls the guard");
+  const guardAt = inEnsure.indexOf("assertRelabelIsSafe_(sh)");
+  const writeAt = inEnsure.indexOf("setValues([headers])");
+  assert.ok(guardAt > -1 && writeAt > -1 && guardAt < writeAt,
+    "the guard must run BEFORE the header row is written");
+});
+
+test("the builder never hardcodes a Leads column letter into a formula", () => {
+  // The Start Here dashboard used to count Leads!H and Leads!I directly. v4
+  // moved those two columns three to the right, and a hardcoded letter would
+  // have gone on counting the wrong column without erroring.
+  const formulas = [...gs.matchAll(/"=[^"]*Leads![A-Z]+\d*[^"]*"/g)].map((m) => m[0]);
+  assert.deepEqual(formulas, [], `hardcoded Leads columns in a formula: ${formulas.join(", ")}`);
+  assert.match(gs, /function letterOf_\(/, "letterOf_ is how formulas must resolve columns");
 });

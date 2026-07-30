@@ -48,3 +48,27 @@ test("exclusion term rejects", () => {
   // exclusion 'Recruiters' present in headline
   assert.equal(r.accepted, false);
 });
+
+test("an observed connection degree ranks warmer people higher", () => {
+  const base = { name: "Ada", title: "Founder", location: "Austin, United States" };
+  const first = scoreCandidate(persona, { ...base, degree: "1st" }, { nowMs: now });
+  const second = scoreCandidate(persona, { ...base, degree: "2nd" }, { nowMs: now });
+  const third = scoreCandidate(persona, { ...base, degree: "3rd" }, { nowMs: now });
+  const none = scoreCandidate(persona, base, { nowMs: now });
+
+  assert.equal(first.score - none.score, 10);
+  assert.equal(second.score - none.score, 8);
+  assert.equal(third.score, none.score, "3rd degree is neutral, not a penalty");
+
+  // A degree nobody saw must cost nothing: it is a gap in our observation, not
+  // a fact about the person.
+  assert.equal(none.factors.find((f) => f.name === "degree_match").points, 0);
+  assert.match(none.factors.find((f) => f.name === "degree_match").detail, /not observed/);
+});
+
+test("a 3rd-degree person still qualifies on the other signals", () => {
+  const r = scoreCandidate(persona, {
+    name: "Grace", title: "Owner", location: "Toronto, Canada", degree: "3rd",
+  }, { nowMs: now });
+  assert.equal(r.accepted, true);
+});

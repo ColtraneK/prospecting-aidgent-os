@@ -3,45 +3,48 @@
 // all must agree with this. If you change columns, change them here and mirror
 // them in the builder and docs.
 //
-// v3 layout (A-Y): the agent writes A-G and O-Y; you own H-N.
+// v4 layout (A-AB): the agent writes A-J and R-AB; you own K-Q.
 
 export const AGENT_FIELDS = [
   "Name", // A
   "Title / Company", // B
   "LinkedIn (or profile URL)", // C
-  "Recent Post (verbatim + link)", // D  verbatim recent post text then its URL (if within 7 days)
-  "Why Them", // E
-  "Suggested Comment", // F  a relevant reply to their recent post/comment
-  "Suggested Intro DM", // G  a short no-pitch outreach message
+  "Recent Post (verbatim + date)", // D  verbatim recent post text then its date
+  "Post Link", // E  the bare permalink, nothing else, so Sheets renders one link
+  "Degree", // F  1st | 2nd | 3rd, blank when not observed. Never guessed
+  "Score (1-10)", // G  the 0-100 Fit Score shown at reading scale
+  "Why Them", // H
+  "Suggested Comment", // I  a relevant reply to their recent post/comment
+  "Suggested Intro DM", // J  a short no-pitch outreach message
 ];
 
 export const HUMAN_FIELDS = [
-  "Reached Out", // H
-  "Replied", // I
-  "Outcome", // J
-  "Date Added", // K
-  "Source Type", // L
-  "Batch", // M
-  "Notes", // N
+  "Reached Out", // K
+  "Replied", // L
+  "Outcome", // M
+  "Date Added", // N
+  "Source Type", // O
+  "Batch", // P
+  "Notes", // Q
 ];
 
 export const SYSTEM_FIELDS = [
-  "Activity Date", // O
-  "Activity Type", // P
-  "Fit Score", // Q
-  "Last Verified", // R
-  "Canonical Key", // S
-  "Research Source", // T
-  "Research Status", // U
-  // Follow-up loop (V-Y). Written ONLY by the follow-up pass, which reads
+  "Activity Date", // R
+  "Activity Type", // S
+  "Fit Score", // T  the raw 0-100 score; column G is its 1-10 display
+  "Last Verified", // U
+  "Canonical Key", // V
+  "Research Source", // W
+  "Research Status", // X
+  // Follow-up loop (Y-AB). Written ONLY by the follow-up pass, which reads
   // LinkedIn read-only. These are observations, never actions.
-  "Connection Status", // V  connected | pending | not_connected | unknown
-  "Reply Status", // W  replied | no_reply | unknown
-  "Last Reply", // X  verbatim snippet of their latest message to you (+ date)
-  "Follow-up Checked", // Y  ISO date the follow-up pass last observed this row
+  "Connection Status", // Y  connected | pending | not_connected | unknown
+  "Reply Status", // Z  replied | no_reply | unknown
+  "Last Reply", // AA verbatim snippet of their latest message to you (+ date)
+  "Follow-up Checked", // AB ISO date the follow-up pass last observed this row
 ];
 
-/** The V-Y subset the follow-up pass owns. Nothing else may write these. */
+/** The Y-AB subset the follow-up pass owns. Nothing else may write these. */
 export const FOLLOWUP_FIELDS = [
   "Connection Status",
   "Reply Status",
@@ -69,6 +72,46 @@ export const COLS = LEADS_HEADERS.reduce((acc, name, i) => {
   acc[name] = { index0: i, letter: colLetter(i) };
   return acc;
 }, {});
+
+/**
+ * Does this sheet's header row still match the layout the worker writes?
+ *
+ * v4 inserted three columns INSIDE the agent band, so every band after it
+ * shifted. Writing v4 values into a v3 sheet would put the intro DM where the
+ * person's "Reached Out" tick lives — silent, unrecoverable column corruption
+ * across their whole list. So a full-layout mismatch is a refusal, not a patch.
+ *
+ * Deliberately lenient in one direction only: a header cell that is EMPTY is
+ * treated as "not built yet" and left to ensureLeadsSchema, which is how an
+ * older sheet gains the system columns. A header cell holding a DIFFERENT name
+ * is the old layout, and that stops the run.
+ *
+ * Pure: takes the detected header row, returns { ok, mismatch, message }.
+ */
+export function checkLeadsLayout(headers = []) {
+  const found = LEADS_HEADERS.map((_, i) => String(headers[i] || "").trim());
+  if (found.every((h) => !h)) return { ok: true, mismatch: null, message: "" };
+  for (let i = 0; i < LEADS_HEADERS.length; i++) {
+    if (!found[i]) continue; // not built yet — ensureLeadsSchema fills it in
+    if (found[i] === LEADS_HEADERS[i]) continue;
+    return {
+      ok: false,
+      mismatch: { index0: i, letter: colLetter(i), expected: LEADS_HEADERS[i], found: found[i] },
+      message:
+        `your sheet has the old column layout — column ${colLetter(i)} says ` +
+        `"${found[i]}" where this version writes "${LEADS_HEADERS[i]}". Writing to it ` +
+        "would shift every value into the wrong column, including your own tracking, " +
+        "so this run stopped instead and changed nothing.\n\n" +
+        "If the Leads tab has NO rows yet: open it, then Extensions > Apps Script, and " +
+        "run buildAidgentOsSheet. That rebuilds the headers in place.\n" +
+        "If it already has leads: rebuilding would rename the columns without moving the " +
+        "rows, so save a copy of them first, use \"Clear the Leads list…\" from the " +
+        "⚡ Aidgent OS menu, then run buildAidgentOsSheet and let the next run re-source " +
+        "those people. Taking a fresh copy of the template works too.",
+    };
+  }
+  return { ok: true, mismatch: null, message: "" };
+}
 
 export const RANGE_AGENT = [0, AGENT_FIELDS.length - 1];
 export const RANGE_HUMAN = [AGENT_FIELDS.length, AGENT_FIELDS.length + HUMAN_FIELDS.length - 1];

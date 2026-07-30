@@ -36,9 +36,18 @@ password (see [SECURITY.md](../SECURITY.md)).
 ## Pilot, then run
 
 ```bash
-npm run pilot  -- --persona my-persona --headless          # 10 people; review first
+npm run pilot  -- --persona my-persona --headless          # adds 10 leads; review first
 npm run source -- --persona my-persona --target 25 --headless --update-sheet
 ```
+
+`--target` counts **leads added to your sheet**, not profiles opened. Getting to
+25 added usually means inspecting fifty to a hundred people, because most of them
+will not match and some are already in your list. The run reports both numbers.
+
+There is a hard daily cap of 120 profiles inspected, and a deliberate 3.5 to 9
+second pause between pages. If the cap is reached first, the run stops there and
+says so (`14 of 25 added; stopped at the daily inspection cap`). That is working
+as intended. A short day is much cheaper than a restricted LinkedIn account.
 
 Stop after the pilot and actually read the rows. Do the suggested comments sound
 like you? Are these the right people? Fix the persona and pilot again if not — a
@@ -48,14 +57,16 @@ Each candidate is confirmed against the persona (title, company, geography, fit)
 its canonical profile URL is captured, and recent activity is inspected. A post
 or relevant comment about a core topic in the **last 7 days** is **prioritized**
 as a ranking boost, but a strong ICP match with older or no recent activity is
-still allowed. Why Them, the verbatim recent post (column D), the Suggested
-Comment (F), and the Suggested Intro DM (G) are built only from verified evidence.
+still allowed. Why Them, the verbatim recent post (column D) with its link in
+column E, the Suggested Comment (I), and the Suggested Intro DM (J) are built
+only from verified evidence. Degree (F) is copied from the badge on the page when
+one is shown, and left blank when it is not.
 If the newest post found is older than seven days it is still written to column D
 and marked `(date — older than 7 days)`, so a suggested comment never refers to a
 post that is missing from your sheet.
 
 The worker appends new leads and refreshes existing ones in the Sheet, preserves
-your human columns H–N, and writes a Run Log row. On any login / CAPTCHA /
+your human columns K–Q, and writes a Run Log row. On any login / CAPTCHA /
 checkpoint / rate-limit / expiry page it **stops safely and exits nonzero** —
 re-run `setup-login` or wait.
 
@@ -66,7 +77,7 @@ re-run `setup-login` or wait.
 
 ## Check back: who accepted, who replied
 
-Once you have started reaching out, tick **Reached Out (H)** on the rows you
+Once you have started reaching out, tick **Reached Out (K)** on the rows you
 contacted. That tick is what opts a person into the follow-up pass:
 
 ```bash
@@ -74,7 +85,7 @@ npm run follow-up -- --persona my-persona --update-sheet
 ```
 
 It opens three of **your own** pages read-only — sent invitations, connections,
-and your message list — and fills columns **V–Y**: Connection Status, Reply
+and your message list — and fills columns **Y–AB**: Connection Status, Reply
 Status, Last Reply, and the date it checked. It clicks nothing that accepts,
 withdraws, replies, or sends.
 

@@ -19,11 +19,11 @@ you want to drive a single step by hand.
 
 ## 3. Source (run the skill)
 
-> Use the research-outreach-prospects skill with persona {{SLUG}}. Pilot 10 first, let me review, then run headless with --update-sheet. Read-only research only: prioritize people with a post or relevant comment about my core topics in the last 7 days but allow strong ICP matches without recent activity. For each lead put the verbatim recent post + link in column D, a Suggested Comment in F, and a Suggested Intro DM in G. Never send/connect/react/comment, never touch my human columns H–N, and stop on any login / CAPTCHA / checkpoint / rate-limit page.
+> Use the research-outreach-prospects skill with persona {{SLUG}}. Pilot 10 first, let me review, then run headless with --update-sheet. Read-only research only: prioritize people with a post or relevant comment about my core topics in the last 7 days but allow strong ICP matches without recent activity. For each lead put the verbatim recent post and its date in column D, the bare post link in E, a Suggested Comment in I, and a Suggested Intro DM in J. Never send/connect/react/comment, never touch my human columns K–Q, and stop on any login / CAPTCHA / checkpoint / rate-limit page.
 
 ## 4. Check back (read-only follow-up)
 
-> Run the follow-up pass for persona {{SLUG}} and update my sheet. Read-only: open my sent invitations, my connections list, and my message list, and fill columns V–Y for the rows where I ticked Reached Out. Never accept, withdraw, reply, or send anything. If a page cannot be read, record unknown rather than guessing that nobody replied.
+> Run the follow-up pass for persona {{SLUG}} and update my sheet. Read-only: open my sent invitations, my connections list, and my message list, and fill columns Y–AB for the rows where I ticked Reached Out. Never accept, withdraw, reply, or send anything. If a page cannot be read, record unknown rather than guessing that nobody replied.
 
 ## 5. Schedule (local)
 

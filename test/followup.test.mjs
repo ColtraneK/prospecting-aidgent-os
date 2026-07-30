@@ -102,7 +102,7 @@ test("a recorded reply is never blanked out by a pass that could not read messag
   }
 });
 
-test("the follow-up pass can never write outside V:Y", () => {
+test("the follow-up pass can never write outside Y:AB", () => {
   assert.throws(() => assertOnlyFollowupFields({ "Reached Out": "TRUE" }), /may only write/);
   assert.throws(() => assertOnlyFollowupFields({ "Name": "x" }), /may only write/);
   for (const f of FOLLOWUP_FIELDS) assert.equal(assertOnlyFollowupFields({ [f]: "v" }), true);
@@ -112,7 +112,7 @@ test("the follow-up pass can never write outside V:Y", () => {
     assert.ok(!HUMAN_FIELDS.includes(f));
     assert.ok(!AGENT_FIELDS.includes(f));
   }
-  assert.deepEqual(FOLLOWUP_FIELDS.map((f) => COLS[f].letter), ["V", "W", "X", "Y"]);
+  assert.deepEqual(FOLLOWUP_FIELDS.map((f) => COLS[f].letter), ["Y", "Z", "AA", "AB"]);
 });
 
 test("planFollowUp output writes cleanly through the real sheet planner", () => {
@@ -120,12 +120,16 @@ test("planFollowUp output writes cleanly through the real sheet planner", () => 
   const { appends, cellUpdates } = buildValueUpdates({ newRows: [], updates });
   assert.equal(appends.length, 0);
   const ranges = cellUpdates.map((u) => u.range);
-  assert.ok(ranges.every((r) => /^Leads![V-Y]/.test(r)), ranges.join(", "));
-  // Row 5 has no Last Reply (X), so it must split into V:W and Y — never a
-  // V:Y block that would blank X.
-  assert.ok(ranges.includes("Leads!V5:W5"));
-  assert.ok(ranges.includes("Leads!Y5"));
-  assert.ok(!ranges.includes("Leads!V5:Y5"));
+  const allowed = new Set(FOLLOWUP_FIELDS.map((f) => COLS[f].letter));
+  for (const r of ranges) {
+    const col = r.match(/^Leads!([A-Z]+)/)[1];
+    assert.ok(allowed.has(col), `${r} is outside the follow-up band`);
+  }
+  // Row 5 has no Last Reply (AA), so it must split into Y:Z and AB — never a
+  // Y:AB block that would blank AA.
+  assert.ok(ranges.includes("Leads!Y5:Z5"));
+  assert.ok(ranges.includes("Leads!AB5"));
+  assert.ok(!ranges.includes("Leads!Y5:AB5"));
 });
 
 test("rows with no name and no url are skipped rather than mismatched", () => {

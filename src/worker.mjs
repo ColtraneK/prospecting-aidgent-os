@@ -12,7 +12,7 @@
 import { detectBlocker, diagnoseEmptyResults } from "./blockers.mjs";
 import { parseActivityDate } from "./recency.mjs";
 import { createPacer } from "./pacing.mjs";
-import { canonicalizeLinkedInUrl } from "./url.mjs";
+import { canonicalizeLinkedInUrl, canonicalKey } from "./url.mjs";
 import { buildSources, SENT_INVITES_URL, CONNECTIONS_URL, MESSAGING_URL } from "./searchTerms.mjs";
 
 export const FORBIDDEN_ACTION_LABELS = [
@@ -162,11 +162,74 @@ export async function setupLogin({ profilePath, channel = "chrome", waitMs = 0 }
 }
 
 /**
- * HEADLESS research run. Returns { candidates, blocker, inspected }.
- * candidates carry only VERIFIED, captured fields. Scoring/qualification and
- * Why-Them/opener composition happen in the pipeline (cli.mjs), not here.
+ * Count how many NEW rows a run has earned so far.
+ *
+ * The target used to cap people INSPECTED, which meant "pilot 10" delivered ten
+ * profiles opened and, after scoring, often two rows in the sheet. What anyone
+ * actually asks for is ten LEADS. So acceptance is decided inside the collection
+ * loop — `accept` is the same pure scorer the pipeline runs, called on facts
+ * this browser observed, so nothing about "no model decides who qualifies"
+ * changes — and only a candidate that both scores accepted AND is not already in
+ * the sheet moves the counter.
+ *
+ * Duplicates still get their row refreshed downstream; they just do not count as
+ * added, because refreshing a row you already had is not a new lead.
  */
-export async function runResearch({ persona, config }) {
+export function makeAddedCounter({ accept, existingKeys }) {
+  const keys = existingKeys instanceof Set ? existingKeys : new Set(existingKeys || []);
+  const addedKeys = new Set();
+  return {
+    /** Register one inspected candidate; returns true if it counts as added. */
+    consider(candidate) {
+      let ok = false;
+      try {
+        ok = accept ? !!accept(candidate) : false;
+      } catch {
+        ok = false; // a scorer that throws must never stop the run
+      }
+      if (!ok) return false;
+      const key = canonicalKey({ url: candidate.url, name: candidate.name, company: candidate.company }).key;
+      if (!key || keys.has(key) || addedKeys.has(key)) return false;
+      addedKeys.add(key);
+      return true;
+    },
+    get added() {
+      return addedKeys.size;
+    },
+  };
+}
+
+/**
+ * Why a run stopped short of its target. Never a failure — a short day is the
+ * correct outcome when the cap or the sources run out — but always said out
+ * loud, because "10 of 25" read as "25" is how someone talks themselves into
+ * raising the cap.
+ */
+export function shortfallFor({ added, target, capReached, inspected, sourcesWalked, sourcesTotal }) {
+  if (added >= target) return null;
+  if (capReached) {
+    return {
+      kind: "daily_cap",
+      text: `${added} of ${target} added; stopped at the daily inspection cap after ${inspected} profile(s).`,
+    };
+  }
+  return {
+    kind: "sources_exhausted",
+    text: `${added} of ${target} added; walked all ${sourcesWalked} of ${sourcesTotal} source(s) and ran out of people to inspect (${inspected} inspected).`,
+  };
+}
+
+/**
+ * HEADLESS research run. Returns { candidates, blocker, inspected, added }.
+ * candidates carry only VERIFIED, captured fields, and include the ones that did
+ * NOT qualify, so every rejection still reaches the report with its reason.
+ * Why-Them/opener composition happens in the pipeline (cli.mjs), not here.
+ *
+ * `accept` and `existingKeys` are what make `--target` mean ADDED rows. Without
+ * them the run falls back to the old inspected-count behaviour rather than
+ * looping forever.
+ */
+export async function runResearch({ persona, config, accept = null, existingKeys = null }) {
   const pacer = createPacer({
     minDelayMs: config.minDelayMs,
     maxDelayMs: config.maxDelayMs,
@@ -178,12 +241,16 @@ export async function runResearch({ persona, config }) {
   const candidates = [];
   const seen = new Set();
   const sourceReports = [];
+  const counter = makeAddedCounter({ accept, existingKeys });
+  // With no scorer supplied there is nothing to count, so the inspected count
+  // stands in for it and the run behaves exactly as it did before.
+  const reached = () => (accept ? counter.added >= config.target : candidates.length >= config.target);
   let blocker = null;
   let unreadableInARow = 0;
 
   try {
     for (const source of sources) {
-      if (candidates.length >= config.target || pacer.capReached) break;
+      if (reached() || pacer.capReached) break;
       const resp = await page.goto(source.url, { waitUntil: "domcontentloaded" }).catch(() => null);
       await guard(page, resp ? resp.status() : 0);
       await pacer.wait();
@@ -216,14 +283,16 @@ export async function runResearch({ persona, config }) {
       sourceReports.push({ url: source.url, kind: "ok", found: results.length });
       let fromThisSource = 0;
       for (const r of results) {
-        if (candidates.length >= config.target) break;
+        if (reached()) break;
         if (source.limit && fromThisSource >= source.limit) break;
         const canon = canonicalizeLinkedInUrl(r.url);
         if (!canon || seen.has(canon)) continue;
         seen.add(canon);
-        if (!pacer.tick()) break; // daily cap
+        if (!pacer.tick()) break; // daily cap — the hard stop, never negotiated
         const profile = await inspectProfile(page, canon, pacer);
-        candidates.push({ ...mergeProfile(r, profile), url: canon, fromConnection: source.kind === "connections" });
+        const candidate = { ...mergeProfile(r, profile), url: canon, fromConnection: source.kind === "connections" };
+        candidates.push(candidate);
+        counter.consider(candidate);
         fromThisSource++;
       }
     }
@@ -252,7 +321,14 @@ export async function runResearch({ persona, config }) {
     };
   }
 
-  return { candidates, blocker, inspected: pacer.inspected, sourceReports };
+  const shortfall = blocker || !accept
+    ? null
+    : shortfallFor({
+        added: counter.added, target: config.target, capReached: pacer.capReached,
+        inspected: pacer.inspected, sourcesWalked: sourceReports.length, sourcesTotal: sources.length,
+      });
+
+  return { candidates, blocker, inspected: pacer.inspected, added: counter.added, shortfall, sourceReports };
 }
 
 /**
@@ -266,7 +342,7 @@ export async function runResearch({ persona, config }) {
  * goes to zero when it does. Reading the page is the part an agent is good at.
  * Deciding who qualifies is the part it must never do.
  */
-export async function runAgentRead({ observed, config }) {
+export async function runAgentRead({ observed, config, accept = null, existingKeys = null }) {
   const pacer = createPacer({
     minDelayMs: config.minDelayMs,
     maxDelayMs: config.maxDelayMs,
@@ -281,15 +357,19 @@ export async function runAgentRead({ observed, config }) {
   const page = context.pages()[0] || (await context.newPage());
   const candidates = [];
   const unreachable = [];
+  const counter = makeAddedCounter({ accept, existingKeys });
+  const reached = () => (accept ? counter.added >= config.target : candidates.length >= config.target);
   let blocker = null;
 
   try {
     for (const row of observed) {
-      if (candidates.length >= config.target || pacer.capReached) break;
+      if (reached() || pacer.capReached) break;
       if (!pacer.tick()) break; // daily cap
       try {
         const profile = await inspectProfile(page, row.url, pacer);
-        candidates.push({ ...mergeProfile(row, profile), url: row.url });
+        const candidate = { ...mergeProfile(row, profile), url: row.url };
+        candidates.push(candidate);
+        counter.consider(candidate);
       } catch (err) {
         if (err instanceof BlockerError) throw err;
         // One dead profile is not a dead run: record it and keep going.
@@ -315,7 +395,14 @@ export async function runAgentRead({ observed, config }) {
     };
   }
 
-  return { candidates, blocker, inspected: pacer.inspected, unreachable };
+  const shortfall = blocker || !accept
+    ? null
+    : shortfallFor({
+        added: counter.added, target: config.target, capReached: pacer.capReached,
+        inspected: pacer.inspected, sourcesWalked: observed.length, sourcesTotal: observed.length,
+      });
+
+  return { candidates, blocker, inspected: pacer.inspected, added: counter.added, shortfall, unreachable };
 }
 
 /**
@@ -333,6 +420,11 @@ function mergeProfile(base, profile) {
   // A search card sometimes carries no title line; the profile headline is the
   // same fact observed first-hand, so it may stand in. Never the reverse.
   if (!merged.title && merged.headline) merged.title = merged.headline;
+  // Degree is the one field where the BASE is the better witness: the search
+  // card and the connections list put the badge in a known place, while the
+  // profile top card is a wall of text a headline can imitate. So a captured
+  // base degree wins, and the profile may only fill a blank.
+  if (base && base.degree) merged.degree = base.degree;
   return merged;
 }
 
@@ -367,6 +459,11 @@ export function extractPeopleFromDom() {
   {
     const root = document.querySelector("main") || document.body;
     if (!root) return [];
+    // A line that is a degree badge and NOTHING else. LinkedIn renders it as
+    // "2nd", "• 2nd", "3rd+" and, for screen readers, "2nd degree connection".
+    // All of those are noise in a title; "1st Officer at Coastal Air" is not.
+    const isDegreeBadgeLine = (s) =>
+      /^\d+(st|nd|rd|th)\+?(\s*degree)?(\s*connection)?\s*([•·|]|$)/i.test(s);
     const out = new Map();
     for (const a of root.querySelectorAll("a[href*='/in/']")) {
       const href = a.href || "";
@@ -390,13 +487,35 @@ export function extractPeopleFromDom() {
       // View Ada Lovelace's profile • 2nd" — so leading-name is the real filter.
       const card = a.closest("li") || a.parentElement?.parentElement || a;
       const lower = name.toLowerCase();
-      const lines = (card.innerText || "")
+      const rawLines = (card.innerText || "")
         .split("\n")
         .map((s) => s.replace(/\s+/g, " ").trim())
+        .filter(Boolean);
+
+      // The degree badge is noise for the title, but it is a FACT about the
+      // person, so capture it before throwing it away. Anchored on the shape
+      // LinkedIn actually renders — a bullet-prefixed badge, or a line that is
+      // nothing but the badge — rather than a bare /\b1st\b/, which would read
+      // "1st Officer" in someone's headline as a first-degree connection.
+      // "3rd+" collapses to "3rd". Blank when not seen; never inferred.
+      let degree = "";
+      const badge = (card.innerText || "").match(/[•·]\s*(1st|2nd|3rd)\+?/i);
+      if (badge) degree = badge[1].toLowerCase();
+      else {
+        const own = rawLines.find((s) => /^(1st|2nd|3rd)\+?(\s*degree)?(\s*connection)?\s*$/i.test(s));
+        if (own) degree = own.slice(0, 3).toLowerCase();
+      }
+
+      const lines = rawLines
         .filter((s) => {
           if (!s || s.toLowerCase().startsWith(lower)) return false;
           if (/\bview\b[\s\S]*\bprofile\b/i.test(s)) return false;
-          if (/^\d+(st|nd|rd|th)\b/.test(s)) return false;
+          // A degree badge and NOTHING else — bare ("2nd"), spelled out
+          // ("2nd degree connection", which LinkedIn also renders for screen
+          // readers), or followed by a separator. A headline that opens
+          // "1st Officer at Coastal Air" is a title, not a degree, and dropping
+          // it used to cost that person their title entirely.
+          if (isDegreeBadgeLine(s)) return false;
           if (/^(view|message|connect|follow|see more|status is)\b/i.test(s)) return false;
           if (/^[•·|]/.test(s)) return false;
           if (/mutual connection/i.test(s)) return false; // social proof, not a title
@@ -408,6 +527,7 @@ export function extractPeopleFromDom() {
         url: href,
         title: lines[0] || "",
         location: lines[1] || "",
+        degree,
       });
     }
     return [...out.values()];
@@ -484,8 +604,10 @@ async function collectConnections(page) {
       };
     }).filter((r) => r.name && r.url),
   ).catch(() => []);
-  if (carded.length) return carded;
-  return page.evaluate(extractPeopleFromDom).catch(() => []);
+  const rows = carded.length ? carded : await page.evaluate(extractPeopleFromDom).catch(() => []);
+  // Everyone on your own connections page is a first-degree connection. That is
+  // an observation about the page we opened, not an inference about the person.
+  return rows.map((r) => ({ ...r, degree: "1st" }));
 }
 
 /**
@@ -538,7 +660,7 @@ export function extractActivityFromDom() {
         /^(like|comment|repost|send|share|follow|connect|celebrate|love|insightful|funny|support|\+ follow|see more|…more|show more|report|copy link)/i.test(s) ||
         /^\d[\d,.]*\s*(likes?|comments?|reposts?|reactions?|impressions?)?$/i.test(s) ||
         /followers?$|connections?$/i.test(s) ||
-        /^(\d+(st|nd|rd|th))\b/.test(s) ||
+        /^\d+(st|nd|rd|th)\+?(\s*degree)?(\s*connection)?\s*([•·|]|$)/i.test(s) ||
         (/^\d+\s*(m|h|d|w|mo|yr?)\b/i.test(s) && s.length < 12) ||
         // The actor header renders as ONE glued innerText line — name, badge,
         // headline, timestamp, audience — so any of its unmistakable fragments
@@ -568,7 +690,7 @@ export function extractActivityFromDom() {
 
 /** Visit a profile + its recent activity, read-only, and capture evidence. */
 async function inspectProfile(page, profileUrl, pacer) {
-  const out = { headline: "", company: "", location: "", activity: null, activityStatus: "none" };
+  const out = { headline: "", company: "", location: "", degree: "", activity: null, activityStatus: "none" };
   const resp = await page.goto(profileUrl, { waitUntil: "domcontentloaded" }).catch(() => null);
   await guard(page, resp ? resp.status() : 0);
   await pacer.wait();
@@ -584,6 +706,22 @@ async function inspectProfile(page, profileUrl, pacer) {
     let headline = text("div.text-body-medium.break-words") || text(".pv-text-details__left-panel .text-body-medium");
     let location = text("span.text-body-small.inline.t-black--light.break-words");
     let company = "";
+    let degree = "";
+    {
+      // The top card carries the same degree badge the search card does. This is
+      // only ever a FALLBACK: mergeProfile refuses to let a blank overwrite a
+      // value the search card already captured.
+      const main = document.querySelector("main") || document.body;
+      // Anchored per LINE, never across a 1500-character blob: "Owner · 3rd
+      // generation aviator" is a headline, and reading "3rd" out of it would
+      // write a fabricated relationship into column F.
+      const lines = (main.innerText || "").split("\n").map((s) => s.replace(/\s+/g, " ").trim());
+      for (const line of lines.slice(0, 40)) {
+        const m = line.match(/^(?:[•·]\s*)?(1st|2nd|3rd)\+?(?:\s*degree)?(?:\s*connection)?\s*(?:[•·|]|$)/i)
+          || line.match(/[•·]\s*(1st|2nd|3rd)\+?\s*(?:[•·|]|$)/i);
+        if (m) { degree = m[1].toLowerCase(); break; }
+      }
+    }
     if (!headline || !location) {
       const main = document.querySelector("main") || document.body;
       const lines = (main.innerText || "").split("\n").map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean);
@@ -592,7 +730,7 @@ async function inspectProfile(page, profileUrl, pacer) {
         const win = lines.slice(Math.max(0, ci - 6), ci).filter((s) =>
           !/^[·•]/.test(s) &&
           !/^(she\/her|he\/him|they\/them)$/i.test(s) &&
-          !/^\d+(st|nd|rd|th)\b/.test(s) &&
+          !/^\d+(st|nd|rd|th)\+?(\s*degree)?(\s*connection)?\s*([•·|]|$)/i.test(s) &&
           !/^(visit website|message|connect|follow|more|pending)$/i.test(s) &&
           !/\b(followers|connections|mutual)\b/i.test(s) &&
           s.length > 1);
@@ -606,11 +744,12 @@ async function inspectProfile(page, profileUrl, pacer) {
         }
       }
     }
-    return { headline, location, company };
+    return { headline, location, company, degree };
   }).catch(() => ({}));
   out.headline = info.headline || "";
   out.location = info.location || out.location;
   out.company = info.company || out.company;
+  out.degree = info.degree || out.degree;
 
   // Recent activity (posts + comments). Read-only; capture date/type/summary/url.
   const activityUrl = profileUrl.replace(/\/$/, "") + "/recent-activity/all/";

@@ -8,7 +8,7 @@ function clip(s, n = 200) {
 }
 
 /**
- * Column D: their latest captured post/comment, verbatim, then its link.
+ * Column D: their latest captured post/comment, verbatim, with its date.
  *
  * Whatever we actually captured goes in the cell — a blank D used to mean "the
  * post was older than 7 days", which was indistinguishable from "we found
@@ -16,6 +16,10 @@ function clip(s, n = 200) {
  * So an older post is still shown, explicitly dated and marked, and only a
  * genuinely empty capture yields "". We never present an old post as recent and
  * we never invent one.
+ *
+ * The permalink used to live at the end of this cell. It now has its own column
+ * (E) so Sheets renders it as one clean clickable link instead of burying it
+ * under 500 characters of quoted post.
  */
 export function recentPostCell(candidate = {}, recent = false) {
   const a = candidate.activity;
@@ -29,9 +33,29 @@ export function recentPostCell(candidate = {}, recent = false) {
     ? (date ? `(${date})` : "")
     : `(${date || "date unknown"} — older than 7 days)`;
 
-  return [text ? `"${clip(text, 500)}"` : "", stamp, url]
+  return [text ? `"${clip(text, 500)}"` : "", stamp]
     .filter(Boolean)
     .join("\n");
+}
+
+/** Column E: the bare permalink and nothing else, or "" when none was captured. */
+export function postLinkCell(candidate = {}) {
+  const a = candidate.activity;
+  return a ? String(a.url || "").trim() : "";
+}
+
+/**
+ * Column G: the 0-100 fit score at reading scale.
+ *
+ * Deterministic arithmetic on a number the scorer already produced — no model,
+ * no judgement, nothing new to disagree with column T. A blank score stays
+ * blank rather than becoming a 1, because "we did not score this" and "we
+ * scored this and it was terrible" are different facts.
+ */
+export function scoreOutOf10(fitScore) {
+  const n = Number(fitScore);
+  if (fitScore === null || fitScore === undefined || fitScore === "" || !Number.isFinite(n)) return "";
+  return Math.max(1, Math.min(10, Math.round(n / 10)));
 }
 
 /** A concise, evidence-based reason. Returns "" when nothing is verified. */
@@ -49,7 +73,7 @@ export function composeWhyThem(candidate = {}) {
 }
 
 /**
- * Column F: a suggested COMMENT reply to their recent post/comment. Reacts to
+ * Column I: a suggested COMMENT reply to their recent post/comment. Reacts to
  * something specific and verified, no pitch. Returns "" if there is no activity
  * to react to.
  */
@@ -61,7 +85,7 @@ export function composeComment(candidate = {}) {
 }
 
 /**
- * Column G: a suggested INTRO DM (short outreach). References something specific
+ * Column J: a suggested INTRO DM (short outreach). References something specific
  * and verified, no pitch, ends with a light question. Returns a role-based draft
  * if no activity, and "" only when there is nothing at all to reference.
  */

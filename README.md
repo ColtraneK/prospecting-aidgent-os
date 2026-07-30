@@ -49,23 +49,24 @@ computer off.
 3. Researches candidates read-only: confirms title/company/geography/fit, captures the canonical profile URL, and inspects recent activity.
 4. **Prioritizes** prospects with a post or relevant comment about a core topic in the **last 7 days**, but still accepts strong ICP matches with older or no recent activity.
 5. For each lead it writes, never fabricating activity, dates, quotes, titles, geography, or URLs:
-   - the **verbatim recent post** (if within 7 days) plus its link, in column **D**;
-   - an evidence-based **Why Them** (E);
-   - a **Suggested Comment** — a specific reply to their recent post/comment (F);
-   - a short no-pitch **Suggested Intro DM** (G).
-6. Maintains the Google Sheet: dedupes by canonical URL (then name+company), appends new leads, refreshes existing ones, and **preserves your human tracking columns H–N**.
+   - the **verbatim recent post** with its date, in column **D**, and its bare permalink in **E**;
+   - the observed connection **Degree** (F) and the fit score at 1-10 scale (G);
+   - an evidence-based **Why Them** (H);
+   - a **Suggested Comment** — a specific reply to their recent post/comment (I);
+   - a short no-pitch **Suggested Intro DM** (J).
+6. Maintains the Google Sheet: dedupes by canonical URL (then name+company), appends new leads, refreshes existing ones, and **preserves your human tracking columns K–Q**.
 7. Appends a Run Log row. On any login / CAPTCHA / checkpoint / rate-limit / expiry page it stops safely and exits nonzero.
 
 ### Columns
 
-- **A–G — the agent fills these:** Name, Title / Company, LinkedIn URL, Recent Post (verbatim + link), Why Them, Suggested Comment, Suggested Intro DM.
-- **H–N — yours to edit; the agent never overwrites them:** Reached Out, Replied, Outcome, Date Added, Source Type, Batch, Notes.
-- **O–U — system research metadata:** Activity Date, Activity Type, Fit Score, Last Verified, Canonical Key, Research Source, Research Status.
-- **V–Y — the follow-up pass, read-only:** Connection Status, Reply Status, Last Reply, Follow-up Checked.
+- **A–J — the agent fills these:** Name, Title / Company, LinkedIn URL, Recent Post (verbatim + date), Post Link, Degree, Score (1-10), Why Them, Suggested Comment, Suggested Intro DM.
+- **K–Q — yours to edit; the agent never overwrites them:** Reached Out, Replied, Outcome, Date Added, Source Type, Batch, Notes.
+- **R–X — system research metadata:** Activity Date, Activity Type, Fit Score, Last Verified, Canonical Key, Research Source, Research Status.
+- **Y–AB — the follow-up pass, read-only:** Connection Status, Reply Status, Last Reply, Follow-up Checked.
 
 Column D shows whatever post was actually captured. An older post is shown and
 explicitly marked `(date — older than 7 days)` rather than dropped, so a
-suggested comment in F never points at a post that is missing from the sheet.
+suggested comment in I never points at a post that is missing from the sheet.
 
 ## Did they accept? Did they reply?
 
@@ -74,10 +75,10 @@ npm run follow-up -- --persona my-persona --update-sheet
 ```
 
 Opens three of **your own** pages read-only — sent invitations, connections, and
-your message list — and fills **V–Y** with what it saw. It clicks nothing that
+your message list — and fills **Y–AB** with what it saw. It clicks nothing that
 accepts, withdraws, replies, or sends.
 
-It only watches rows where **you** ticked **Reached Out (H)**. A surface it could
+It only watches rows where **you** ticked **Reached Out (K)**. A surface it could
 not read records `unknown`, never a guessed `no_reply`, and a field it did not
 observe is left alone rather than blanked — so a reply recorded last week
 survives a pass that could not read messaging today.
@@ -88,8 +89,12 @@ survives a pass that could not read messaging today.
 npm run daily -- --persona my-persona --target 25 --headless --update-sheet
 ```
 
-Sources new people, then runs the follow-up pass. A sourcing blocker no longer
-kills the follow-up half; the exit code still reflects the failure.
+Adds new leads, then runs the follow-up pass. A sourcing blocker no longer kills
+the follow-up half; the exit code still reflects the failure.
+
+`--target` counts **rows added**, not profiles opened, so `inspected` and `added`
+are reported separately and are meant to differ. A hard cap of 120 inspections a
+day outranks the target: a run that hits it stops and reports the true count.
 
 Keep the target near 25. The binding constraint is not this tool — LinkedIn
 objects to accounts sending much more than ~30 connection requests a day, and 25
@@ -132,7 +137,7 @@ npm run check-sheet -- --persona my-persona
 # One-time manual login into a dedicated Chrome profile
 npm run setup-login -- --persona my-persona
 
-# Pilot 10, review, then a full run that updates the Sheet
+# Pilot adds 10 leads; review, then a full run that adds 25 and updates the Sheet
 npm run pilot  -- --persona my-persona --headless
 npm run source -- --persona my-persona --target 25 --headless --update-sheet
 

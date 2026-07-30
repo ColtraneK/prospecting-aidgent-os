@@ -52,18 +52,24 @@ test("existing connections are NOT mined unless the persona opted in", () => {
 });
 
 test("opting in puts connections first, capped to a share of the target", () => {
+  // The cap is a budget of profiles INSPECTED, and the target counts leads
+  // ADDED, so it scales by the inspections one added lead typically costs.
+  // Without that conversion, "40% of your run from warm connections" silently
+  // became "40% of the target opened", which is nearer a tenth of the run.
   const opted = { ...persona, include_connections: true };
   const sources = buildSources(opted, { target: 25 });
   assert.equal(sources[0].kind, "connections");
   assert.equal(sources[0].url, CONNECTIONS_URL);
-  assert.equal(sources[0].limit, 10); // ceil(25 * 0.4)
+  assert.equal(sources[0].limit, 40); // ceil(25 added * 0.4 share * 4 inspections each)
   assert.deepEqual(sources.slice(1), buildSearches(opted));
 });
 
 test("the cap is always at least one, even for a tiny target", () => {
   const opted = { ...persona, include_connections: true };
-  assert.equal(buildSources(opted, { target: 1 })[0].limit, 1);
-  assert.equal(buildSources(opted, {})[0].limit, 10); // default target 25
+  assert.equal(buildSources(opted, { target: 1 })[0].limit, 2);
+  assert.equal(buildSources(opted, {})[0].limit, 40); // default target 25
+  // A share small enough to round to zero still yields a usable budget.
+  assert.equal(buildSources(opted, { target: 1 }, { connectionShare: 0.01, inspectionsPerAdd: 1 })[0].limit, 1);
 });
 
 test("--connections walks ONLY your connections", () => {

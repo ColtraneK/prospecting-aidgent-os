@@ -123,3 +123,55 @@ test("the old 2023 activity markup still reads too", async () => {
   assert.equal(items[0].type, "post");
   assert.match(items[0].dateText, /2023/);
 });
+
+test("the degree badge is captured as a fact, not just filtered out as noise", async () => {
+  // "• 2nd" is noise for the title and a fact about the relationship. The
+  // extractor has to do both things with it, which is why this is pinned.
+  const people = await load("search-results-modern.html");
+  const by = Object.fromEntries(people.map((p) => [p.name, p]));
+
+  assert.equal(by["Ada Lovelace"].degree, "2nd");
+  assert.equal(by["Grace Hopper"].degree, "3rd", "3rd+ collapses to 3rd");
+  // No badge on Karen's card, so no degree. Never inferred from anything else.
+  assert.equal(by["Karen Spärck Jones"].degree, "");
+
+  // And the badge still never leaks into the title or the location.
+  for (const p of people) {
+    assert.ok(!/\b(1st|2nd|3rd)\b/.test(p.title), `degree leaked into title: "${p.title}"`);
+    assert.ok(!/\b(1st|2nd|3rd)\b/.test(p.location), `degree leaked into location: "${p.location}"`);
+  }
+});
+
+test("a degree-shaped word inside a headline is not read as a connection degree", async () => {
+  // "1st Officer" and "3rd Generation Owner" are real headlines. A bare
+  // /\b1st\b/ would turn either into a first-degree connection, which is a
+  // fabricated fact about the person — the one thing this repo must not do.
+  await page.setContent(`
+    <main><ul><li>
+      <a href="https://www.linkedin.com/in/robin-vale/">
+        <span aria-hidden="true">Robin Vale</span>
+        <span class="visually-hidden">View Robin Vale's profile</span>
+      </a>
+      <div>1st Officer at Coastal Air, 3rd generation aviator</div>
+      <div>Seattle, Washington, United States</div>
+    </li></ul></main>`);
+  const [robin] = await page.evaluate(extractPeopleFromDom);
+  assert.equal(robin.name, "Robin Vale");
+  assert.equal(robin.degree, "", `read "${robin.degree}" from a headline that only mentions ranks`);
+  assert.match(robin.title, /1st Officer at Coastal Air/);
+});
+
+test("a badge on its own line is still captured", async () => {
+  await page.setContent(`
+    <main><ul><li>
+      <a href="https://www.linkedin.com/in/lee-park/">
+        <span aria-hidden="true">Lee Park</span>
+      </a>
+      <div>1st</div>
+      <div>Head of Ops at Northwind</div>
+      <div>Denver, Colorado, United States</div>
+    </li></ul></main>`);
+  const [lee] = await page.evaluate(extractPeopleFromDom);
+  assert.equal(lee.degree, "1st");
+  assert.equal(lee.title, "Head of Ops at Northwind");
+});

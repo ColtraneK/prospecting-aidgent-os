@@ -4,15 +4,24 @@
 // their tests do not require it to be installed.
 //
 // This layer maintains an EXISTING Sheet in place. It detects the Leads header
-// row (it need not be row 3), preserves human columns H:N, and ensures the
-// system columns O:Y exist before writing. It never deletes rows.
+// row (it need not be row 3), preserves human columns K:Q, and ensures the
+// system columns R:AB exist before writing. It never deletes rows.
 
-import { LEADS_HEADERS, SYSTEM_FIELDS, colLetter, COLS } from "./schema.mjs";
+import { LEADS_HEADERS, SYSTEM_FIELDS, colLetter, COLS, checkLeadsLayout } from "./schema.mjs";
 import { buildValueUpdates, LEADS_TAB } from "./sheetPlan.mjs";
 import { toRunLogRow, RUN_LOG_HEADERS } from "./runlog.mjs";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
-const LAST_COL = colLetter(LEADS_HEADERS.length - 1); // "Y" (derived, so it follows schema.mjs)
+const LAST_COL = colLetter(LEADS_HEADERS.length - 1); // "AB" (derived, so it follows schema.mjs)
+
+/** Thrown when a sheet's header row is from an older column layout. */
+export class LeadsLayoutError extends Error {
+  constructor(message, mismatch) {
+    super(message);
+    this.name = "LeadsLayoutError";
+    this.mismatch = mismatch;
+  }
+}
 
 export async function getSheets(credentialsPath) {
   if (!credentialsPath) throw new Error("GOOGLE_APPLICATION_CREDENTIALS is not set");
@@ -42,6 +51,15 @@ export async function readLeads(sheets, spreadsheetId) {
   });
   const values = res.data.values || [];
   const headerRow = detectHeaderRow(values);
+  const raw = values[headerRow - 1] || [];
+  // Refuse an old-layout sheet HERE, before a run spends twenty minutes walking
+  // LinkedIn only to write the intro DM into someone's "Reached Out" column.
+  const layout = checkLeadsLayout(raw);
+  if (!layout.ok) throw new LeadsLayoutError(layout.message, layout.mismatch);
+  // rawHeaders is what the sheet ACTUALLY says, blanks and all. `headers` fills
+  // the blanks in so cell lookup works; passing the filled version back to the
+  // write guard would make it check its own defaults and always pass.
+  const rawHeaders = raw.map((h) => String(h == null ? "" : h));
   const headers = (values[headerRow - 1] || LEADS_HEADERS).map((h, i) => String(h || LEADS_HEADERS[i] || ""));
   const rows = [];
   for (let i = headerRow; i < values.length; i++) {
@@ -53,18 +71,23 @@ export async function readLeads(sheets, spreadsheetId) {
     if (!cells["Name"] && !cells["LinkedIn (or profile URL)"]) continue; // skip blanks
     rows.push({ rowNumber: i + 1, cells });
   }
-  return { headers, headerRow, firstDataRow: headerRow + 1, rows };
+  return { headers, rawHeaders, headerRow, firstDataRow: headerRow + 1, rows };
 }
 
 /**
- * Ensure the system columns O:Y exist in the header row. Non-destructive: only
- * writes headers that are missing, into their canonical O:Y positions.
+ * Ensure the system columns R:AB exist in the header row. Non-destructive: only
+ * writes headers that are missing, into their canonical R:AB positions.
  * The range is derived from SYSTEM_FIELDS, so adding a system column here is
  * enough — an older sheet gets the new headers on its next run.
+ *
+ * This leniency covers a sheet that is missing trailing system headers. It does
+ * NOT cover a sheet whose columns are in the old order: checkLeadsLayout()
+ * refuses that case in readLeads, because patching it would silently misalign
+ * every existing row.
  */
 export async function ensureLeadsSchema(sheets, spreadsheetId, headerRow) {
-  const startCol = COLS[SYSTEM_FIELDS[0]].letter; // O
-  const endCol = COLS[SYSTEM_FIELDS[SYSTEM_FIELDS.length - 1]].letter; // Y
+  const startCol = COLS[SYSTEM_FIELDS[0]].letter; // R
+  const endCol = COLS[SYSTEM_FIELDS[SYSTEM_FIELDS.length - 1]].letter; // AB
   const range = `${LEADS_TAB}!${startCol}${headerRow}:${endCol}${headerRow}`;
   const cur = await sheets.spreadsheets.values.get({ spreadsheetId, range }).catch(() => ({ data: {} }));
   const existing = (cur.data.values && cur.data.values[0]) || [];
@@ -81,9 +104,16 @@ export async function ensureLeadsSchema(sheets, spreadsheetId, headerRow) {
 
 /**
  * Apply a merge plan: append new leads, then update ONLY the agent/system
- * columns of existing leads. Never writes H:N. Never deletes rows.
+ * columns of existing leads. Never writes K:Q. Never deletes rows.
  */
-export async function applyPlan(sheets, spreadsheetId, plan, { headerRow = 3, firstDataRow = 4 } = {}) {
+export async function applyPlan(sheets, spreadsheetId, plan, { headerRow = 3, firstDataRow = 4, headers = null } = {}) {
+  // Second guard, at the last moment before any write. readLeads already
+  // checked, but applyPlan is reachable on its own and a misaligned write is
+  // not recoverable.
+  if (headers) {
+    const layout = checkLeadsLayout(headers);
+    if (!layout.ok) throw new LeadsLayoutError(layout.message, layout.mismatch);
+  }
   await ensureLeadsSchema(sheets, spreadsheetId, headerRow);
   const { appends, cellUpdates } = buildValueUpdates(plan);
 
@@ -165,6 +195,21 @@ export function explainSheetsError(err, { sheetId = "", credentialsPath = "" } =
         ? `Open ${credentialsPath}, copy the "client_email" value,`
         : 'Open your service-account .json key, copy the "client_email" value,',
       "then in the sheet click Share, paste that address, set it to Editor, and Send.",
+    ].join("\n");
+  }
+  // A tab created by hand has 26 columns; the Leads layout needs 28. The API
+  // says "exceeds grid limits", which sounds like a bug in this tool and is
+  // actually a sheet that was never built.
+  if (/exceeds grid limits|max columns/i.test(msg)) {
+    return [
+      `That sheet's Leads tab is too narrow for the lead layout${where}.`,
+      "",
+      "The Leads tab needs 28 columns (A to AB) and a hand-made tab only has 26.",
+      "Open the sheet, then Extensions > Apps Script, and run buildAidgentOsSheet.",
+      "It widens the tab and builds the headers, dropdowns and formatting in one go.",
+      "",
+      "If you would rather not paste a script: open the shared template, click",
+      "File > Make a copy, and bind that copy instead.",
     ].join("\n");
   }
   if (status === 404 || /requested entity was not found|not found/i.test(msg)) {

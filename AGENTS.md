@@ -253,12 +253,22 @@ reads the persona. That is what keeps the no-fabrication guarantee intact.
 
 ## 5. Running it
 
-Always pilot before a full run. A pilot is ten people, so they can look at real
-rows in their own sheet and tell you what is off before there are fifty of them.
+Always pilot before a full run. A pilot **adds ten leads**, so they can look at
+real rows in their own sheet and tell you what is off before there are fifty of
+them.
 
 ```bash
-npm run pilot  -- --persona their-slug            # 10 people, headed, watch it work
+npm run pilot  -- --persona their-slug            # 10 leads ADDED, headed, watch it work
 npm run source -- --persona their-slug --target 25 --headless --update-sheet
+```
+
+`--target` counts **rows added to the sheet**, not profiles opened. Reaching 25
+added routinely means inspecting fifty to a hundred people, because most of them
+do not qualify and some are already in the sheet. Both numbers are reported, and
+they are supposed to diverge:
+
+```
+target: 25 added   added: 25   inspected: 68
 ```
 
 Stop after the pilot and walk them through what landed. Ask whether the
@@ -281,6 +291,13 @@ Keep the target at 25. The real constraint is not this tool — it is that
 LinkedIn gets unhappy with accounts sending more than about 30 connection
 requests a day, and 25 researched leads is already about twenty minutes of
 honest human outreach. More rows do not mean more conversations.
+
+**The daily inspection cap outranks the target.** `AIDGENT_DAILY_CAP` (120
+profiles) and the 3.5 to 9 second pacing are the safety rails, and a run that
+hits the cap stops there and reports, for example, `14 of 25 added; stopped at
+the daily inspection cap`. Never raise the cap or shorten the pacing to make a
+number. A short day costs them a few rows; a restricted LinkedIn account costs
+them the tool.
 
 To offer a scheduled daily run: the person's own agent tool (Codex desktop, for
 example) can create a scheduled task that runs the `daily` command each weekday
@@ -368,26 +385,39 @@ file — do not work around them.
 
 ## 6. The sheet contract — who owns which columns
 
-The Leads tab runs A through Y. Three bands, and the boundaries matter.
+The Leads tab runs A through AB. Three bands, and the boundaries matter.
 
-**A–G, yours to write.** Name, title and company, profile URL, their most recent
-captured post quoted verbatim with its link, why them, a suggested comment on
-that post, and a suggested intro DM. Column D and column F move together: if
-there is a comment to suggest, the post it refers to is in D with its link. A
-suggestion with no visible post to comment on is a bug, not a feature.
+**A–J, yours to write.** Name, title and company, profile URL, their most recent
+captured post quoted verbatim with its date, that post's bare permalink, their
+connection degree, the fit score at 1-10 scale, why them, a suggested comment on
+that post, and a suggested intro DM. Column D and column I move together: if
+there is a comment to suggest, the post it refers to is in D and its link is in
+E. A suggestion with no visible post to comment on is a bug, not a feature.
 
-**H–N, theirs alone. Never write these.** Reached Out, Replied, Outcome, Date
+Two of those columns are observations, not judgements. **Degree (F)** is copied
+from the badge on the page and left blank when no badge was there — never
+inferred from anything else. **Score (G)** is the raw Fit Score in column T
+divided by ten and rounded, computed in code, with no model anywhere near it.
+
+**K–Q, theirs alone. Never write these.** Reached Out, Replied, Outcome, Date
 Added, Source Type, Batch, Notes. The system seeds Date Added and Source Type
 once when a row is first created and then never touches that band again. When
 they tick "Reached Out", that tick is what tells the follow-up pass to start
 watching that person. Overwriting a human column destroys work they did by hand
 and there is no undo.
 
-**O–Y, system bookkeeping.** Activity date and type, fit score, last verified,
-canonical key, research source and status — and then V through Y, which belong
+**R–AB, system bookkeeping.** Activity date and type, fit score, last verified,
+canonical key, research source and status — and then Y through AB, which belong
 to the follow-up pass alone: Connection Status, Reply Status, Last Reply, and
-Follow-up Checked. Nothing outside that pass writes V–Y, and the pass writes
+Follow-up Checked. Nothing outside that pass writes Y–AB, and the pass writes
 nothing outside it.
+
+**A sheet on the older column layout is refused, not patched.** v4 inserted
+three columns inside the agent band, so a sheet built before it has every column
+after D in the wrong place. The worker compares the header row it finds against
+the one it writes and stops with the fix in plain words: re-run
+`buildAidgentOsSheet` from Extensions > Apps Script, or take a fresh copy of the
+template. Do not work around this by editing headers by hand.
 
 Two behaviours worth understanding because they look like bugs and are not.
 When a surface could not be read, the follow-up pass records `unknown` rather
@@ -417,7 +447,8 @@ asks. Tell the person plainly what page it hit, and:
 - **CAPTCHA or checkpoint** → they should open LinkedIn normally in that profile,
   clear it by hand, and try again later the same day.
 - **Rate limit** → stop for the day. Lower `--target`. Do not "try again with
-  headless off". The account needs a rest, not a workaround.
+  headless off", and do not raise `AIDGENT_DAILY_CAP`. The account needs a
+  rest, not a workaround.
 
 Partial results already written to the sheet are real and stay. Say how many
 landed before the stop.
@@ -472,8 +503,8 @@ finding out in three weeks that the leads were made up.
 - `src/cli.mjs` — every command's entry point
 - `src/worker.mjs` — the browser work: sourcing and the read-only follow-up pass
 - `src/schema.mjs` — the single source of truth for the sheet's columns
-- `src/evidence.mjs` — composes A–G from verified facts only, never invention
-- `src/followup.mjs` — turns follow-up observations into V–Y updates
+- `src/evidence.mjs` — composes A–J from verified facts only, never invention
+- `src/followup.mjs` — turns follow-up observations into Y–AB updates
 - `src/persona.mjs` — load, validate, and scaffold personas
 - `src/sheet.mjs`, `src/sheetPlan.mjs` — Google Sheets read/write and write guards
 - `sheet/BuildLeadSheet.gs` — Apps Script that builds the sheet from scratch

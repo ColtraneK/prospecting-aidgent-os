@@ -1,12 +1,12 @@
 // followup.mjs — pure planner for the follow-up pass.
 //
-// After YOU reach out (you tick "Reached Out" in column H), this pass observes
+// After YOU reach out (you tick "Reached Out" in column K), this pass observes
 // three read-only LinkedIn surfaces — your sent invitations, your connections,
-// and your message threads — and records what it saw in columns V-Y.
+// and your message threads — and records what it saw in columns Y-AB.
 //
 // It OBSERVES ONLY. It never sends an invite, never sends or opens a reply on
-// your behalf, never withdraws anything. And it writes nothing outside V-Y, so
-// your own tracking in H:N is untouched.
+// your behalf, never withdraws anything. And it writes nothing outside Y-AB, so
+// your own tracking in K:Q is untouched.
 //
 // Matching across surfaces is fuzzy by necessity: the connections page exposes
 // profile URLs, but the messaging list often exposes only a display name. So
@@ -95,7 +95,7 @@ export function replyStatusFor(aliases, idx) {
 }
 
 /**
- * Plan V-Y updates for every row the human has marked "Reached Out".
+ * Plan Y-AB updates for every row the human has marked "Reached Out".
  * Rows you have not reached out to are left completely alone.
  *
  * @returns {{updates: Array, counts: object, skipped: number}}
@@ -151,7 +151,7 @@ export function planFollowUp(existingSheet, observations, { nowIso = new Date().
   return { updates, counts, skipped };
 }
 
-/** Defensive: the follow-up pass may only ever write V-Y. */
+/** Defensive: the follow-up pass may only ever write Y-AB. */
 export function assertOnlyFollowupFields(set) {
   for (const k of Object.keys(set)) {
     if (!FOLLOWUP_FIELDS.includes(k)) {

@@ -1,40 +1,47 @@
-// merge.mjs — plan Google Sheet updates without touching human columns (H-N).
+// merge.mjs — plan Google Sheet updates without touching human columns (K-Q).
 // Pure and fully testable.
 
 import { HUMAN_FIELDS, LEADS_HEADERS } from "./schema.mjs";
+import { scoreOutOf10 } from "./evidence.mjs";
 import { canonicalKey, canonicalizeLinkedInUrl } from "./url.mjs";
 import { dedupeCandidates } from "./dedupe.mjs";
 
-// Agent fields the system refreshes on an EXISTING lead (never A/C, never H-N).
+// Agent fields the system refreshes on an EXISTING lead (never A/C, never K-Q).
 const REFRESHABLE_AGENT_FIELDS = [
   "Title / Company",
-  "Recent Post (verbatim + link)",
+  "Recent Post (verbatim + date)",
+  "Post Link",
+  "Degree",
+  "Score (1-10)",
   "Why Them",
   "Suggested Comment",
   "Suggested Intro DM",
 ];
 
-/** Build the {header: value} map for a brand-new lead row (A:Y). */
+/** Build the {header: value} map for a brand-new lead row (A:AB). */
 export function toLeadRow(candidate, opts = {}) {
   const { nowIso = new Date().toISOString(), sourceType = "LinkedIn", researchStatus = "New" } = opts;
   const activity = candidate.activity || {};
   const key = candidate.canonicalKey || canonicalKey({ url: candidate.url, name: candidate.name, company: candidate.company }).key;
   const cells = {};
   for (const h of LEADS_HEADERS) cells[h] = "";
-  // Agent A-G
+  // Agent A-J
   cells["Name"] = candidate.name || "";
   cells["Title / Company"] = candidate.title_company || joinTitleCompany(candidate);
   cells["LinkedIn (or profile URL)"] = canonicalizeLinkedInUrl(candidate.url) || candidate.url || "";
-  cells["Recent Post (verbatim + link)"] = candidate.recentPost || "";
+  cells["Recent Post (verbatim + date)"] = candidate.recentPost || "";
+  cells["Post Link"] = candidate.postLink || "";
+  cells["Degree"] = candidate.degree || "";
+  cells["Score (1-10)"] = scoreOutOf10(candidate.score);
   cells["Why Them"] = candidate.whyThem || "";
   cells["Suggested Comment"] = candidate.comment || "";
   cells["Suggested Intro DM"] = candidate.introDM || "";
-  // Human H-N — seed only Date Added + Source Type on insert; the rest is yours.
+  // Human K-Q — seed only Date Added + Source Type on insert; the rest is yours.
   // A person found among your existing connections is labelled "Connection" so
   // you can tell warm rows from cold ones at a glance.
   cells["Date Added"] = dateOnly(nowIso);
   cells["Source Type"] = candidate.sourceType || (candidate.fromConnection ? "Connection" : sourceType);
-  // System O-Y
+  // System R-AB
   cells["Activity Date"] = activity.date || "";
   cells["Activity Type"] = activity.type || "";
   cells["Fit Score"] = numOrBlank(candidate.score);
@@ -45,13 +52,19 @@ export function toLeadRow(candidate, opts = {}) {
   return cells;
 }
 
-/** Field updates for an EXISTING lead. Agent-refresh + system only. Never H-N. */
+/** Field updates for an EXISTING lead. Agent-refresh + system only. Never K-Q. */
 export function toRefreshSet(candidate, opts = {}) {
   const { nowIso = new Date().toISOString() } = opts;
   const activity = candidate.activity || {};
   const set = {};
   set["Title / Company"] = candidate.title_company || joinTitleCompany(candidate);
-  set["Recent Post (verbatim + link)"] = candidate.recentPost || "";
+  set["Recent Post (verbatim + date)"] = candidate.recentPost || "";
+  set["Post Link"] = candidate.postLink || "";
+  // Degree is a stable fact about the relationship, not something this run
+  // re-derives. A pass that did not see the badge leaves it alone rather than
+  // erasing a degree an earlier pass captured.
+  if (candidate.degree) set["Degree"] = candidate.degree;
+  set["Score (1-10)"] = scoreOutOf10(candidate.score);
   set["Why Them"] = candidate.whyThem || "";
   set["Suggested Comment"] = candidate.comment || "";
   set["Suggested Intro DM"] = candidate.introDM || "";

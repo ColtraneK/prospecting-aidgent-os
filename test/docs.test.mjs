@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { SHEET_TEMPLATE_ID, SHEET_TEMPLATE_COPY_URL } from "../src/start.mjs";
-import { LEADS_HEADERS, FOLLOWUP_FIELDS, colLetter } from "../src/schema.mjs";
+import { LEADS_HEADERS, AGENT_FIELDS, HUMAN_FIELDS, FOLLOWUP_FIELDS, COLS, colLetter } from "../src/schema.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (p) => fs.readFileSync(path.join(REPO_ROOT, p), "utf8");
@@ -134,44 +134,101 @@ test("offering a copy link did not soften the rule that the agent creates nothin
   assert.match(read("src/start.mjs"), /this tool never creates one/i);
 });
 
+// Band letters are DERIVED, never typed, so this file keeps guarding the docs
+// after the next time a column is inserted mid-table.
+const AGENT_FIRST = colLetter(0);
+const AGENT_LAST = colLetter(AGENT_FIELDS.length - 1);
+const HUMAN_FIRST = colLetter(AGENT_FIELDS.length);
+const HUMAN_LAST = colLetter(AGENT_FIELDS.length + HUMAN_FIELDS.length - 1);
+const SYS_FIRST = colLetter(AGENT_FIELDS.length + HUMAN_FIELDS.length);
+const SYS_LAST = colLetter(LEADS_HEADERS.length - 1);
+const FOLLOWUP_FIRST = colLetter(LEADS_HEADERS.length - FOLLOWUP_FIELDS.length);
+const DASH = "[-–:]";
+
 test("the sheet script's own header matches the column bands it builds", () => {
   // BuildLeadSheet.gs is pasted into Apps Script and read by humans there, so a
-  // banner claiming O-U while the worker writes through Y is a live lie.
+  // banner claiming R-X while the worker writes through AB is a live lie.
   const gs = read("sheet/BuildLeadSheet.gs");
-  assert.ok(!/O-U/.test(gs), "BuildLeadSheet.gs still describes the old O-U range");
-  assert.match(gs, /O-Y/);
+  assert.ok(!/\bO-[UY]\b/.test(gs), "BuildLeadSheet.gs still describes a pre-v4 system range");
+  assert.match(gs, new RegExp(`\\b${SYS_FIRST}-${SYS_LAST}\\b`));
+  assert.match(gs, new RegExp(`\\b${AGENT_FIRST}-${AGENT_LAST}\\b`));
+  assert.match(gs, new RegExp(`\\b${HUMAN_FIRST}-${HUMAN_LAST}\\b`));
 });
 
 test("no file stops the system band short of the last column the schema defines", () => {
-  // The follow-up columns were added at the end of SYSTEM_FIELDS, so every place
-  // that already said "system = O:U" became wrong without changing a character.
-  // A file may split the band (O-U research, V-Y follow-up) but it must not
-  // describe a band starting at O and simply stop before the real last column —
-  // an agent reading that treats V-Y as off-limits and silently stops recording
-  // whether anyone replied.
-  const last = colLetter(LEADS_HEADERS.length - 1);
-  const BAND = new RegExp(`\\bO[-–:]([A-Z])\\b`, "g");
+  // The follow-up columns sit at the end of SYSTEM_FIELDS, so every place that
+  // names the band from its first column must reach its real last one. A file
+  // may split the band (R-X research, Y-AB follow-up) but it must not describe a
+  // band starting at R and simply stop early — an agent reading that treats the
+  // follow-up columns as off-limits and silently stops recording who replied.
+  const BAND = new RegExp(`\\b${SYS_FIRST}${DASH}([A-Z]{1,2})\\b`, "g");
   const files = [...DOCS, "sheet/BuildLeadSheet.gs",
     ".agents/skills/research-outreach-prospects/SKILL.md"];
   for (const f of files) {
     const src = read(f);
     const ends = [...src.matchAll(BAND)].map((m) => m[1]);
-    if (!ends.length || ends.includes(last)) continue;
+    if (!ends.length || ends.includes(SYS_LAST)) continue;
     // Stopped short — only acceptable if the remainder is named separately.
-    const after = colLetter(LEADS_HEADERS.length - FOLLOWUP_FIELDS.length);
-    assert.match(src, new RegExp(`\\b${after}[-–:]${last}\\b`),
-      `${f} says the system band is O-${ends[0]} and never accounts for ${after}-${last}`);
+    assert.match(src, new RegExp(`\\b${FOLLOWUP_FIRST}${DASH}${SYS_LAST}\\b`),
+      `${f} says the system band is ${SYS_FIRST}-${ends[0]} and never accounts for ${FOLLOWUP_FIRST}-${SYS_LAST}`);
+  }
+});
+
+test("no doc still describes the pre-v4 A-G / H-N / O-Y layout", () => {
+  // v4 inserted three columns inside the agent band, so every band letter after
+  // column D moved. A doc left on the old letters would send someone to protect
+  // the wrong columns, which is worse than saying nothing at all.
+  const stale = /\b(A[-–]G|H[-–]N|O[-–][UY]|V[-–]Y|A:G|H:N|O:Y|V:Y)\b/;
+  const files = [...DOCS, "sheet/BuildLeadSheet.gs", "PROMPTS.md",
+    ".agents/skills/research-outreach-prospects/SKILL.md"];
+  for (const f of files) {
+    const hit = read(f).match(stale);
+    assert.ok(!hit, `${f} still names the pre-v4 band "${hit && hit[0]}"`);
+  }
+});
+
+test("every '<Column Name> (X)' in the docs names the letter that column is on", () => {
+  // The band-range check above cannot see `Reached Out (H)` or `Intro DM (G)`,
+  // and those are the references a person actually acts on: a doc that says
+  // "tick Reached Out (H)" sends someone to overwrite Why Them and leaves the
+  // follow-up pass with nobody to watch. So check each one against the schema.
+  const files = [...DOCS, "sheet/BuildLeadSheet.gs",
+    ".agents/skills/research-outreach-prospects/SKILL.md"];
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Longest names first, so "Reply Status" is not matched as "Replied".
+  const names = [...LEADS_HEADERS].sort((a, b) => b.length - a.length);
+
+  for (const f of files) {
+    const src = read(f);
+    for (const name of names) {
+      const re = new RegExp(`${escape(name)}\\*{0,2}\\s*\\(([A-Z]{1,2})\\)`, "g");
+      for (const m of src.matchAll(re)) {
+        assert.equal(m[1], COLS[name].letter,
+          `${f} says "${name} (${m[1]})" but ${name} is column ${COLS[name].letter}`);
+      }
+    }
   }
 });
 
 test("the docs describe the column bands the schema actually has", () => {
-  // A doc that says H–N while the code protects H–P would quietly mislead.
+  // A doc that says K–Q while the code protects K–S would quietly mislead.
   const sheetDoc = read("sheet/SHEET.md");
-  for (const col of ["Connection Status", "Reply Status", "Last Reply", "Follow-up Checked"]) {
+  for (const col of ["Connection Status", "Reply Status", "Last Reply", "Follow-up Checked",
+    "Post Link", "Degree", "Score (1-10)"]) {
     assert.ok(sheetDoc.includes(col), `SHEET.md does not document ${col}`);
   }
-  assert.match(sheetDoc, /A–G and O–Y only/);
-  assert.ok(!/O–U only/.test(sheetDoc), "SHEET.md still describes the old O–U range");
+  assert.match(sheetDoc, new RegExp(`${AGENT_FIRST}–${AGENT_LAST} and ${SYS_FIRST}–${SYS_LAST} only`));
+});
+
+test("every Leads column the schema defines is documented in SHEET.md's table", () => {
+  // The table is what a person reads to find out what a column is for. A column
+  // that exists in code and not there is a cell nobody can explain.
+  const sheetDoc = read("sheet/SHEET.md");
+  LEADS_HEADERS.forEach((h, i) => {
+    const letter = colLetter(i);
+    assert.match(sheetDoc, new RegExp(`^\\|\\s*${letter}\\s*\\|\\s*${h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\|`, "m"),
+      `SHEET.md has no table row for ${letter} — ${h}`);
+  });
 });
 
 test("AGENTS.md explains every empty-page verdict the worker can produce", () => {
