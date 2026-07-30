@@ -91,3 +91,20 @@ test("the builder never hardcodes a Leads column letter into a formula", () => {
   assert.deepEqual(formulas, [], `hardcoded Leads columns in a formula: ${formulas.join(", ")}`);
   assert.match(gs, /function letterOf_\(/, "letterOf_ is how formulas must resolve columns");
 });
+
+test("rebuilding clears the previous layout's validation instead of layering on top", () => {
+  // v4 moved every column after D. A builder that only ADDS validation where a
+  // type asks for it leaves the old layout's rules in place, so a rebuilt v3
+  // sheet grows tickboxes down "Why Them" and "Suggested Comment" and a stale
+  // Outcome dropdown down "Suggested Intro DM" — the agent's own output columns
+  // rendered as things you are meant to tick. Caught on the real template.
+  const loop = gs.match(/for \(var c = 0; c < n; c\+\+\)[\s\S]*?\n  \}/)[0];
+  assert.match(loop, /body\.setDataValidation\(null\)/,
+    "the per-column loop must clear inherited data validation before applying its own");
+  assert.match(loop, /body\.setNumberFormat\(/,
+    "the per-column loop must set a number format unconditionally, not only for dates");
+  const clearAt = loop.indexOf("setDataValidation(null)");
+  const applyAt = loop.indexOf("requireCheckbox()");
+  assert.ok(clearAt > -1 && applyAt > -1 && clearAt < applyAt,
+    "the clear must happen BEFORE this column's own validation is applied");
+});

@@ -283,6 +283,17 @@ function ensureLeads_(ss) {
       body.setVerticalAlignment(centred ? "middle" : "top");
       body.setHorizontalAlignment(centred ? "center" : "left");
       body.setWrapStrategy(wraps ? SpreadsheetApp.WrapStrategy.WRAP : SpreadsheetApp.WrapStrategy.CLIP);
+
+      // CLEAR the old layout's validation and number format before applying this
+      // column's own. Setting validation only where a type asks for it leaves
+      // whatever the PREVIOUS layout put here untouched, and v4 moved every
+      // column after D — so a rebuilt v3 sheet grew tickboxes down "Why Them"
+      // and "Suggested Comment" (old Reached Out / Replied) and a stale Outcome
+      // dropdown down "Suggested Intro DM". Harmless-looking, and it makes the
+      // agent's own output columns look like something you are meant to tick.
+      body.setDataValidation(null);
+      body.setNumberFormat(type === "date" ? "yyyy-mm-dd" : type === "num" ? "0" : "@");
+
       // requireCheckbox(), NOT insertCheckboxes(). Both render a tickbox, but
       // insertCheckboxes() WRITES a literal FALSE into every data row. On a
       // 1000-row sheet that is ~997 non-empty cells in the two tick columns, which makes the
@@ -293,7 +304,6 @@ function ensureLeads_(ss) {
       if (type === "check") {
         body.setDataValidation(SpreadsheetApp.newDataValidation().requireCheckbox().build());
       }
-      else if (type === "date") { body.setNumberFormat("yyyy-mm-dd"); }
       else if (type === "outcome") setListValidation_(body, OUTCOMES);
       else if (type === "source") setListValidation_(body, SOURCE_TYPES);
       else if (type === "status") setListValidation_(body, RESEARCH_STATUS);
