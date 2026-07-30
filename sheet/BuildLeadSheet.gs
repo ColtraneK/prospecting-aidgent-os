@@ -657,11 +657,11 @@ function rebuildPromptLibrary_(ss) {
       "the buying signal, and my opener voice. Then create a private persona at private/personas/{{SLUG}}.yaml with " +
       "keywords, exclusions, and my Google Sheet id. Do not source anything yet."],
     ["3  ASK FOR A RUN", "You do not paste anything for this one. You just ask.",
-      "Do a test run of ten people first, then show me what landed in the sheet. Read-only research only: prefer the " +
+      "Do a test run that adds ten leads first, then show me what landed in the sheet. Read-only research only: prefer the " +
       "last 7 days, never send, connect or comment on my behalf, never touch my columns K to Q, and stop and tell me if " +
       "you hit a login, CAPTCHA, checkpoint or rate-limit page."],
     ["4  SCHEDULE IT", "Same job, every weekday, still nothing auto-sent.",
-      "Set up a scheduled task that does the daily run for me every weekday morning, about 25 people. Remind me what has " +
+      "Set up a scheduled task that does the daily run for me every weekday morning, adding 25 leads. Remind me what has " +
       "to be true for it to actually fire: this computer on, awake, and running the agent app at that hour."],
   ];
   var r = 4;

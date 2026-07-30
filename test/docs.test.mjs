@@ -275,3 +275,15 @@ test("the empty-page verdicts in the docs are the ones the code emits", () => {
     assert.ok(kinds.includes(k), `src/blockers.mjs no longer emits "${k}" — the docs are now stale`);
   }
 });
+
+test("the sheet's own Prompt Library counts leads added, not people inspected", () => {
+  // These are the blocks a non-technical person copies out of their sheet and
+  // pastes to their agent. If they still ask for "25 people", the agent is
+  // being told to do the thing the target used to mean.
+  const gs = read("sheet/BuildLeadSheet.gs");
+  const prompts = [...gs.matchAll(/"([^"]{40,})"/g)].map((m) => m[1]);
+  for (const p of prompts) {
+    assert.ok(!/\b(ten|10|25|50)\s+(people|profiles|prospects)\b/i.test(p),
+      `a pasteable prompt still asks for a count of people rather than leads added: "${p.slice(0, 90)}…"`);
+  }
+});
