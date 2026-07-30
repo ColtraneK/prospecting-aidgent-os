@@ -44,6 +44,7 @@ npm run follow-up        -- --persona {{SLUG}} --update-sheet  # who accepted / 
 npm run daily            -- --persona {{SLUG}} --target 25 --headless --update-sheet
 npm run dry-run          -- --persona {{SLUG}} --fixture test/fixtures/dry-run.json
 npm run source           -- --persona {{SLUG}} --csv-only     # CSV-only fallback
-npm run source           -- --persona {{SLUG}} --public-web   # no signed-in session
+npm run check-login                                            # is the LinkedIn session alive
+npm run feedback         -- --list                             # what the Feedback tab is waiting on
 npm run source           -- --persona {{SLUG}} --connections  # research existing connections (opt-in)
 ```

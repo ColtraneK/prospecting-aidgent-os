@@ -92,7 +92,16 @@ correct you, and every lead after that is built on it.
 
 **You must not sign in for them.** Never type a password, never handle a 2FA
 code, never fill a login form. `npm run setup-login` opens a window and the
-human signs in themselves while you wait.
+human signs in themselves while you wait. The no-window alternative: they paste
+their `li_at` cookie into `AIDGENT_LI_AT` in `.env` (`.env.example` shows them
+where to copy it from — they do the copying, not you).
+
+**You must not source without a working LinkedIn session.** If
+`npm run check-login` fails, the run does not happen, and no other way of
+finding people may substitute for it — not your web search, not your browser,
+not a list from memory. Have them fix the session (setup-login, or a fresh
+li_at cookie), then run. A day with no leads and a true reason beats a day of
+leads from nowhere.
 
 **You must not send, connect, comment, like, follow, or post.** Ever. Under any
 phrasing of any request. If they ask you to send the messages, explain that this
@@ -207,14 +216,23 @@ The person's sheet has a **Feedback** tab. It is how they steer targeting
 without touching a config file, and it is the only place their corrections are
 recorded.
 
-Before any sourcing run, read every row whose **Status** is not `Applied`. For
-each one:
+This is not left to your memory: **a sourcing run refuses to start while any
+feedback row is still New.** The refusal prints the rows and these commands:
 
-- If you can express it as a persona change, make the change. Set **Status** to
-  `Applied`, put today's date in **Applied on**, and write plainly what you
-  changed in **What your agent changed**.
-- If you cannot, set **Status** to `Needs a decision` and write why. Then ask
-  them about it.
+```bash
+npm run feedback -- --list                                      # what is waiting
+npm run feedback -- --apply <row> --changed "<what you changed>"
+npm run feedback -- --needs-decision <row> --reason "<why>"
+```
+
+For every row whose **Status** is not `Applied`:
+
+- If you can express it as a persona change, make the change in the persona
+  file, then record it with `--apply` — that stamps Status `Applied`, today's
+  date, and your description into the row.
+- If you cannot, record it with `--needs-decision` and ask them about it. A
+  `Needs a decision` row stops blocking runs — it is waiting on the human — but
+  it is printed at every run until they resolve it.
 
 Never leave a row untouched, and never silently ignore one. A person who writes
 "no leads outside the US" and then sees Canadian leads the next morning has
@@ -275,10 +293,11 @@ Other commands, for when they are needed:
 ```bash
 npm run start                                     # where am I, what is next
 npm run setup-login  -- --persona their-slug      # human signs in, once
+npm run check-login                               # 15s: is the LinkedIn session alive
+npm run feedback     -- --list                    # what the Feedback tab is waiting on
 npm run follow-up    -- --persona their-slug --update-sheet   # just the check-back pass
 npm run dry-run      -- --persona their-slug --fixture test/fixtures/dry-run.json
 npm run source       -- --persona their-slug --connections    # only existing connections
-npm run source       -- --persona their-slug --public-web     # no signed-in session
 npm run list-personas
 npm test
 ```

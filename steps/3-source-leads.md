@@ -61,8 +61,7 @@ re-run `setup-login` or wait.
 
 ## Modes
 
-- **Local LinkedIn (default):** signed-in dedicated profile, richest activity. Requires the computer on and awake and Codex desktop running. Does NOT run with the computer off.
-- **Public-web fallback (`--public-web`):** no signed-in session; public profiles and external sources; lower activity visibility.
+- **Local LinkedIn (default):** your own signed-in session — a dedicated profile signed into once, or an `li_at` cookie in `.env` (verify with `npm run check-login`). Requires the computer on and awake and the agent app running. Does NOT run with the computer off. No session means the run refuses to start rather than sourcing some other way.
 - **Existing connections (`--connections`):** research people you're already connected to who match the persona, read-only. Opt-in only — add the flag when you want it; it is never the default. Setup also asks whether *ordinary* runs should mine your connections first; that answer is saved as `include_connections` in the persona and those rows are labelled **Connection** in Source Type.
 
 ## Check back: who accepted, who replied

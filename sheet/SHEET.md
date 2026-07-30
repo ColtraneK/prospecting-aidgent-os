@@ -92,6 +92,12 @@ guarantee would be gone. So the loop is:
 preference rather than a gate. A row the agent cannot express as a persona
 change is marked `Needs a decision` with the reason, never silently dropped.
 
+This loop is enforced by code, not etiquette: **a sourcing run refuses to start
+while any row is still New.** The agent works the queue with
+`npm run feedback -- --list` and records each outcome with
+`npm run feedback -- --apply <row> --changed "..."` (or `--needs-decision`),
+which stamps columns D–F. Your columns A–C are never written by the system.
+
 This tab is the audit trail of why the targeting looks the way it does.
 
 ## Dedup and merge

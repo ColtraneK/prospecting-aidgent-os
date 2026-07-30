@@ -12,6 +12,8 @@
     "test:dom": "node --test test/dom/*.test.mjs",
     "start": "node src/cli.mjs start",
     "setup-login": "node src/cli.mjs setup-login",
+    "check-login": "node src/cli.mjs check-login",
+    "feedback": "node src/cli.mjs feedback",
     "source": "node src/cli.mjs source",
     "follow-up": "node src/cli.mjs follow-up",
     "daily": "node src/cli.mjs daily",

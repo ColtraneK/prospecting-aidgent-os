@@ -10,6 +10,7 @@
 // require it to be installed.
 
 import { detectBlocker, diagnoseEmptyResults } from "./blockers.mjs";
+import { parseActivityDate } from "./recency.mjs";
 import { createPacer } from "./pacing.mjs";
 import { canonicalizeLinkedInUrl } from "./url.mjs";
 import { buildSources, SENT_INVITES_URL, CONNECTIONS_URL, MESSAGING_URL } from "./searchTerms.mjs";
@@ -27,17 +28,82 @@ export class BlockerError extends Error {
   }
 }
 
-/** Launch a persistent context bound to the dedicated profile. */
-async function launch({ profilePath, channel = "chrome", headless = true }) {
-  if (!profilePath) throw new Error("AIDGENT_CHROME_PROFILE (browser profile path) is required");
+/**
+ * Launch a browser context that carries the person's LinkedIn session.
+ *
+ * Two ways to have a session, either is enough:
+ *  - a persistent profile dir they signed into once (`npm run setup-login`), or
+ *  - an AIDGENT_LI_AT cookie pasted into .env — injected here, headless from
+ *    the first run, no headed window ever needed.
+ * With neither, this refuses: a run without a session must never quietly
+ * degrade into some other way of finding people.
+ *
+ * If the installed Chrome channel is missing, fall back to Playwright's own
+ * Chromium rather than erroring — a launch error here is exactly the kind of
+ * friction that sends an agent looking for a workaround.
+ */
+async function launch({ profilePath, liAt = "", channel = "chrome", headless = true }) {
+  if (!profilePath && !liAt) {
+    throw new Error("No LinkedIn session: set AIDGENT_CHROME_PROFILE (and run `npm run setup-login`) or paste your li_at cookie into AIDGENT_LI_AT in .env.");
+  }
   const { chromium } = await import("playwright");
-  const context = await chromium.launchPersistentContext(profilePath, {
-    headless,
-    channel, // use the installed Chrome channel where possible
-    viewport: { width: 1280, height: 900 },
-    // Never load automation-evasion tricks; we do not bypass bot detection.
-  });
+  const opts = { headless, viewport: { width: 1280, height: 900 } };
+  // Never load automation-evasion tricks; we do not bypass bot detection.
+  let context;
+  if (profilePath) {
+    context = await chromium
+      .launchPersistentContext(profilePath, { ...opts, channel })
+      .catch(() => chromium.launchPersistentContext(profilePath, opts)); // bundled Chromium fallback
+  } else {
+    const browser = await chromium
+      .launch({ headless, channel })
+      .catch(() => chromium.launch({ headless }));
+    context = await browser.newContext({ viewport: opts.viewport });
+  }
+  if (liAt) {
+    await context.addCookies([{
+      name: "li_at", value: liAt, domain: ".linkedin.com", path: "/",
+      httpOnly: true, secure: true, sameSite: "None",
+    }]);
+  }
   return context;
+}
+
+/**
+ * Preflight: is there a working signed-in LinkedIn session? Opens the feed,
+ * runs the same blocker detection as a real run, and reports a named verdict
+ * instead of letting the first sourcing run be the discovery mechanism.
+ * Returns { ok, kind, reason }.
+ */
+export async function checkLogin({ config }) {
+  let context;
+  try {
+    context = await launch({
+      profilePath: config.chromeProfile,
+      liAt: config.liAt,
+      channel: config.chromeChannel,
+      headless: true,
+    });
+  } catch (err) {
+    return { ok: false, kind: "no_session", reason: err.message };
+  }
+  try {
+    const page = context.pages()[0] || (await context.newPage());
+    const resp = await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded" }).catch(() => null);
+    await page.waitForTimeout(2500);
+    await guard(page, resp ? resp.status() : 0);
+    // A signed-in feed links to real profiles; a signed-out page does not.
+    const signedIn = await page.evaluate(() =>
+      !!document.querySelector("a[href*='/in/'], a[href*='/mynetwork'], a[href*='/messaging']"),
+    ).catch(() => false);
+    if (!signedIn) return { ok: false, kind: "signed_out", reason: "the feed loaded without any signed-in navigation — the session cookie is missing or expired." };
+    return { ok: true, kind: "signed_in", reason: "LinkedIn feed loads with a live session." };
+  } catch (err) {
+    if (err instanceof BlockerError) return { ok: false, kind: err.kind, reason: err.message };
+    return { ok: false, kind: "error", reason: err.message };
+  } finally {
+    await context.close().catch(() => {});
+  }
 }
 
 /** Read the current page state and throw BlockerError if we must stop. */
@@ -78,7 +144,7 @@ export async function runResearch({ persona, config }) {
     dailyCap: config.dailyCap,
   });
   const sources = buildSources(persona, config);
-  const context = await launch({ profilePath: config.chromeProfile, channel: config.chromeChannel, headless: config.headless });
+  const context = await launch({ profilePath: config.chromeProfile, liAt: config.liAt, channel: config.chromeChannel, headless: config.headless });
   const page = context.pages()[0] || (await context.newPage());
   const candidates = [];
   const seen = new Set();
@@ -179,6 +245,7 @@ export async function runAgentRead({ observed, config }) {
   });
   const context = await launch({
     profilePath: config.chromeProfile,
+    liAt: config.liAt,
     channel: config.chromeChannel,
     headless: config.headless,
   });
@@ -373,19 +440,103 @@ async function collectConnections(page) {
   return page.evaluate(extractPeopleFromDom).catch(() => []);
 }
 
+/**
+ * The activity-feed DOM walk, exported standalone so `npm run test:dom` can run
+ * it against a saved page. It must close over nothing: Playwright ships its
+ * source into the page.
+ *
+ * Like the search extractor, it deliberately keys on NOTHING LinkedIn can
+ * rename. An activity feed cannot stop doing two things: linking each update to
+ * its permalink (`/feed/update/` or `/posts/`), and showing the update's text
+ * near that link. So each permalink anchors an item; the card is the ancestor
+ * with real text; the summary is the card's longest text run that is not
+ * chrome (name, timestamp, reaction counts, buttons); the date comes from a
+ * <time> element or the "2d •"-style stamp in the card's first lines; and
+ * "commented" in the card's header text marks a comment rather than a post.
+ * Returns items newest-first as the page lists them.
+ */
+export function extractActivityFromDom() {
+  {
+    const root = document.querySelector("main") || document.body;
+    if (!root) return [];
+    const seen = new Set();
+    const items = [];
+    for (const a of root.querySelectorAll("a[href*='/feed/update/'], a[href*='/posts/'], a[href*='/pulse/']")) {
+      const href = a.href || "";
+      if (!href || seen.has(href)) continue;
+      // Walk up to the card: the nearest ancestor that reads like a whole
+      // update (enough text) without swallowing the entire feed.
+      let card = a;
+      while (card.parentElement && card.parentElement !== root) {
+        const next = card.parentElement;
+        const len = (next.innerText || "").length;
+        if (len > 2500 && (card.innerText || "").length > 120) break; // next level is the whole list
+        card = next;
+        if (card.tagName === "LI" || card.tagName === "ARTICLE") break;
+        if (len > 140 && /\n/.test(next.innerText || "")) break;
+      }
+      const cardText = (card.innerText || "").trim();
+      if (!cardText) continue;
+      seen.add(href);
+
+      const lines = cardText.split("\n").map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean);
+      const isChrome = (s) =>
+        /^(like|comment|repost|send|share|follow|connect|celebrate|love|insightful|funny|support|\+ follow|see more|…more|show more|report|copy link)/i.test(s) ||
+        /^\d[\d,.]*\s*(likes?|comments?|reposts?|reactions?|impressions?)?$/i.test(s) ||
+        /followers?$|connections?$/i.test(s) ||
+        /^(\d+(st|nd|rd|th))\b/.test(s) ||
+        /^\d+\s*(m|h|d|w|mo|yr?)\b/i.test(s) && s.length < 12;
+      const summary = lines
+        .filter((s) => !isChrome(s))
+        .sort((x, y) => y.length - x.length)[0] || "";
+
+      const timeEl = card.querySelector("time");
+      let dateText = timeEl?.getAttribute("datetime") || timeEl?.textContent?.trim() || "";
+      if (!dateText) {
+        for (const s of lines.slice(0, 6)) {
+          const m = s.match(/\b(\d+\s*(?:m|h|d|w|mo|yr?)o?)\b\s*(?:•|·|ago|$)/i);
+          if (m) { dateText = m[1]; break; }
+        }
+      }
+      const header = lines.slice(0, 3).join(" ").toLowerCase();
+      const type = /comment/.test(header) ? "comment"
+        : /repost|shared this/.test(header) ? "repost" : "post";
+
+      items.push({ summary: summary.slice(0, 400), dateText, url: href, type });
+    }
+    return items;
+  }
+}
+
 /** Visit a profile + its recent activity, read-only, and capture evidence. */
 async function inspectProfile(page, profileUrl, pacer) {
-  const out = { headline: "", company: "", location: "", activity: null };
+  const out = { headline: "", company: "", location: "", activity: null, activityStatus: "none" };
   const resp = await page.goto(profileUrl, { waitUntil: "domcontentloaded" }).catch(() => null);
   await guard(page, resp ? resp.status() : 0);
   await pacer.wait();
 
   const info = await page.evaluate(() => {
     const text = (sel) => document.querySelector(sel)?.textContent?.trim() || "";
-    return {
-      headline: text("div.text-body-medium.break-words") || text(".pv-text-details__left-panel .text-body-medium"),
-      location: text("span.text-body-small.inline.t-black--light.break-words"),
-    };
+    // Known class names first, then structure: on every profile layout the
+    // headline is the first substantial text line after the <h1> name in <main>.
+    let headline = text("div.text-body-medium.break-words") || text(".pv-text-details__left-panel .text-body-medium");
+    let location = text("span.text-body-small.inline.t-black--light.break-words");
+    if (!headline) {
+      const h1 = document.querySelector("main h1");
+      const block = h1 ? (h1.closest("section") || h1.parentElement?.parentElement || h1.parentElement) : null;
+      if (h1 && block) {
+        const name = (h1.textContent || "").replace(/\s+/g, " ").trim().toLowerCase();
+        const lines = (block.innerText || "").split("\n").map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean);
+        const rest = lines.filter((s) =>
+          s.toLowerCase() !== name &&
+          !/^(\d+(st|nd|rd|th))\b/.test(s) &&
+          !/^(contact info|connect|message|follow|more|pending|·|•)/i.test(s) &&
+          !/\b(followers|connections|mutual)\b/i.test(s));
+        headline = rest[0] || "";
+        if (!location) location = rest.find((s) => /,/.test(s) && s !== headline) || "";
+      }
+    }
+    return { headline, location };
   }).catch(() => ({}));
   out.headline = info.headline || "";
   out.location = info.location || out.location;
@@ -395,27 +546,31 @@ async function inspectProfile(page, profileUrl, pacer) {
   const aresp = await page.goto(activityUrl, { waitUntil: "domcontentloaded" }).catch(() => null);
   await guard(page, aresp ? aresp.status() : 0);
   await pacer.wait();
-  const activity = await page.evaluate(() => {
-    const item = document.querySelector("li.profile-creator-shared-feed-update__container, div.feed-shared-update-v2");
-    if (!item) return null;
-    const summary = item.querySelector(".update-components-text, .feed-shared-text")?.textContent?.trim() || "";
-    const timeEl = item.querySelector("time, .update-components-actor__sub-description");
-    const linkEl = item.querySelector("a[href*='/feed/update/'], a[href*='/posts/']");
-    return {
-      summary: summary.slice(0, 400),
-      dateText: timeEl?.getAttribute("datetime") || timeEl?.textContent?.trim() || "",
-      url: linkEl?.href || "",
-      type: item.querySelector(".update-components-header")?.textContent?.toLowerCase().includes("comment") ? "comment" : "post",
-    };
-  }).catch(() => null);
+  const items = await page.evaluate(extractActivityFromDom).catch(() => []);
+  const activity = (items || [])[0] || null;
 
   if (activity && (activity.summary || activity.url)) {
     out.activity = {
       summary: activity.summary || "",
       date: normalizeDate(activity.dateText),
       url: activity.url || "",
-      type: activity.type || "post",
+      type: activity.type === "comment" ? "comment" : "post",
     };
+    out.activityStatus = "captured";
+  } else {
+    // Nothing extracted. Was there really nothing, or can we not read the page?
+    // The difference matters: an unreadable page must never quietly cost this
+    // person their recency points.
+    const ev = await page.evaluate(() => {
+      const root = document.querySelector("main") || document.body;
+      return {
+        updateLinks: root ? root.querySelectorAll("a[href*='/feed/update/'], a[href*='/posts/']").length : 0,
+        bodyTextSample: (root && root.innerText ? root.innerText : "").slice(0, 2000),
+      };
+    }).catch(() => ({ updateLinks: 0, bodyTextSample: "" }));
+    if (ev.updateLinks > 0) out.activityStatus = "unreadable";
+    else if (/hasn.?t posted|no (recent )?activity|nothing to see/i.test(ev.bodyTextSample)) out.activityStatus = "none";
+    else out.activityStatus = ev.bodyTextSample.trim() ? "none" : "unreadable";
   }
   return out;
 }
@@ -441,6 +596,7 @@ export async function runFollowUp({ config }) {
   });
   const context = await launch({
     profilePath: config.chromeProfile,
+    liAt: config.liAt,
     channel: config.chromeChannel,
     headless: config.headless,
   });
@@ -539,10 +695,12 @@ async function collectThreads(page) {
   ).catch(() => []);
 }
 
-/** Best-effort ISO date; returns "" if not confidently parseable (no fabrication). */
+/**
+ * Best-effort ISO date; returns "" if not confidently parseable (no fabrication).
+ * Relative stamps ("2d", "1w") ARE confidently parseable — they are the only
+ * dates LinkedIn's activity feed shows, and leaving them blank silently costs
+ * every candidate their recency points.
+ */
 function normalizeDate(text) {
-  if (!text) return "";
-  const iso = Date.parse(text);
-  if (!isNaN(iso)) return new Date(iso).toISOString().slice(0, 10);
-  return ""; // relative strings like "2d" are left blank rather than guessed here
+  return parseActivityDate(text, Date.now());
 }

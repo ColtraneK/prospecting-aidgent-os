@@ -67,7 +67,7 @@ const bool = (v, dflt = false) => {
 export function resolveConfig(flags = {}, env = { ...loadDotEnv(), ...process.env }) {
   const mode = (flags["connections"] || flags["from-connections"])
     ? "connections"
-    : flags["public-web"] ? "public-web" : "local-linkedin";
+    : "local-linkedin";
   const headless = flags["headed"] ? false : bool(flags["headless"], bool(env.HEADLESS, false));
   return {
     mode,
@@ -79,6 +79,9 @@ export function resolveConfig(flags = {}, env = { ...loadDotEnv(), ...process.en
     csvOnly: bool(flags["csv-only"]),
     chromeProfile: flags.profile || env.AIDGENT_CHROME_PROFILE || "",
     chromeChannel: flags.channel || env.AIDGENT_CHROME_CHANNEL || "chrome",
+    // A pasted LinkedIn session cookie. Either this OR a signed-in profile is a
+    // session; with the cookie alone, runs are headless from the very first one.
+    liAt: flags["li-at"] || env.AIDGENT_LI_AT || "",
     sheetId: flags.sheet || env.GOOGLE_SHEET_ID || "",
     credentialsPath: env.GOOGLE_APPLICATION_CREDENTIALS || "",
     dailyCap: intOr(flags["daily-cap"], intOr(env.AIDGENT_DAILY_CAP, 120)),

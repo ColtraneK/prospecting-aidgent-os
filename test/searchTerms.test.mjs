@@ -71,8 +71,3 @@ test("--connections walks ONLY your connections", () => {
   assert.deepEqual(sources, [{ url: CONNECTIONS_URL, kind: "connections" }]);
 });
 
-test("public-web mode never opens the connections page", () => {
-  const opted = { ...persona, include_connections: true };
-  const sources = buildSources(opted, { mode: "public-web", target: 25 });
-  assert.ok(!sources.some((s) => s.kind === "connections"));
-});

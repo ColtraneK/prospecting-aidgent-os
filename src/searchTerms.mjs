@@ -72,7 +72,7 @@ export function buildSources(persona, config = {}, { connectionShare = 0.4 } = {
     return [{ url: CONNECTIONS_URL, kind: "connections" }];
   }
   const searches = buildSearches(persona);
-  if (config.mode === "public-web" || !includeConnections(persona)) return searches;
+  if (!includeConnections(persona)) return searches;
   const target = Number(config.target) > 0 ? Number(config.target) : 25;
   const limit = Math.max(1, Math.ceil(target * connectionShare));
   return [{ url: CONNECTIONS_URL, kind: "connections", limit }, ...searches];

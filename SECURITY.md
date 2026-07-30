@@ -47,6 +47,7 @@ minutes of real work. Raising the target does not produce more conversations.
 
 ## Operating requirements (not a security feature, but be honest)
 
-Local LinkedIn mode requires the **computer on and awake** and **Codex desktop
-running**. It does **not** run with the computer off. The public-web fallback has
-lower activity visibility because there is no signed-in session.
+Runs require the **computer on and awake** and the **agent app running**. It
+does **not** run with the computer off. A pasted `li_at` cookie is a real
+credential exactly like the signed-in Chrome profile: anyone holding it can act
+as you on LinkedIn. It lives only in your local `.env`, which is git-ignored.

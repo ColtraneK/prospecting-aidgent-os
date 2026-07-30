@@ -63,12 +63,17 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env } = {}) {
     fs.existsSync(path.join(repoRoot, "node_modules", "googleapis"));
 
   const chromeProfile = e.AIDGENT_CHROME_PROFILE || "";
-  const profileExists = !!chromeProfile && fs.existsSync(chromeProfile);
+  // A pasted li_at session cookie is a complete alternative to the profile:
+  // with it, runs are headless from the first one and no login window opens.
+  const liAt = !!String(e.AIDGENT_LI_AT || "").trim();
+  const profileDirExists = !!chromeProfile && fs.existsSync(chromeProfile);
   // A profile dir that has never been signed into has no cookie store.
-  const signedIn = profileExists && (
+  const profileSignedIn = profileDirExists && (
     fs.existsSync(path.join(chromeProfile, "Default", "Cookies")) ||
     fs.existsSync(path.join(chromeProfile, "Default", "Network", "Cookies"))
   );
+  const profileExists = profileDirExists || liAt;
+  const signedIn = profileSignedIn || liAt;
 
   const credsPath = e.GOOGLE_APPLICATION_CREDENTIALS || "";
   const credsExist = !!credsPath && fs.existsSync(credsPath);
@@ -106,7 +111,7 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env } = {}) {
     nodeOk: nodeMajor >= 20,
     depsInstalled,
     envFileExists: fs.existsSync(path.join(repoRoot, ".env")),
-    chromeProfile, profileExists, signedIn,
+    chromeProfile, profileExists, signedIn, liAt,
     credsPath, credsExist,
     activeSlug,
     privatePersonaCount: personas.length,
@@ -140,16 +145,16 @@ export function buildChecklist(s) {
       next: "Copy .env.example to .env (`cp .env.example .env`), then run `npm run start` again. You will fill it in over the next few steps.",
     },
     {
-      label: "A dedicated Chrome profile folder is set and exists",
+      label: "A LinkedIn session source is set (Chrome profile folder, or an li_at cookie)",
       done: s.profileExists,
       next: s.chromeProfile
-        ? `AIDGENT_CHROME_PROFILE points at "${s.chromeProfile}", which does not exist yet. Create that folder (it must be OUTSIDE this repo), then run \`npm run start\` again.`
-        : "Set AIDGENT_CHROME_PROFILE in .env to a NEW empty folder outside this repo — for example a folder called aidgent-chrome-profile in your home directory. This is a separate Chrome profile just for this tool, so your everyday browsing is untouched.",
+        ? `AIDGENT_CHROME_PROFILE points at "${s.chromeProfile}", which does not exist yet. Create that folder (it must be OUTSIDE this repo), then run \`npm run start\` again. Alternative with no folder and no login window: paste your LinkedIn li_at cookie into AIDGENT_LI_AT in .env (see .env.example for where to copy it from).`
+        : "Two ways to give this tool a LinkedIn session; either is enough.\nSimplest: paste your li_at cookie into AIDGENT_LI_AT in .env (.env.example says where to copy it from) — headless, no login window ever.\nOr: Set AIDGENT_CHROME_PROFILE in .env to a NEW empty folder outside this repo, then sign in once with `npm run setup-login`.",
     },
     {
-      label: "You are signed into LinkedIn in that profile",
+      label: "You are signed into LinkedIn (profile signed in, or li_at cookie set)",
       done: s.signedIn,
-      next: "Run `npm run setup-login`. A Chrome window opens; sign into LinkedIn yourself (including any 2-factor step), wait for your feed, then close the window. This tool never types your password and never handles your 2FA.",
+      next: "Run `npm run setup-login`. A Chrome window opens; sign into LinkedIn yourself (including any 2-factor step), wait for your feed, then close the window. This tool never types your password and never handles your 2FA. No window available: paste your li_at cookie into AIDGENT_LI_AT in .env instead, then verify with `npm run check-login`.",
     },
     {
       label: "Google service-account key file is set and exists",

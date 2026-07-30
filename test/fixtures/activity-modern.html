@@ -1,0 +1,64 @@
+<!doctype html>
+<!--
+  A profile's /recent-activity/all/ page with LinkedIn's CURRENT shape:
+  obfuscated, meaningless class names. Nothing here carries
+  `profile-creator-shared-feed-update__container`, `feed-shared-update-v2`,
+  `update-components-text` or `update-components-header` — the class names the
+  old extractor died on. The one thing an activity feed cannot stop doing is
+  linking each update to its permalink and showing its text nearby; that is all
+  the extractor may rely on.
+-->
+<html>
+  <body>
+    <nav>
+      <a href="https://www.linkedin.com/in/my-own-account/">Me</a>
+      <a href="https://www.linkedin.com/feed/">Home</a>
+    </nav>
+    <main>
+      <section class="qWpXrTzVbN">
+        <h2>All activity</h2>
+        <ul role="list">
+          <li class="fKdLmNoPqR">
+            <div class="aZxCvBnMkL">
+              <a href="https://www.linkedin.com/in/casey-example/">
+                <span aria-hidden="true">Casey Example</span>
+              </a>
+              <span class="tRfGyHuJiK">Fractional COO for lean advisory firms</span>
+              <span class="wQaSzXdCeV">2d &bull;</span>
+            </div>
+            <div class="pLoKiJuHyG">
+              We cut our client onboarding from nine days to two by writing the
+              intake agent ourselves. The surprise: the hard part was not the AI,
+              it was agreeing on what "onboarded" means.
+            </div>
+            <a class="mNbVcXzAsD" href="https://www.linkedin.com/feed/update/urn:li:activity:7355501234567890123/">Open post</a>
+            <div class="rEwQtYuIoP">
+              <span>84</span>
+              <span>12 comments</span>
+              <button>Like</button>
+              <button>Comment</button>
+              <button>Repost</button>
+              <button>Send</button>
+            </div>
+          </li>
+          <li class="fKdLmNoPqR">
+            <div class="aZxCvBnMkL">
+              <span class="hGfDsAqWeR">Casey Example commented on a post</span>
+              <span class="wQaSzXdCeV">1w &bull;</span>
+            </div>
+            <div class="pLoKiJuHyG">
+              Totally agree that capacity is the real constraint. We stopped
+              hiring for throughput and started automating the handoffs instead.
+            </div>
+            <a class="mNbVcXzAsD" href="https://www.linkedin.com/feed/update/urn:li:activity:7354409876543210987/">View comment</a>
+            <div class="rEwQtYuIoP">
+              <span>7</span>
+              <button>Like</button>
+              <button>Reply</button>
+            </div>
+          </li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

@@ -25,7 +25,7 @@ the sourcing code.
 
 1. `.env` filled from `.env.example` (values live outside the repo).
 2. A service-account JSON at `GOOGLE_APPLICATION_CREDENTIALS`, and the target Sheet shared with the service-account email.
-3. A dedicated Chrome profile path in `AIDGENT_CHROME_PROFILE` (outside the repo), signed into LinkedIn once via setup-login.
+3. A signed-in LinkedIn session: EITHER a dedicated Chrome profile path in `AIDGENT_CHROME_PROFILE` (outside the repo), signed into once via setup-login, OR the user's `li_at` cookie pasted into `AIDGENT_LI_AT` in `.env` (headless, no login window). Verify with `npm run check-login`.
 4. A selected persona.
 5. An EXISTING Google Sheet bound to the persona. Never create a new one and never use sheets.new. Use the user's sheet; if they have none, give them https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy and have them click "Make a copy" themselves. Then `npm run bind-sheet -- --persona <slug> --sheet <id-or-url>` and `npm run check-sheet -- --persona <slug>`. A run refuses to start if no real sheet is bound.
 
@@ -45,14 +45,16 @@ to any one business.
 ## Procedure
 
 1. Confirm prerequisites and the active persona (`validate-persona`).
-2. **Read the Feedback tab before sourcing.** For every row whose Status is not
-   `Applied`, turn the note into a concrete persona change (exclusion,
-   geography, buyer title, keyword, core topic), then set Status to `Applied`,
-   fill Applied on with today's date, and write what you changed. If a note
-   cannot be expressed as a persona change, set Status to `Needs a decision`,
-   write why, and raise it with the user. Never skip a row silently.
-   `Must` is a hard requirement, `Avoid` becomes an exclusion, `Prefer` is a
-   ranking boost and never a gate. See AGENTS.md section 4b.
+2. **Read the Feedback tab before sourcing** — and know that this is enforced:
+   a sourcing run REFUSES to start while any feedback row is still New. Run
+   `npm run feedback -- --list`, turn each waiting note into a concrete persona
+   change (exclusion, geography, buyer title, keyword, core topic), then record
+   it with `npm run feedback -- --apply <row> --changed "<what you changed>"`.
+   If a note cannot be expressed as a persona change, run
+   `npm run feedback -- --needs-decision <row> --reason "<why>"` and raise it
+   with the user. Never skip a row silently. `Must` is a hard requirement,
+   `Avoid` becomes an exclusion, `Prefer` is a ranking boost and never a gate.
+   See AGENTS.md section 4b.
 3. First-time only: `npm run setup-login -- --persona <slug>` and have the user sign in manually.
 4. Pilot: `npm run pilot -- --persona <slug> --headless`. Review the 10-lead output before scaling.
 5. Full run / scheduled: `npm run source -- --persona <slug> --target 50 --headless --update-sheet`.
@@ -67,5 +69,5 @@ without a live run.
 ## Modes
 
 - Local LinkedIn (default): signed-in dedicated profile, richest activity, computer must stay on and awake.
-- Public-web fallback (`--public-web`): no signed-in session, public profiles and external sources only, lower activity visibility.
+- No signed-in session: the run refuses to start (`npm run check-login` names why). Never substitute web search or your own browsing for a missing session.
 - Existing connections (`--connections`, alias `--from-connections`): research people the user is already connected to who match the persona, read-only. Opt-in only; use it only when the user explicitly asks, never as the default.

@@ -24,19 +24,23 @@ The ICP is never hardcoded. One reusable Codex skill loads a **private,
 switchable persona**, so you can change businesses or audiences without touching
 the sourcing code.
 
-## Two modes (honest)
+## The session (honest)
 
-**1. Local LinkedIn mode (default).**
-Codex desktop + this local repo + a dedicated persistent Chrome profile you sign
-into once. Later runs can be headless. It sees signed-in LinkedIn activity, so it
-gets the richest, most recent evidence.
-Requires: **computer on and awake, Codex desktop running.** This does **not** run
-with the computer off.
+Every run drives a real browser carrying **your own signed-in LinkedIn
+session**, read-only. Two ways to give it one — either is enough:
 
-**2. Public-web fallback (`--public-web`).**
-No signed-in LinkedIn session. Uses public profiles and external sources
-(company pages, directories, podcasts, conferences). Lower activity visibility,
-but no login needed.
+**1. Paste your `li_at` cookie (simplest).** Copy the `li_at` cookie from a
+browser where you are signed into LinkedIn into `AIDGENT_LI_AT` in `.env`
+(`.env.example` shows exactly where to find it). Runs are headless from the
+first one; no login window ever opens. Verify with `npm run check-login`.
+
+**2. A dedicated Chrome profile.** `npm run setup-login` opens a window, you
+sign in yourself once, and the profile keeps the session for later headless runs.
+
+No session means no run: `npm run source` stops with a named reason rather than
+degrading into some other way of finding people. Runs happen on **your**
+computer — on and awake, agent app running. This does **not** run with the
+computer off.
 
 ## What it does each run
 

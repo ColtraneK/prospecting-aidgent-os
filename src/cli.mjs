@@ -39,6 +39,8 @@ async function main() {
   switch (command) {
     case "start": return cmdStart();
     case "setup-login": return cmdSetupLogin(flags);
+    case "check-login": return cmdCheckLogin(flags);
+    case "feedback": return cmdFeedback(flags);
     case "source": return cmdSource(flags, {});
     case "follow-up": return cmdFollowUp(flags);
     case "daily": return cmdDaily(flags);
@@ -51,7 +53,7 @@ async function main() {
     case "bind-sheet": return cmdBindSheet(flags);
     case "check-sheet": return cmdCheckSheet(flags);
     default:
-      console.log("Unknown command. See: start | setup-login | source | follow-up | daily | pilot | dry-run | list-personas | select-persona | validate-persona | create-persona | bind-sheet | check-sheet");
+      console.log("Unknown command. See: start | setup-login | check-login | feedback | source | follow-up | daily | pilot | dry-run | list-personas | select-persona | validate-persona | create-persona | bind-sheet | check-sheet");
       process.exit(2);
   }
 }
@@ -79,6 +81,74 @@ async function cmdSetupLogin(flags) {
   console.log(`Opening a headed Chrome on profile: ${config.chromeProfile}`);
   console.log("Sign in to LinkedIn manually. This tool never types your credentials or MFA.");
   await setupLogin({ profilePath: config.chromeProfile, channel: config.chromeChannel });
+}
+
+/** Preflight: verify the LinkedIn session works before anything depends on it. */
+async function cmdCheckLogin(flags) {
+  const config = resolveConfig(flags);
+  const { checkLogin } = await import("./worker.mjs");
+  const v = await checkLogin({ config });
+  if (v.ok) {
+    console.log(`OK: ${v.reason}`);
+    return;
+  }
+  console.error(`NOT SIGNED IN (${v.kind}): ${v.reason}`);
+  console.error("Fix: run `npm run setup-login` and sign in yourself, or paste a fresh li_at cookie into AIDGENT_LI_AT in .env.");
+  process.exit(1);
+}
+
+/**
+ * feedback — the Feedback tab's code path.
+ *   --list                          show every row and its status (default)
+ *   --apply <row> --changed "..."   stamp a row Applied with what changed
+ *   --needs-decision <row> --reason "..."   stamp a row as waiting on the person
+ * Translating a note into persona fields stays an agent job (AGENTS.md 4b);
+ * this command is how that work is recorded so a run can trust the tab.
+ */
+async function cmdFeedback(flags) {
+  const config = resolveConfig(flags);
+  const slug = resolvePersonaSlug(flags);
+  const persona = slug ? (await getPersona(slug)).persona : null;
+  const sheetId = config.sheetId || (persona && personaSheetId(persona)) || "";
+  if (isPlaceholderSheetId(sheetId)) {
+    fail("No real Google Sheet is bound, so there is no Feedback tab to read." + sheetSetupHelp());
+  }
+  const { readFeedback, writeFeedbackStatus, formatFeedback, blockingRows, needsDecisionRows,
+    STATUS_APPLIED, STATUS_NEEDS_DECISION } = await import("./feedback.mjs");
+  const { getSheets } = await import("./sheet.mjs");
+  const sheets = await getSheets(config.credentialsPath);
+
+  const applyRow = flags.apply;
+  const decideRow = flags["needs-decision"];
+  if (applyRow && applyRow !== true) {
+    const changed = flags.changed;
+    if (!changed || changed === true) fail('Usage: npm run feedback -- --apply <row> --changed "what you changed in the persona"');
+    await writeFeedbackStatus(sheets, sheetId, applyRow, {
+      status: STATUS_APPLIED,
+      appliedOn: new Date().toISOString().slice(0, 10),
+      changed: String(changed),
+    });
+    console.log(`Feedback row ${applyRow} marked Applied: ${changed}`);
+    return;
+  }
+  if (decideRow && decideRow !== true) {
+    const reason = flags.reason;
+    if (!reason || reason === true) fail('Usage: npm run feedback -- --needs-decision <row> --reason "why this needs the person"');
+    await writeFeedbackStatus(sheets, sheetId, decideRow, {
+      status: STATUS_NEEDS_DECISION,
+      appliedOn: "",
+      changed: String(reason),
+    });
+    console.log(`Feedback row ${decideRow} marked Needs a decision: ${reason}`);
+    return;
+  }
+
+  const { rows } = await readFeedback(sheets, sheetId);
+  console.log(formatFeedback(rows));
+  const blocking = blockingRows(rows);
+  const waiting = needsDecisionRows(rows);
+  if (blocking.length) console.log(`\n${blocking.length} row(s) still block the next sourcing run.`);
+  if (waiting.length) console.log(`${waiting.length} row(s) are waiting on the person's decision.`);
 }
 
 async function cmdListPersonas() {
@@ -206,6 +276,23 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
     );
   }
 
+  // 1b) The Feedback tab gates every live run. The person's corrections are
+  // instructions; sourcing while they sit unapplied teaches them the tab is
+  // decorative. This is code, not doctrine, so it cannot be skipped by accident.
+  if (!flags.fixture && !config.dryRun) {
+    const { readFeedback, blockingRows, needsDecisionRows, formatRefusal, formatFeedback } = await import("./feedback.mjs");
+    const { getSheets } = await import("./sheet.mjs");
+    const sheets = await getSheets(config.credentialsPath);
+    const { rows } = await readFeedback(sheets, sheetId);
+    const blocking = blockingRows(rows);
+    if (blocking.length) fail(formatRefusal(blocking));
+    const waiting = needsDecisionRows(rows);
+    if (waiting.length) {
+      console.log("Feedback rows still waiting on the person's decision (not blocking):");
+      console.log(formatFeedback(waiting));
+    }
+  }
+
   // 2) Candidates + existing sheet: fixture (offline) or live worker + Sheets.
   let candidates, existingSheet, blocker = null, inspected = 0;
   if (flags.fixture) {
@@ -256,8 +343,18 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
     existingSheet = await readLeads(sheets, sheetId);
   }
 
+  // 2b) An unreadable activity page must be said out loud: those candidates are
+  // being scored WITHOUT their recent posts, which silently costs them recency
+  // points and blanks column D — the exact defect that once emptied a pilot.
+  const unreadable = (candidates || []).filter((c) => c.activityStatus === "unreadable").length;
+  if (unreadable > 0) {
+    console.error(`WARNING: recent-activity pages could not be parsed for ${unreadable} of ${candidates.length} candidate(s). ` +
+      "Their column D is blank and their recency points were lost. LinkedIn's activity markup " +
+      "likely changed — save one activity page into test/fixtures/ and fix extractActivityFromDom.");
+  }
+
   // 3) Score + plan (pure).
-  const sourceType = config.mode === "public-web" ? "Public web" : "LinkedIn";
+  const sourceType = "LinkedIn";
   const { scored, plan, counts } = runPipeline({ persona, existingSheet, candidates, nowMs, nowIso, sourceType });
 
   // 4) Always write a CSV artifact of accepted new/updated leads.
@@ -287,7 +384,7 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
     blocker: blocker ? `${blocker.kind}: ${blocker.reason}` : "",
     startedMs, endedMs: Date.now(), nowIso,
   });
-  fs.writeFileSync(path.join(config.outDir, `${runId}.report.json`), JSON.stringify({ report, plan, rejected: plan.rejected.map(r => ({ name: r.candidate.name, reason: r.reason })) }, null, 2));
+  fs.writeFileSync(path.join(config.outDir, `${runId}.report.json`), JSON.stringify({ report, activityUnreadable: unreadable, plan, rejected: plan.rejected.map(r => ({ name: r.candidate.name, reason: r.reason })) }, null, 2));
   console.log(formatRunReport(report));
   console.log(`CSV: ${csvPath}`);
   if (config.dryRun || flags.fixture) console.log("(dry-run / fixture: no Sheet was modified)");

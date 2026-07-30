@@ -26,3 +26,30 @@ test("recencyBoost is a soft boost, not a gate", () => {
 test("daysBetween counts whole days", () => {
   assert.equal(daysBetween(now, Date.parse("2026-07-22T12:00:00Z")), 1);
 });
+
+test("parseActivityDate reads the relative stamps LinkedIn actually shows", async () => {
+  const { parseActivityDate } = await import("../src/recency.mjs");
+  assert.equal(parseActivityDate("2d", now), "2026-07-21");
+  assert.equal(parseActivityDate("2d •", now), "2026-07-21");
+  assert.equal(parseActivityDate("1w", now), "2026-07-16");
+  assert.equal(parseActivityDate("3 days ago", now), "2026-07-20");
+  assert.equal(parseActivityDate("5h", now), "2026-07-23"); // hours -> today
+  assert.equal(parseActivityDate("45m ago", now), "2026-07-23"); // minutes -> today
+  assert.equal(parseActivityDate("2mo", now), "2026-05-24"); // ~30d months
+});
+
+test("parseActivityDate reads absolute dates and refuses to guess the rest", async () => {
+  const { parseActivityDate } = await import("../src/recency.mjs");
+  assert.equal(parseActivityDate("2026-07-20T09:00:00Z", now), "2026-07-20");
+  assert.equal(parseActivityDate("", now), "");
+  assert.equal(parseActivityDate("edited", now), "");
+  assert.equal(parseActivityDate(null, now), "");
+});
+
+test("a parsed relative stamp actually earns recency points", async () => {
+  const { parseActivityDate } = await import("../src/recency.mjs");
+  // The whole reason relative stamps must parse: "2d" used to become "" and
+  // silently score zero, rejecting people for a defect in our own reader.
+  assert.equal(isRecent(parseActivityDate("2d", now), now), true);
+  assert.equal(isRecent(parseActivityDate("3w", now), now), false);
+});

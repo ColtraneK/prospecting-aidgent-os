@@ -187,6 +187,30 @@ test("AGENTS.md explains every empty-page verdict the worker can produce", () =>
     "AGENTS.md must state that a zero-result run is a failure, not a quiet success");
 });
 
+test("the Feedback tab's enforcement is stated where agents and users read", () => {
+  // The tab used to be documentation only — a promise with no code behind it.
+  // Now a run refuses to start over unapplied rows, and every surface that
+  // describes the loop must say so, or an agent paraphrasing the docs will
+  // describe the old, decorative version.
+  const agents = read("AGENTS.md");
+  assert.match(agents, /refuses to start/i, "AGENTS.md must state that unapplied feedback blocks a run");
+  assert.match(agents, /npm run feedback/, "AGENTS.md must name the feedback command");
+  assert.match(read("sheet/SHEET.md"), /refuses to start/i);
+  assert.match(read(".agents/skills/research-outreach-prospects/SKILL.md"), /REFUSES to start/i);
+});
+
+test("a missing session is a refusal, not a license to source another way", () => {
+  const agents = read("AGENTS.md");
+  assert.match(agents, /must not source without a working linkedin session/i);
+  assert.match(agents, /npm run check-login/, "AGENTS.md must name the preflight");
+  // The public-web mode is gone: its description promised sources no code
+  // implemented, which read as permission for an agent to browse the web
+  // itself. No doc may resurrect it.
+  for (const doc of DOCS) {
+    assert.ok(!read(doc).includes("--public-web"), `${doc} still offers the removed --public-web mode`);
+  }
+});
+
 test("the empty-page verdicts in the docs are the ones the code emits", () => {
   const src = read("src/blockers.mjs");
   const kinds = [...src.matchAll(/kind:\s*"([a-z_]+)"/g)].map((m) => m[1]);

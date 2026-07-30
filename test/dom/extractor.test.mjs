@@ -14,7 +14,7 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { extractPeopleFromDom } from "../../src/worker.mjs";
+import { extractPeopleFromDom, extractActivityFromDom } from "../../src/worker.mjs";
 
 const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures");
 
@@ -84,4 +84,42 @@ test("the old 2023 markup still reads, so this is a superset not a swap", async 
   assert.equal(people[0].name, "Alan Turing");
   assert.equal(people[0].title, "Chief Scientist at Bletchley Systems");
   assert.equal(people[0].location, "Manchester, United Kingdom");
+});
+
+const loadActivity = async (file) => {
+  await page.goto(pathToFileURL(path.join(FIXTURES, file)).href, { waitUntil: "domcontentloaded" });
+  return page.evaluate(extractActivityFromDom);
+};
+
+test("reads current activity markup, which carries no meaningful class names", async () => {
+  const items = await loadActivity("activity-modern.html");
+  assert.equal(items.length, 2, `expected 2 activity items, got ${JSON.stringify(items, null, 2)}`);
+
+  // Newest first, exactly as the page lists them.
+  const [post, comment] = items;
+  assert.equal(post.type, "post");
+  assert.match(post.summary, /client onboarding from nine days to two/);
+  assert.match(post.url, /urn:li:activity:7355501234567890123/);
+  assert.match(post.dateText, /2\s*d/i, `post date not captured: "${post.dateText}"`);
+
+  assert.equal(comment.type, "comment");
+  assert.match(comment.summary, /capacity is the real constraint/);
+  assert.match(comment.dateText, /1\s*w/i, `comment date not captured: "${comment.dateText}"`);
+});
+
+test("activity summaries never contain feed chrome (buttons, counts, stamps)", async () => {
+  const items = await loadActivity("activity-modern.html");
+  for (const it of items) {
+    assert.ok(!/^(like|comment|repost|send|reply)$/i.test(it.summary), `chrome captured as summary: "${it.summary}"`);
+    assert.ok(!/^\d+(\s+comments?)?$/i.test(it.summary), `a count captured as summary: "${it.summary}"`);
+    assert.ok(!/^\d+\s*(d|w|mo)\b/i.test(it.summary), `a timestamp captured as summary: "${it.summary}"`);
+  }
+});
+
+test("the old 2023 activity markup still reads too", async () => {
+  const items = await loadActivity("activity-legacy.html");
+  assert.equal(items.length, 1);
+  assert.match(items[0].summary, /On computable numbers/);
+  assert.equal(items[0].type, "post");
+  assert.match(items[0].dateText, /2023/);
 });
