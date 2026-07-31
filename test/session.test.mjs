@@ -19,7 +19,7 @@ import path from "node:path";
 import {
   isPlaceholderProfilePath, profileState, preflightSession, formatSessionRefusal,
   envFileReproducesSession, provenanceOf, describeProvenance, shouldRememberProfile,
-  PLACEHOLDER_PROFILE_PATH, SESSION_VERDICTS,
+  PLACEHOLDER_PROFILE_PATH, SESSION_VERDICTS, sessionProofState, writeSessionProof,
   SESSION_OK, NO_SESSION_CONFIGURED, PLACEHOLDER_PROFILE, PROFILE_MISSING, PROFILE_NEVER_SIGNED_IN,
   FROM_FLAG, FROM_SHELL, FROM_ENV_FILE, FROM_NOWHERE,
 } from "../src/session.mjs";
@@ -405,5 +405,89 @@ test("upsertDotEnv creates the file when there is none", () => {
   const file = path.join(root, ".env");
   upsertDotEnv("AIDGENT_CHROME_PROFILE", "/home/me/p", file);
   assert.equal(loadDotEnv(file).AIDGENT_CHROME_PROFILE, "/home/me/p");
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+// --- proof that a session actually worked ------------------------------------
+
+test("a cookie file in a profile folder is NOT proof of a LinkedIn session", () => {
+  // The regression this whole section exists for. Chrome creates
+  // Default/Cookies the instant it launches, so a profile someone opened and
+  // abandoned looked signed in to the checklist. `npm run start` printed READY
+  // and `npm run check-login` said "login page detected" one command later.
+  const root = tmpdir();
+  const profile = signedInProfile(root); // has Default/Cookies on disk
+  const proofPath = path.join(root, "session-verified.json");
+
+  assert.equal(profileState(profile).signedIn, true, "the old heuristic still sees a cookie file");
+  const v = sessionProofState({ chromeProfile: profile, proofPath });
+  assert.equal(v.ok, false, "but nothing has proved the session works");
+  assert.match(v.reason, /Chrome creates that file the moment it opens/);
+  assert.match(v.fix, /check-login/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("proof is accepted only for the session it was recorded against", () => {
+  const root = tmpdir();
+  const a = signedInProfile(root, "a");
+  const b = signedInProfile(root, "b");
+  const proofPath = path.join(root, "session-verified.json");
+  const nowIso = "2026-07-31T12:00:00.000Z";
+  const nowMs = Date.parse(nowIso);
+
+  writeSessionProof({ chromeProfile: a, nowIso }, { proofPath });
+  assert.equal(sessionProofState({ chromeProfile: a, nowMs, proofPath }).ok, true);
+  // Switching the profile must not inherit the other one's green tick.
+  const other = sessionProofState({ chromeProfile: b, nowMs, proofPath });
+  assert.equal(other.ok, false);
+  assert.match(other.reason, /a different one/);
+  // A cookie is a different session again, even alongside the proved profile.
+  assert.equal(sessionProofState({ chromeProfile: a, liAt: "AQEDA...", nowMs, proofPath }).ok, false);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("proof expires, because LinkedIn sessions do", () => {
+  const root = tmpdir();
+  const profile = signedInProfile(root);
+  const proofPath = path.join(root, "session-verified.json");
+  writeSessionProof({ chromeProfile: profile, nowIso: "2026-07-01T12:00:00.000Z" }, { proofPath });
+
+  const fresh = sessionProofState({ chromeProfile: profile, nowMs: Date.parse("2026-07-08T12:00:00.000Z"), proofPath });
+  assert.equal(fresh.ok, true);
+  const stale = sessionProofState({ chromeProfile: profile, nowMs: Date.parse("2026-08-30T12:00:00.000Z"), proofPath });
+  assert.equal(stale.ok, false);
+  assert.match(stale.reason, /days ago/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("the li_at cookie is fingerprinted, never written to disk", () => {
+  // The proof file lives in private/ and is git-ignored, but a credential still
+  // has no business being in a file this tool writes on someone's behalf.
+  const root = tmpdir();
+  const proofPath = path.join(root, "session-verified.json");
+  const secret = "AQEDATotallySecretCookieValue1234567890";
+  writeSessionProof({ liAt: secret, nowIso: "2026-07-31T12:00:00.000Z" }, { proofPath });
+  const raw = fs.readFileSync(proofPath, "utf8");
+  assert.ok(!raw.includes(secret), `the cookie value was written to disk:\n${raw}`);
+  assert.match(raw, /"fingerprint": "cookie:[0-9a-f]{16}"/);
+  // A different cookie must not satisfy the proof.
+  const nowMs = Date.parse("2026-07-31T12:00:01.000Z");
+  assert.equal(sessionProofState({ liAt: secret, nowMs, proofPath }).ok, true);
+  assert.equal(sessionProofState({ liAt: "AQEDADifferentCookie", nowMs, proofPath }).ok, false);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("no proof at all is reported as unverified, not as broken", () => {
+  const root = tmpdir();
+  const proofPath = path.join(root, "nothing-here.json");
+  const v = sessionProofState({ chromeProfile: signedInProfile(root), proofPath });
+  assert.equal(v.ok, false);
+  assert.ok(v.reason.trim().length > 10);
+  assert.ok(v.fix.trim().length > 10);
+  assert.ok(!`${v.reason} ${v.fix}`.includes("?"));
+  // And with nothing configured either, it says so rather than blaming a file.
+  const none = sessionProofState({ proofPath });
+  assert.equal(none.ok, false);
+  assert.match(none.reason, /nothing to verify/);
   fs.rmSync(root, { recursive: true, force: true });
 });

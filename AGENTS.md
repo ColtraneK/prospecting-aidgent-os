@@ -516,6 +516,37 @@ was given before it opens anything, `check-login` records the one it has just
 proved works — so the next command cannot lose it. That is the whole reason you
 never need to set these variables in a shell.
 
+### READY means proved, not merely configured
+
+`npm run start` is offline by contract, so it cannot ask LinkedIn anything. It
+used to infer a session from a cookie file inside the profile directory — and
+Chrome creates that file the instant it launches, before anyone signs in. A
+profile that was opened and abandoned therefore reported as signed in, the
+checklist printed READY, and `npm run check-login` said `login page detected`
+one command later.
+
+The commands that actually open a browser now record what they proved, in
+`private/session-verified.json`, and the checklist reads that record instead of
+guessing. The step is called "That session is proven to work" and it stays
+unmet until a real run proved it.
+
+- **You must not report the setup as ready on the checklist alone.** Run
+  `npm run check-login` and quote what it says. READY without it is the exact
+  failure this replaced.
+- **You must not create or edit `private/session-verified.json` by hand**, and
+  must not write it to make a step turn green. It records something that
+  happened; forging it re-creates the bug in a worse form.
+- Proof is bound to the session it proved. Changing the profile path or pasting
+  a different cookie invalidates it deliberately — a green tick is never
+  inherited by a session nobody tested.
+- Proof expires after 14 days, because LinkedIn sessions do.
+- `npm run setup-login` no longer wants Ctrl+C. It waits for the feed, closes
+  the browser itself so Chrome flushes its cookie store, then records the
+  result. Ctrl+C used to kill the process with the browser still open, which is
+  how a sign-in someone completed correctly could still fail to reach disk. If
+  it exits nonzero the sign-in did not complete: have them run it again and
+  leave the window open until their own feed renders.
+
 ---
 
 ## 8. How to talk to the person

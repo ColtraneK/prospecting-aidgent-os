@@ -17,7 +17,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { REPO_ROOT, loadDotEnv } from "./config.mjs";
 import { listPersonaSlugs, resolvePersonaPath, loadPersonaFile, validatePersona, personaSheetId, isPlaceholderSheetId, SHEET_TEMPLATE_ID, SHEET_TEMPLATE_COPY_URL } from "./persona.mjs";
-import { profileState, envFileReproducesSession, provenanceOf, describeProvenance, FROM_ENV_FILE } from "./session.mjs";
+import { profileState, envFileReproducesSession, provenanceOf, describeProvenance, sessionProofState, FROM_ENV_FILE } from "./session.mjs";
 
 const SELECTED_FILE = path.join(REPO_ROOT, "private", "selected-persona.txt");
 
@@ -101,6 +101,13 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
     : provenanceOf(sessionKey, { shellEnv: shell, fileEnv: file });
   // The check that catches a green checklist standing on a value the next
   // terminal will not have.
+  // The only honest answer to "is this session good" comes from a command that
+  // actually opened the feed. This reads what one of those recorded.
+  const verified = sessionProofState({
+    chromeProfile,
+    liAt: String(e.AIDGENT_LI_AT || "").trim(),
+    proofPath: path.join(repoRoot, "private", "session-verified.json"),
+  });
   const reproduce = envFileReproducesSession({
     fileEnv: file,
     resolvedProfile: chromeProfile,
@@ -146,6 +153,10 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
     chromeProfile, profileExists, signedIn, liAt,
     profilePlaceholder,
     profileFrom, sessionFrom,
+    sessionVerified: verified.ok,
+    sessionVerifiedReason: verified.reason,
+    sessionVerifiedFix: verified.fix,
+    sessionVerifiedAt: verified.verifiedAt,
     envReproduces: reproduce.ok,
     envReproducesReason: reproduce.reason,
     envReproducesFix: reproduce.fix,
@@ -191,9 +202,22 @@ export function buildChecklist(s) {
           : "Two ways to give this tool a LinkedIn session; either is enough.\nSimplest: paste your li_at cookie into AIDGENT_LI_AT in .env (.env.example says where to copy it from) — headless, no login window ever.\nOr: Set AIDGENT_CHROME_PROFILE in .env to a NEW empty folder outside this repo, then sign in once with `npm run setup-login`.",
     },
     {
-      label: "You are signed into LinkedIn (profile signed in, or li_at cookie set)",
-      done: s.signedIn,
-      next: "Run `npm run setup-login`. A Chrome window opens; sign into LinkedIn yourself (including any 2-factor step), wait for your feed, then close the window. This tool never types your password and never handles your 2FA. No window available: paste your li_at cookie into AIDGENT_LI_AT in .env instead, then verify with `npm run check-login`.",
+      // This step used to read the filesystem and guess. Chrome creates a
+      // cookie file the moment it opens, so an abandoned profile passed and
+      // READY appeared over a session that had never signed in. Nothing here
+      // can reach LinkedIn — this command is offline by contract — so it now
+      // requires a run that DID reach it to have left a record.
+      label: "That session is proven to work (verified against LinkedIn, not guessed)",
+      done: s.sessionVerified,
+      next: [
+        `Right now ${s.sessionVerifiedReason}`,
+        "",
+        s.sessionVerifiedFix,
+        "",
+        s.profileExists && !s.liAt && !s.signedIn
+          ? "That profile folder has no cookie store at all, so no sign-in was ever completed in it. Run `npm run setup-login`, sign in yourself, and leave the window open until your feed renders — it closes itself and records the result."
+          : "If check-login says NOT SIGNED IN, run `npm run setup-login` and leave the window open until your feed renders. It waits for the feed, closes the browser cleanly so the cookies are written, and records what it proved. The no-window alternative: paste your li_at cookie into AIDGENT_LI_AT in .env, then run `npm run check-login`.",
+      ].join("\n"),
     },
     {
       // The step that exists because everything above it can be green on a
@@ -269,6 +293,7 @@ export function formatStatus(s, checklist = buildChecklist(s)) {
     // Printing WHERE the session came from, not just that there is one. READY
     // has to be a claim about this machine, not about this terminal.
     lines.push(`  Session:  ${s.liAt ? "li_at cookie" : s.chromeProfile || "none"} (${describeProvenance(s.sessionFrom)})`);
+    lines.push(`  Verified: ${s.sessionVerifiedAt || "unknown"} — proved against LinkedIn, not inferred`);
     lines.push(`  Warm-first: ${s.includeConnections ? "yes — your existing connections are mined too" : "no — net-new people only"}`);
     lines.push("");
     lines.push("Do a small run first so you can see what lands in the sheet:");

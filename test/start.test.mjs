@@ -17,6 +17,13 @@ function readyFacts(over = {}) {
   // the happy-path reason in place renders "Right now .env names a signed-in
   // profile." above an empty fix — a next step no real run can produce and
   // nobody could act on, which would let the item pass review untested.
+  // Same coherence rule as envReproduces: a flipped fact must render the text
+  // the real code would actually produce, or the step goes untested.
+  if (f.sessionVerified === false && over.sessionVerifiedReason === undefined) {
+    f.sessionVerifiedReason = "no run has ever proved this session works. A profile folder containing a cookie file is not proof: Chrome creates that file the moment it opens, before anyone signs in.";
+    f.sessionVerifiedFix = "Run `npm run check-login`. It opens the feed for real and takes a few seconds.";
+    f.sessionVerifiedAt = "";
+  }
   if (f.envReproduces === false && over.envReproducesReason === undefined) {
     f.envReproducesReason = ".env has a fill-this-in placeholder where the profile path goes (/absolute/path/outside/repo/aidgent-chrome-profile), not a real folder.";
     f.envReproducesFix = "Replace it with AIDGENT_CHROME_PROFILE=/home/me/aidgent-chrome-profile.";
@@ -31,6 +38,10 @@ function baseFacts(over = {}) {
     envFileExists: true,
     chromeProfile: "/home/me/aidgent-chrome-profile", profileExists: true, signedIn: true,
     profilePlaceholder: false, profileFrom: "env-file", sessionFrom: "env-file",
+    sessionVerified: true,
+    sessionVerifiedReason: "verified 2026-07-30T12:00:00.000Z via chrome profile.",
+    sessionVerifiedFix: "",
+    sessionVerifiedAt: "2026-07-30T12:00:00.000Z",
     envReproduces: true,
     envReproducesReason: ".env names a signed-in profile (/home/me/aidgent-chrome-profile).",
     envReproducesFix: "",
@@ -49,7 +60,7 @@ test("the checklist is in dependency order — you never install Node after bind
   const idx = (needle) => items.findIndex((l) => l.includes(needle));
   assert.ok(idx("Node 20") < idx("dependencies"));
   assert.ok(idx("dependencies") < idx(".env"));
-  assert.ok(idx("Chrome profile") < idx("signed into LinkedIn"));
+  assert.ok(idx("Chrome profile") < idx("proven to work"));
   assert.ok(idx("persona exists") < idx("complete and valid"));
   assert.ok(idx("complete and valid") < idx("Google Sheet is bound"));
 });
@@ -73,7 +84,7 @@ test("READY appears only when every single item is done", () => {
   assert.match(out, /npm run daily/);
   assert.ok(!out.includes("NEXT STEP"));
 
-  for (const key of ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "signedIn", "envReproduces", "credsExist", "personaValid", "sheetBound"]) {
+  for (const key of ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "sessionVerified", "envReproduces", "credsExist", "personaValid", "sheetBound"]) {
     const broken = formatStatus(readyFacts({ [key]: false }));
     assert.ok(!broken.includes("READY."), `READY leaked when ${key} was false`);
     assert.match(broken, /NEXT STEP/);
@@ -111,7 +122,7 @@ test("the status text never asks the user a question", () => {
   // Every reachable state, not a sample of two: the two longest hints (the
   // service-account walkthrough and the sheet copy link) are exactly where a
   // stray question mark would creep in.
-  const states = ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "signedIn",
+  const states = ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "sessionVerified",
     "envReproduces", "credsExist", "personaValid", "sheetBound"];
   const samples = [formatStatus(readyFacts()),
     formatStatus(readyFacts({ credsExist: false, credsPath: "" })),

@@ -30,6 +30,8 @@
 
 import fsDefault from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
+import { REPO_ROOT } from "./config.mjs";
 
 /** The literal value shipped in .env.example. Rejected by value, not just by existence. */
 export const PLACEHOLDER_PROFILE_PATH = "/absolute/path/outside/repo/aidgent-chrome-profile";
@@ -308,6 +310,124 @@ export function shouldRememberProfile({ chromeProfile = "", liAt = "" } = {}, de
   if (String(liAt || "").trim()) return false;
   const st = profileState(chromeProfile, deps);
   return st.set && !st.placeholder && st.exists && st.signedIn;
+}
+
+// --- proof that a session actually worked -----------------------------------
+//
+// WHY THIS EXISTS
+// `npm run start` is offline by contract: it opens no browser and makes no
+// network calls, so it cannot itself find out whether LinkedIn will accept a
+// session. It used to infer one from the presence of a cookie-store FILE
+// inside the profile directory — and Chrome creates that file the instant it
+// launches, before anyone has typed a password. So a profile that had been
+// opened and abandoned reported as signed in, the checklist printed READY, and
+// `check-login` then said "login page detected" one command later.
+//
+// The only honest source of truth is a run that actually loaded the feed. So
+// the commands that DO open a browser record what they proved, and the
+// checklist reads that record instead of guessing. READY now means a session
+// that was demonstrated, not one that looked plausible on disk.
+
+export const SESSION_PROOF_PATH = path.join(REPO_ROOT, "private", "session-verified.json");
+
+/** A proof older than this is treated as expired: sessions do not last forever. */
+export const SESSION_PROOF_MAX_AGE_DAYS = 14;
+
+/**
+ * Identify WHICH session a proof belongs to, so that changing the profile path
+ * or pasting a different cookie invalidates it rather than inheriting someone
+ * else's green tick. The cookie is fingerprinted, never stored: a truncated
+ * SHA-256 of a long random value is not reversible, and the secret itself has
+ * no business being written to a file this tool manages.
+ */
+export function sessionFingerprint({ chromeProfile = "", liAt = "" } = {}) {
+  const cookie = String(liAt || "").trim();
+  if (cookie) return `cookie:${sha256(cookie).slice(0, 16)}`;
+  const p = String(chromeProfile || "").trim();
+  return p ? `profile:${p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()}` : "";
+}
+
+function sha256(s) {
+  // Imported lazily so the pure module stays cheap for callers that never
+  // fingerprint anything.
+  return createHash("sha256").update(String(s)).digest("hex");
+}
+
+/** Record that a session was just proved to load the LinkedIn feed. */
+export function writeSessionProof({ chromeProfile = "", liAt = "", nowIso } = {}, deps = {}) {
+  const fs = deps.fs || fsDefault;
+  const proof = {
+    fingerprint: sessionFingerprint({ chromeProfile, liAt }),
+    method: String(liAt || "").trim() ? "li_at cookie" : "chrome profile",
+    verifiedAt: nowIso || new Date().toISOString(),
+  };
+  if (!proof.fingerprint) return null;
+  const target = deps.proofPath || SESSION_PROOF_PATH;
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, `${JSON.stringify(proof, null, 2)}\n`);
+  } catch {
+    return null; // never fatal: a session that works is not invalidated by a read-only disk
+  }
+  return proof;
+}
+
+export function readSessionProof(deps = {}) {
+  const fs = deps.fs || fsDefault;
+  try {
+    const raw = fs.readFileSync(deps.proofPath || SESSION_PROOF_PATH, "utf8");
+    const p = JSON.parse(raw);
+    return p && typeof p.fingerprint === "string" ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Has THIS session been proved to work, recently enough to believe?
+ * @returns {{ok:boolean, reason:string, fix:string, verifiedAt:string}}
+ */
+export function sessionProofState(
+  { chromeProfile = "", liAt = "", nowMs = Date.now(), maxAgeDays = SESSION_PROOF_MAX_AGE_DAYS, proofPath = "" } = {},
+  deps = {},
+) {
+  if (proofPath) deps = { ...deps, proofPath };
+  const want = sessionFingerprint({ chromeProfile, liAt });
+  const RUN = "Run `npm run check-login`. It opens the feed for real and takes a few seconds.";
+  if (!want) {
+    return { ok: false, reason: "no session is configured yet, so there is nothing to verify.", fix: RUN, verifiedAt: "" };
+  }
+  const proof = readSessionProof(deps);
+  if (!proof) {
+    return {
+      ok: false,
+      reason: "no run has ever proved this session works. A profile folder containing a cookie file is not proof: Chrome creates that file the moment it opens, before anyone signs in.",
+      fix: RUN,
+      verifiedAt: "",
+    };
+  }
+  if (proof.fingerprint !== want) {
+    return {
+      ok: false,
+      reason: `the last verified session was a different one (${proof.method || "unknown"}, ${proof.verifiedAt || "unknown date"}), so it says nothing about the one configured now.`,
+      fix: RUN,
+      verifiedAt: proof.verifiedAt || "",
+    };
+  }
+  const ageMs = nowMs - Date.parse(proof.verifiedAt || "");
+  if (!Number.isFinite(ageMs) || ageMs < 0) {
+    return { ok: false, reason: "the recorded verification has no usable date.", fix: RUN, verifiedAt: proof.verifiedAt || "" };
+  }
+  if (ageMs > maxAgeDays * 86400000) {
+    const days = Math.floor(ageMs / 86400000);
+    return {
+      ok: false,
+      reason: `this session was last proved to work ${days} days ago, and LinkedIn sessions expire.`,
+      fix: RUN,
+      verifiedAt: proof.verifiedAt,
+    };
+  }
+  return { ok: true, reason: `verified ${proof.verifiedAt} via ${proof.method}.`, fix: "", verifiedAt: proof.verifiedAt };
 }
 
 /** The message a command prints before refusing to run. */

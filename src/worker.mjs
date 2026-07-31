@@ -179,15 +179,77 @@ async function guard(page, status = 0) {
  * HEADED setup: open LinkedIn so the user can sign in manually. We never type
  * credentials or complete login. We wait until the user has a session, then exit.
  */
-export async function setupLogin({ profilePath, channel = "chrome", waitMs = 0 }) {
+/**
+ * Open a headed window so the PERSON signs into LinkedIn themselves, then wait
+ * until their feed actually loads, then shut the browser down cleanly.
+ *
+ * WHY IT WORKS THIS WAY. The previous version parked on `new Promise(() => {})`
+ * and told the person to press Ctrl+C. Ctrl+C kills the Node process, so the
+ * `context.close()` underneath that line was unreachable and Chrome was killed
+ * rather than closed. Chrome writes its cookie store on a clean shutdown, so a
+ * sign-in that the person completed perfectly could still fail to reach disk —
+ * leaving a profile directory holding a cookie FILE (created at launch) and no
+ * LinkedIn session inside it. That is indistinguishable from success to
+ * anything that only looks at the filesystem, which is precisely how the setup
+ * checklist came to print READY over a profile that had never been signed in.
+ *
+ * So: detect success ourselves, close the context properly to flush cookies,
+ * and hand back a verdict the caller can record. Ctrl+C is still honoured, but
+ * now it closes the browser on the way out instead of severing it.
+ *
+ * @returns {{ok:boolean, reason:string}}
+ */
+export async function setupLogin({
+  profilePath, channel = "chrome", waitMs = 0,
+  timeoutMs = 10 * 60 * 1000, pollMs = 2500,
+}) {
   const context = await launch({ profilePath, channel, headless: false, allowNewProfile: true });
-  const page = context.pages()[0] || (await context.newPage());
-  await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded" }).catch(() => {});
-  console.log("A Chrome window is open. Sign in to LinkedIn manually (including any MFA).");
-  console.log("When your feed loads, come back here and press Ctrl+C, or close the window.");
-  if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
-  else await new Promise(() => {}); // wait indefinitely for manual login; user ends it
-  await context.close();
+
+  let closed = false;
+  const closeOnce = async () => {
+    if (closed) return;
+    closed = true;
+    // The whole point: a graceful close is what flushes the cookie store.
+    await context.close().catch(() => {});
+  };
+  const onSignal = () => { closeOnce().finally(() => process.exit(130)); };
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+
+  try {
+    const page = context.pages()[0] || (await context.newPage());
+    await page.goto("https://www.linkedin.com/feed/", { waitUntil: "domcontentloaded" }).catch(() => {});
+    console.log("A Chrome window is open. Sign in to LinkedIn manually, including any 2-factor step.");
+    console.log("This tool never types your password and never handles your 2FA.");
+    console.log("Leave the window open once your feed loads — this waits for it and closes the window itself.");
+
+    const deadline = Date.now() + (waitMs > 0 ? waitMs : timeoutMs);
+    while (Date.now() < deadline) {
+      // A closed window is the person telling us they are done, one way or the
+      // other. Stop rather than polling a dead context.
+      if (!context.pages().length) {
+        return { ok: false, reason: "the window was closed before a signed-in feed was seen." };
+      }
+      const live = context.pages()[0];
+      const signedIn = await live.evaluate(() =>
+        /linkedin\.com/.test(location.host) &&
+        !/\/(login|uas\/login|checkpoint)/.test(location.pathname) &&
+        !!document.querySelector("a[href*='/in/'], a[href*='/mynetwork'], a[href*='/messaging']"),
+      ).catch(() => false);
+      if (signedIn) {
+        // Give Chrome a moment to settle the session cookie before we close.
+        await live.waitForTimeout(1500).catch(() => {});
+        await closeOnce();
+        return { ok: true, reason: "signed-in feed loaded and the profile was closed cleanly." };
+      }
+      await live.waitForTimeout(pollMs).catch(() => {});
+    }
+    return { ok: false, reason: "timed out before a signed-in feed appeared." };
+  } finally {
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+    await closeOnce();
+  }
 }
 
 /**

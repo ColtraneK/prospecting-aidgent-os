@@ -287,3 +287,17 @@ test("the sheet's own Prompt Library counts leads added, not people inspected", 
       `a pasteable prompt still asks for a count of people rather than leads added: "${p.slice(0, 90)}…"`);
   }
 });
+
+test("AGENTS.md forbids faking the session proof the checklist now depends on", () => {
+  // The checklist stopped guessing at a session and started reading a recorded
+  // one. That only holds if nobody writes the record by hand — an agent that
+  // forges it turns a wrong-but-visible bug into a silent one.
+  const a = read("AGENTS.md");
+  assert.match(a, /private\/session-verified\.json/);
+  assert.match(a, /must not create or edit/i);
+  assert.match(a, /proven to work/i);
+  assert.match(a, /must not report the setup as ready on the checklist alone/i);
+  // And the code must actually be reading that path, or the doc is a promise
+  // nothing keeps.
+  assert.match(read("src/session.mjs"), /session-verified\.json/);
+});

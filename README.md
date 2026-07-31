@@ -21,12 +21,16 @@ inside the agent band. The Feedback tab is enforced in code — a run refuses to
 start while a correction sits unapplied — not merely documented. The setup
 checklist has 10 steps and names exactly one next action at a time.
 
-**Just fixed.** A run that had no LinkedIn session used to fail at the login
-wall and report `login: login page detected`, which reads as LinkedIn blocking
-you when the truth was usually that `.env` still held the example placeholder.
-Playwright creates any profile directory it is handed, so an unreal path became
-a brand-new signed-out Chrome. Every command that would open a browser now
-checks locally first and refuses with a named reason and a fix.
+**Just fixed.** Two ways the setup could claim to be ready and not be. A run
+with no session used to fail at the login wall and report `login: login page
+detected`, which reads as LinkedIn blocking you when the truth was that `.env`
+still held the example placeholder — Playwright creates any profile directory
+it is handed, so an unreal path became a brand-new signed-out Chrome. And the
+checklist used to infer "signed in" from a cookie file inside the profile
+folder, which Chrome creates the instant it launches. A profile someone opened
+and abandoned passed. Now every command that would open a browser checks
+locally first and refuses with a named reason, and READY requires a session
+that was actually proved against LinkedIn.
 
 **Not yet verified.** A full pilot has never completed against live LinkedIn —
 every run so far stopped on setup, not on LinkedIn. Expect the first real run to
@@ -87,6 +91,25 @@ So: put the value in `.env`. The checklist has a step for exactly this, and
 the first before it opens anything, the second once it has proved the session
 works. Only the path is ever written; an `li_at` cookie is a secret and stays
 wherever you put it.
+
+### Verified, not inferred
+
+`npm run start` opens no browser and makes no network calls, so it cannot ask
+LinkedIn anything. It therefore does not guess. `setup-login` and `check-login`
+record what they actually proved in `private/session-verified.json`, and the
+checklist reads that: the step is **"That session is proven to work"** and it
+stays unmet until a real run loaded your feed.
+
+That record is tied to the session it proved, so changing the profile path or
+pasting a different cookie invalidates it rather than inheriting a green tick,
+and it expires after 14 days because LinkedIn sessions do. The `li_at` cookie is
+fingerprinted, never stored.
+
+`npm run setup-login` no longer asks you to press Ctrl+C. It waits for your feed
+to load, closes the browser itself — which is what makes Chrome flush its cookie
+store — and records the result. The old version parked forever and told you to
+Ctrl+C, which killed the process with the browser still open, so a sign-in you
+completed correctly could fail to reach disk.
 
 ### When it refuses before opening a browser
 

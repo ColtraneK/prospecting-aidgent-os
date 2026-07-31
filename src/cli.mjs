@@ -19,7 +19,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseFlags, resolveConfig, loadDotEnv, upsertDotEnv, DOTENV_PATH, REPO_ROOT } from "./config.mjs";
-import { preflightSession, formatSessionRefusal, isPlaceholderProfilePath, shouldRememberProfile } from "./session.mjs";
+import { preflightSession, formatSessionRefusal, isPlaceholderProfilePath, shouldRememberProfile, writeSessionProof } from "./session.mjs";
 import {
   getPersona, validatePersona, listPersonaSlugs, personaSheetId,
   personaTemplate, PRIVATE_PERSONA_DIR, resolvePersonaPath, loadPersonaFile,
@@ -147,9 +147,18 @@ async function cmdSetupLogin(flags) {
     rememberProfilePath(config, { proven: false });
   }
   console.log(`Opening a headed Chrome on profile: ${config.chromeProfile}`);
-  console.log("Sign in to LinkedIn manually. This tool never types your credentials or MFA.");
-  console.log("When your feed has loaded and you have closed the window, confirm it took:  npm run check-login");
-  await setupLogin({ profilePath: config.chromeProfile, channel: config.chromeChannel });
+  const r = await setupLogin({ profilePath: config.chromeProfile, channel: config.chromeChannel });
+  if (!r.ok) {
+    console.error(`Not signed in: ${r.reason}`);
+    console.error("Nothing was recorded. Run `npm run setup-login` again and leave the window open until your feed renders.");
+    process.exit(1);
+  }
+  // Only now is there anything worth believing. Record the proof so the
+  // checklist can stop inferring a session from files on disk.
+  rememberProfilePath(config);
+  writeSessionProof({ chromeProfile: config.chromeProfile, liAt: config.liAt });
+  console.log(`OK: ${r.reason}`);
+  console.log("Recorded. `npm run start` will now count this session as verified.");
 }
 
 /** Preflight: verify the LinkedIn session works before anything depends on it. */
@@ -163,8 +172,10 @@ async function cmdCheckLogin(flags) {
   const v = await checkLogin({ config });
   if (v.ok) {
     console.log(`OK: ${v.reason}`);
-    // This is the moment the session is known-good. Pin it down.
+    // This is the moment the session is known-good. Pin down both the path and
+    // the fact that it was actually proved, not merely configured.
     rememberProfilePath(config);
+    writeSessionProof({ chromeProfile: config.chromeProfile, liAt: config.liAt });
     return;
   }
   console.error(`NOT SIGNED IN (${v.kind}): ${v.reason}`);
