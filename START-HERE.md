@@ -106,9 +106,10 @@ dropdowns already built and nothing in it:
 separate action from making the sheet, in a different Google product, and it is
 the single step people skip. Open the `.json` key file, copy the `client_email`
 value — it ends in `.iam.gserviceaccount.com` — then open your sheet, click
-**Share**, paste that address, set it to **Editor**, and Send. Confirm it worked
-with `npm run check-sheet`; nothing on your computer can tell whether you did
-it, so that command is the only thing that knows.
+**Share**, paste that address, set it to **Editor**, and Send. Then tell your
+agent you have done it and let it check — nothing on your computer can observe
+a Google sharing setting, so opening the sheet as that robot account is the
+only way to know, and your agent does that for you.
 
 **About twenty minutes of conversation about your business.** Your agent reads
 your website, proposes who it thinks your ideal customer is, and you correct it.
@@ -119,13 +120,8 @@ the twenty minutes. It ends up saved as a file you can edit later.
 
 ## What happens after setup
 
-You run one command a day, or schedule it to run itself:
-
-```
-npm run daily
-```
-
-It keeps researching until 25 qualified leads have been added, and writes them into your
+You ask your agent for a run each day, or have it set up a scheduled one. It
+keeps researching until 25 qualified leads have been added, and writes them into your
 sheet with, for each one: their name and role, their profile link, their most
 recent post quoted word for word with a link to it, why they are a fit, a
 suggested comment on that post, and a suggested intro message.
@@ -165,7 +161,8 @@ drive.
 
 ## If something goes wrong
 
-Run `npm run start`. Nine times out of ten it will name the problem and the fix.
+Ask your agent where you are up to. Nine times out of ten it will name the
+problem and the fix, because the checklist it reads names exactly one thing.
 
 If it does not, tell your agent exactly what you saw. It has `AGENTS.md`, which
 has a section on what to do when a run is blocked — and, importantly, a rule

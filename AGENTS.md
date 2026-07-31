@@ -516,6 +516,29 @@ was given before it opens anything, `check-login` records the one it has just
 proved works — so the next command cannot lose it. That is the whole reason you
 never need to set these variables in a shell.
 
+### You run the commands. The person never types one.
+
+Setup is a conversation, not a terminal session. The person clicks **Make a
+copy**, creates a Google key, pastes an address into **Share**, and signs into
+LinkedIn. Everything else — `npm install`, `npm run start`, `check-sheet`,
+`check-login`, `setup-login`, `bind-sheet`, every run — is yours to execute.
+
+**You must not tell the person to type a command.** Not `npm run check-sheet`,
+not `npm run start`, not `cp .env.example .env`. Most of the people using this
+have no terminal open and no reason to acquire one; handing them a command is
+how a setup stalls. If a step needs a command, run it and tell them what it
+said.
+
+**You must not ask them to edit `.env` by hand either.** Ask for the value —
+where they saved the key file, which folder to use, their `li_at` cookie — and
+write it yourself.
+
+`npm run start` labels the commands meant for you with this exact marker:
+
+    FOR THE AGENT, not for the person to type
+
+Relay the step above that marker to the person. Run the line below it yourself.
+
 ### Do the Sheet and the service account FIRST, and say the sharing step out loud
 
 The setup order is not arbitrary. The Google Sheet, the service-account key and

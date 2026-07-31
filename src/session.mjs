@@ -371,16 +371,20 @@ export function sessionProofState(
 ) {
   if (proofPath) deps = { ...deps, proofPath };
   const want = sessionFingerprint({ chromeProfile, liAt });
-  const RUN = "Run `npm run check-login`. It opens the feed for real and takes a few seconds.";
+  // Person-facing prose only. The verifying command travels in `command`.
+  const SIGNIN = "Sign into LinkedIn yourself in the window that opens, including any 2-factor step, and leave it open until your own feed appears. It closes itself once it sees you are in. Nothing types your password and nothing touches your 2FA.";
+  const NOTHING = "Nothing for you to do unless the check comes back signed out.";
+  const CHECK = "npm run check-login";
   if (!want) {
-    return { ok: false, reason: "no session is configured yet, so there is nothing to verify.", fix: RUN, verifiedAt: "" };
+    return { ok: false, reason: "no session is configured yet, so there is nothing to verify.", fix: "Choose how to sign in: either paste your LinkedIn li_at cookie into .env, or let your agent open a window for you to sign into.", command: CHECK, verifiedAt: "" };
   }
   const proof = readSessionProof(deps);
   if (!proof) {
     return {
       ok: false,
       reason: "no run has ever proved this session works. A profile folder containing a cookie file is not proof: Chrome creates that file the moment it opens, before anyone signs in.",
-      fix: RUN,
+      fix: SIGNIN,
+      command: CHECK,
       verifiedAt: "",
     };
   }
@@ -388,24 +392,26 @@ export function sessionProofState(
     return {
       ok: false,
       reason: `the last verified session was a different one (${proof.method || "unknown"}, ${proof.verifiedAt || "unknown date"}), so it says nothing about the one configured now.`,
-      fix: RUN,
+      fix: SIGNIN,
+      command: CHECK,
       verifiedAt: proof.verifiedAt || "",
     };
   }
   const ageMs = nowMs - Date.parse(proof.verifiedAt || "");
   if (!Number.isFinite(ageMs) || ageMs < 0) {
-    return { ok: false, reason: "the recorded verification has no usable date.", fix: RUN, verifiedAt: proof.verifiedAt || "" };
+    return { ok: false, reason: "the recorded verification has no usable date.", fix: NOTHING, command: CHECK, verifiedAt: proof.verifiedAt || "" };
   }
   if (ageMs > maxAgeDays * 86400000) {
     const days = Math.floor(ageMs / 86400000);
     return {
       ok: false,
       reason: `this session was last proved to work ${days} days ago, and LinkedIn sessions expire.`,
-      fix: RUN,
+      fix: SIGNIN,
+      command: CHECK,
       verifiedAt: proof.verifiedAt,
     };
   }
-  return { ok: true, reason: `verified ${proof.verifiedAt} via ${proof.method}.`, fix: "", verifiedAt: proof.verifiedAt };
+  return { ok: true, reason: `verified ${proof.verifiedAt} via ${proof.method}.`, fix: "", command: "", verifiedAt: proof.verifiedAt };
 }
 
 /** The message a command prints before refusing to run. */

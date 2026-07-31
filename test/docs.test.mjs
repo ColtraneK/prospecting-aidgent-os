@@ -320,3 +320,14 @@ test("the setup instructions state the sheet-sharing step explicitly", () => {
   assert.match(start, /EDITOR|Editor/);
   assert.match(start, /npm run check-sheet/);
 });
+
+test("AGENTS.md tells the agent that the person never types a command", () => {
+  // Every person-facing hint in `npm run start` is command-free by test. That
+  // only holds end to end if the agent also knows not to invent one.
+  const a = read("AGENTS.md");
+  assert.match(a, /must not tell the person to type a command/i);
+  assert.match(a, /must not ask them to edit `\.env` by hand/i);
+  assert.match(a, /FOR THE AGENT, not for the person to type/);
+  // The marker the doc promises must be the one the code actually prints.
+  assert.match(read("src/start.mjs"), /FOR THE AGENT, not for the person to type/);
+});

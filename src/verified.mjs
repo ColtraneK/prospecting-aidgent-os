@@ -109,28 +109,32 @@ export function recordSheetProof({ sheetId, nowIso } = {}, deps = {}) {
 export function sheetProofState({ sheetId, nowMs, maxAgeDays, proofFile } = {}, deps = {}) {
   const id = String(sheetId || "");
   const st = proofState({ file: proofFile || SHEET_PROOF_FILE, fingerprint: id, nowMs, maxAgeDays }, deps);
-  const RUN = "Run `npm run check-sheet`. It opens the sheet as the service account and says plainly whether it can.";
+  // Everything below is read by a person, so it describes what a PERSON does.
+  // The command that checks it is the agent's job and is carried separately in
+  // `command`: someone being walked through a setup should never be handed a
+  // terminal instruction they did not ask for.
   const SHARE = [
-    "If it fails with a permission error, the sheet is not shared with the service account yet — that is the step almost everyone skips.",
-    "Open the .json key file named by GOOGLE_APPLICATION_CREDENTIALS, copy its client_email value (it ends in .iam.gserviceaccount.com), then open your sheet, click Share, paste that address, set it to Editor, and Send.",
-    "The service account is a different Google identity from your own login, so being able to open the sheet yourself proves nothing about whether the tool can.",
+    "Share your sheet with the service account, if you have not already. Open the .json key file, copy the client_email value inside it — it ends in .iam.gserviceaccount.com — then open your sheet, click Share, paste that address, set it to Editor, and Send.",
+    "This is a separate action from making the sheet, and it is the one people skip. The service account is a different Google identity from your own login, so being able to open the sheet yourself says nothing about whether the tool can.",
   ].join("\n");
+  const CHECK = "npm run check-sheet";
   switch (st.state) {
     case "ok":
-      return { ...st, reason: `the service account opened this sheet on ${st.verifiedAt}.`, fix: "" };
+      return { ...st, reason: `the service account opened this sheet on ${st.verifiedAt}.`, fix: "", command: "" };
     case "nothing-configured":
-      return { ...st, reason: "no sheet is bound yet, so there is nothing to check.", fix: RUN };
+      return { ...st, reason: "no sheet is bound yet, so there is nothing to check.", fix: "Bind the sheet you own first.", command: CHECK };
     case "mismatch":
-      return { ...st, reason: "the last sheet that was checked was a different one, so it says nothing about this sheet.", fix: `${RUN}\n\n${SHARE}` };
+      return { ...st, reason: "the last sheet that was checked was a different one, so it says nothing about this sheet.", fix: SHARE, command: CHECK };
     case "expired":
-      return { ...st, reason: `the service account last opened this sheet ${st.ageDays} days ago; access may have changed since.`, fix: RUN };
+      return { ...st, reason: `the service account last opened this sheet ${st.ageDays} days ago; access may have changed since.`, fix: "Nothing for you to do unless the check fails.", command: CHECK };
     case "undated":
-      return { ...st, reason: "the recorded check has no usable date.", fix: RUN };
+      return { ...st, reason: "the recorded check has no usable date.", fix: "Nothing for you to do unless the check fails.", command: CHECK };
     default:
       return {
         ...st,
         reason: "nothing has confirmed the service account can open this sheet. Binding a sheet only writes down its id; it does not prove the robot account was given access to it.",
-        fix: `${RUN}\n\n${SHARE}`,
+        fix: SHARE,
+        command: CHECK,
       };
   }
 }

@@ -423,7 +423,11 @@ test("a cookie file in a profile folder is NOT proof of a LinkedIn session", () 
   const v = sessionProofState({ chromeProfile: profile, proofPath });
   assert.equal(v.ok, false, "but nothing has proved the session works");
   assert.match(v.reason, /Chrome creates that file the moment it opens/);
-  assert.match(v.fix, /check-login/);
+  // The hint a person reads must describe a human action, not a command.
+  // Commands belong to the agent and travel separately.
+  assert.match(v.command, /check-login/);
+  assert.ok(!/npm run/.test(v.fix), `a person-facing hint should not contain a command: ${v.fix}`);
+  assert.match(v.fix, /[Ss]ign into LinkedIn/);
   fs.rmSync(root, { recursive: true, force: true });
 });
 

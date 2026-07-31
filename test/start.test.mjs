@@ -21,11 +21,13 @@ function readyFacts(over = {}) {
   // the real code would actually produce, or the step goes untested.
   if (f.sheetReachable === false && over.sheetReachableReason === undefined) {
     f.sheetReachableReason = "nothing has confirmed the service account can open this sheet. Binding a sheet only writes down its id; it does not prove the robot account was given access to it.";
-    f.sheetReachableFix = "Run `npm run check-sheet`. It opens the sheet as the service account and says plainly whether it can.\n\nIf it fails with a permission error, the sheet is not shared with the service account yet.";
+    f.sheetReachableFix = "Share your sheet with the service account, if you have not already. Open the .json key file, copy the client_email value inside it, then open your sheet, click Share, paste that address, set it to Editor, and Send.";
+    f.sheetReachableCommand = "npm run check-sheet";
   }
   if (f.sessionVerified === false && over.sessionVerifiedReason === undefined) {
     f.sessionVerifiedReason = "no run has ever proved this session works. A profile folder containing a cookie file is not proof: Chrome creates that file the moment it opens, before anyone signs in.";
-    f.sessionVerifiedFix = "Run `npm run check-login`. It opens the feed for real and takes a few seconds.";
+    f.sessionVerifiedFix = "Sign into LinkedIn yourself in the window that opens, including any 2-factor step, and leave it open until your own feed appears.";
+    f.sessionVerifiedCommand = "npm run check-login";
     f.sessionVerifiedAt = "";
   }
   if (f.envReproduces === false && over.envReproducesReason === undefined) {
@@ -82,7 +84,7 @@ test("the FIRST unmet item is the one named as the next step", () => {
   const facts = readyFacts({ envFileExists: false, credsExist: false, credsPath: "" });
   const out = formatStatus(facts);
   assert.match(out, /NEXT STEP \(3 of 11\)/);
-  assert.match(out, /Copy \.env\.example to \.env/);
+  assert.match(out, /Your agent creates this settings file/);
   // Assert on the walkthrough itself, not the phrase: a checklist LABEL now
   // legitimately contains "service account", and matching that made this test
   // fail for a reason it was never about.
@@ -112,17 +114,20 @@ test("a persona that exists but is missing fields names the missing fields", () 
 
 test("a persona folder with files but nothing selected sends you to select-persona", () => {
   const out = formatStatus(readyFacts({ activeSlug: "", persona: null, personaValid: false, privatePersonaCount: 2 }));
-  assert.match(out, /select-persona/);
+  assert.match(out, /Tell your agent which one/);
   const none = formatStatus(readyFacts({ activeSlug: "", persona: null, personaValid: false, privatePersonaCount: 0 }));
   assert.match(none, /AGENTS\.md/);
   assert.ok(!none.includes("select-persona"), none);
 });
 
 test("a wrong path is reported as wrong, not as unset — different fix, different wording", () => {
-  const missing = formatStatus(readyFacts({ profileExists: false, signedIn: false }));
-  assert.match(missing, /does not exist yet/);
-  const unset = formatStatus(readyFacts({ chromeProfile: "", profileExists: false, signedIn: false }));
-  assert.match(unset, /Set AIDGENT_CHROME_PROFILE/);
+  // Hints are word-wrapped, so compare on whitespace-normalized text or a
+  // phrase that happens to straddle a line break fails for the wrong reason.
+  const flat = (o) => o.replace(/\s+/g, " ");
+  const missing = flat(formatStatus(readyFacts({ profileExists: false, signedIn: false })));
+  assert.match(missing, /is not on this machine/);
+  const unset = flat(formatStatus(readyFacts({ chromeProfile: "", profileExists: false, signedIn: false })));
+  assert.match(unset, /Two ways to give this tool a LinkedIn session/);
 });
 
 test("READY reports whether warm connections are being mined", () => {
@@ -175,7 +180,7 @@ test("the paused output carries the whole service-account procedure, not a point
 test("a wrong credentials path is a path problem, not a fresh walkthrough", () => {
   // The hint is word-wrapped, so compare on whitespace-normalized text.
   const out = formatStatus(readyFacts({ credsExist: false })).replace(/\s+/g, " ");
-  assert.match(out, /which is not there/);
+  assert.match(out, /is not there/);
   assert.ok(!out.includes("console.cloud.google.com"), out);
 });
 
@@ -293,4 +298,26 @@ test("a placeholder sheet id does not count as bound", async () => {
   const real = await inspectSetup({ repoRoot: tmp, env: { GOOGLE_SHEET_ID: "1YourOwnSheetIdGoesHere0123456789abcdefgh" } });
   assert.equal(real.sheetBound, true);
   fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test("a person is never handed a terminal command to type", () => {
+  // Setup is a conversation with an agent, not a terminal session. The person
+  // clicks Make a copy, shares a sheet and signs into LinkedIn; the agent runs
+  // everything. A hint that says "run npm install" makes a non-developer think
+  // they are supposed to find a terminal, which is exactly the friction the
+  // paste block exists to remove.
+  const states = ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "sessionVerified",
+    "envReproduces", "credsExist", "personaValid", "sheetBound", "sheetReachable"];
+  for (const key of [...states, "__none__"]) {
+    for (const item of buildChecklist(readyFacts(key === "__none__" ? {} : { [key]: false }))) {
+      assert.ok(!/npm run |npm install|^cp |`cp /.test(item.next),
+        `person-facing hint for "${item.label}" contains a command:\n${item.next}`);
+    }
+  }
+  // The commands still exist — they are just addressed to the agent.
+  const withAgent = buildChecklist(readyFacts({ depsInstalled: false })).find((i) => !i.done);
+  assert.equal(withAgent.agentRuns, "npm install");
+  const out = formatStatus(readyFacts({ depsInstalled: false }));
+  assert.match(out, /FOR THE AGENT, not for the person to type/);
+  assert.match(out, /npm install/);
 });

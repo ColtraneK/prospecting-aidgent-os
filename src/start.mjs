@@ -46,7 +46,7 @@ export const SERVICE_ACCOUNT_WALKTHROUGH = [
   "2. Search the bar at the top for \"Google Sheets API\", open it, and click Enable.",
   "3. Search that same bar for \"Credentials\" and open the Credentials page. Click \"Create credentials\", choose \"Service account\", give it any name, then Create and continue, then Done.",
   "4. Click the service account you just made, open its \"Keys\" tab, then \"Add key\", then \"Create new key\". Choose JSON and click Create. A .json file downloads to your computer.",
-  "5. Move that .json file to a folder OUTSIDE this repo — your home folder or Documents is fine — and set GOOGLE_APPLICATION_CREDENTIALS in .env to its full path.",
+  "5. Move that .json file to a folder OUTSIDE this repo — your home folder or Documents is fine — and tell your agent where you put it. It writes the path into GOOGLE_APPLICATION_CREDENTIALS for you.",
   "6. Open that .json file in any text editor and copy the client_email value. It looks like something@your-project.iam.gserviceaccount.com.",
   "7. Open your Google Sheet, click Share, paste that client_email, set it to Editor, and click Send.",
   "",
@@ -167,6 +167,7 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
     sessionVerified: verified.ok,
     sessionVerifiedReason: verified.reason,
     sessionVerifiedFix: verified.fix,
+    sessionVerifiedCommand: verified.command,
     sessionVerifiedAt: verified.verifiedAt,
     envReproduces: reproduce.ok,
     envReproducesReason: reproduce.reason,
@@ -180,6 +181,7 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
     sheetReachable: sheetReachable.ok,
     sheetReachableReason: sheetReachable.reason,
     sheetReachableFix: sheetReachable.fix,
+    sheetReachableCommand: sheetReachable.command,
     includeConnections: !!(persona && persona.include_connections === true),
   };
 }
@@ -194,23 +196,26 @@ export function buildChecklist(s) {
     {
       label: `Node 20 or newer (you have Node ${s.nodeMajor || "?"})`,
       done: s.nodeOk,
-      next: "Install Node 20+ from nodejs.org, then run `npm run start` again.",
+      next: "Install Node 20 or newer from nodejs.org. The installer is the whole job; your agent takes it from there.",
+      agentRuns: "npm run start",
     },
     {
       label: "Project dependencies installed",
       done: s.depsInstalled,
-      next: "Run `npm install` in this folder, then run `npm run start` again.",
+      next: "Nothing for you to do here. Your agent installs these. It goes quiet for a few minutes while it downloads a browser engine, which looks like it has frozen and has not.",
+      agentRuns: "npm install",
     },
     {
       label: "A .env file exists (your local settings)",
       done: s.envFileExists,
-      next: "Copy .env.example to .env (`cp .env.example .env`), then run `npm run start` again. You will fill it in over the next few steps.",
+      next: "Nothing for you to do here. Your agent creates this settings file, and the two of you fill it in over the next few steps.",
+      agentRuns: "cp .env.example .env",
     },
     {
       label: "Google service-account key file is set and exists",
       done: s.credsExist,
       next: s.credsPath
-        ? `GOOGLE_APPLICATION_CREDENTIALS points at "${s.credsPath}", which is not there. Fix the path in .env, then run \`npm run start\` again.`
+        ? `The key file is expected at "${s.credsPath}" and is not there. Find where the .json actually ended up and tell your agent; it will correct the path for GOOGLE_APPLICATION_CREDENTIALS for you.`
         : SERVICE_ACCOUNT_WALKTHROUGH,
     },
     {
@@ -227,9 +232,9 @@ export function buildChecklist(s) {
         "",
         "Share that sheet with your service account's client_email as an Editor (the address from step 6), then run:",
         "",
-        `  npm run bind-sheet -- --persona ${s.activeSlug || "<slug>"} --sheet <your-sheet-url>`,
-        "  npm run check-sheet",
+        "Then paste the URL of YOUR copy to your agent and it will bind it for you.",
       ].join("\n"),
+      agentRuns: `npm run bind-sheet -- --persona ${s.activeSlug || "<slug>"} --sheet <their-sheet-url>`,
     },
     {
       // The step that did not exist, which is why the failure it catches kept
@@ -244,15 +249,16 @@ export function buildChecklist(s) {
         "",
         s.sheetReachableFix,
       ].join("\n"),
+      agentRuns: s.sheetReachableCommand,
     },
     {
       label: "A LinkedIn session source is set (Chrome profile folder, or an li_at cookie)",
       done: s.profileExists,
       next: s.profilePlaceholder
-        ? `AIDGENT_CHROME_PROFILE reads as a fill-this-in placeholder rather than a folder (${s.chromeProfile}). The line shipped in .env.example looks like this and is the usual source of it. Open .env and replace it with a real path outside this repo, then run \`npm run setup-login\`. This step refuses a placeholder on purpose: an unreal profile path is CREATED empty when Chrome launches, so the run would open a signed-out browser and report a LinkedIn login wall instead of naming this.`
+        ? `The Chrome profile setting still reads as fill-this-in example text (${s.chromeProfile}) rather than a real folder, which is what .env.example ships. Tell your agent where you want that folder to live, or hand it your li_at cookie instead and skip the folder entirely. This is refused on purpose: an unreal path gets CREATED empty when Chrome launches, so the run would open a signed-out browser and blame LinkedIn for it.`
         : s.chromeProfile
-          ? `AIDGENT_CHROME_PROFILE points at "${s.chromeProfile}", which does not exist yet. Create that folder (it must be OUTSIDE this repo), then run \`npm run start\` again. Alternative with no folder and no login window: paste your LinkedIn li_at cookie into AIDGENT_LI_AT in .env (see .env.example for where to copy it from).`
-          : "Two ways to give this tool a LinkedIn session; either is enough.\nSimplest: paste your li_at cookie into AIDGENT_LI_AT in .env (.env.example says where to copy it from) — headless, no login window ever.\nOr: Set AIDGENT_CHROME_PROFILE in .env to a NEW empty folder outside this repo, then sign in once with `npm run setup-login`.",
+          ? `The Chrome profile folder "${s.chromeProfile}" is not on this machine. Pick a folder outside this project and tell your agent, or skip the folder by handing it your LinkedIn li_at cookie instead.`
+          : "Two ways to give this tool a LinkedIn session, and either is enough. Simplest: in a browser where you are already signed into LinkedIn, copy the li_at cookie and hand it to your agent — .env.example says exactly where to find it, and then no login window ever opens. Or: your agent opens a Chrome window on a folder kept only for this, and you sign in there yourself, once.",
     },
     {
       // This step used to read the filesystem and guess. Chrome creates a
@@ -267,10 +273,9 @@ export function buildChecklist(s) {
         "",
         s.sessionVerifiedFix,
         "",
-        s.profileExists && !s.liAt && !s.signedIn
-          ? "That profile folder has no cookie store at all, so no sign-in was ever completed in it. Run `npm run setup-login`, sign in yourself, and leave the window open until your feed renders — it closes itself and records the result."
-          : "If check-login says NOT SIGNED IN, run `npm run setup-login` and leave the window open until your feed renders. It waits for the feed, closes the browser cleanly so the cookies are written, and records what it proved. The no-window alternative: paste your li_at cookie into AIDGENT_LI_AT in .env, then run `npm run check-login`.",
+        "If you would rather not have a window open at all, the alternative is to paste your LinkedIn li_at cookie into .env instead — .env.example says exactly where to copy it from. Either way is enough.",
       ].join("\n"),
+      agentRuns: s.sessionVerifiedCommand,
     },
     {
       // The step that exists because everything above it can be green on a
@@ -291,7 +296,7 @@ export function buildChecklist(s) {
       label: "An ICP persona exists and is selected",
       done: !!s.activeSlug && !!s.persona,
       next: s.privatePersonaCount
-        ? "You have personas but none is selected. Run `npm run select-persona -- --persona <slug>` (see `npm run list-personas`)."
+        ? "You have more than one saved ICP. Tell your agent which one you want to use and it will select it."
         : "No persona yet. Talk this through with your agent: it will look at your website, ask you a handful of questions about who you sell to, propose an ICP, and only write the persona once you say yes. See AGENTS.md.",
     },
     {
@@ -324,12 +329,14 @@ export function formatStatus(s, checklist = buildChecklist(s)) {
     lines.push(`  Verified: ${s.sessionVerifiedAt || "unknown"} — proved against LinkedIn, not inferred`);
     lines.push(`  Warm-first: ${s.includeConnections ? "yes — your existing connections are mined too" : "no — net-new people only"}`);
     lines.push("");
-    lines.push("Do a small run first so you can see what lands in the sheet:");
-    lines.push("  npm run pilot");
+    lines.push("Ask your agent for a small pilot run first, so you can see what lands in");
+    lines.push("the sheet before there is a lot of it. Then a full run, and a daily one");
+    lines.push("once you are happy with what it finds.");
     lines.push("");
-    lines.push("Then the real thing, and the daily command once you are happy:");
-    lines.push("  npm run source");
-    lines.push("  npm run daily      (sources new people, then checks who accepted and who replied)");
+    lines.push("FOR THE AGENT, not for the person to type:");
+    lines.push("  npm run pilot      10 leads added, for review");
+    lines.push("  npm run source     a full run");
+    lines.push("  npm run daily      sources, then checks who accepted and who replied");
   } else {
     const stepNo = checklist.indexOf(pending) + 1;
     lines.push(`NEXT STEP (${stepNo} of ${checklist.length}):`);
@@ -337,8 +344,17 @@ export function formatStatus(s, checklist = buildChecklist(s)) {
     // trimEnd so a blank separator line is genuinely blank, not two spaces —
     // trailing whitespace shows up as diff noise wherever this gets pasted.
     for (const l of wrap(pending.next, 74)) lines.push(("  " + l).trimEnd());
+    // Addressed to the agent, labelled so it does not get relayed to the person
+    // as something to type. Setup is a conversation, not a terminal session:
+    // the person clicks and signs in, the agent runs the commands. Even the
+    // "run this again" belongs here — it was the last instruction still
+    // pointing a non-developer at a terminal they may not have open.
     lines.push("");
-    lines.push("Then run `npm run start` again. Nothing has been changed or sent.");
+    lines.push("  FOR THE AGENT, not for the person to type:");
+    if (pending.agentRuns) lines.push(`    ${pending.agentRuns}`);
+    lines.push("    npm run start        once the step above is done");
+    lines.push("");
+    lines.push("Nothing has been changed or sent.");
   }
   return lines.join("\n");
 }
