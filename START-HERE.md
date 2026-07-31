@@ -21,9 +21,26 @@ Set up my prospect research system.
 3. Read AGENTS.md in the repo root and follow it exactly, start to finish.
 4. Run `npm install`, then `npm run start`, and work the checklist it prints
    one step at a time until it says READY.
-5. Interview me about my business and my ideal customer before sourcing anything.
+5. Do the Google Sheet and the service account FIRST, before anything about
+   LinkedIn or my ICP. Walk me through it in this order and do not skip ahead:
+   a. Have me open the template link and click Make a copy, so the sheet is
+      mine, in my Drive. Never build one from a blank sheet.
+   b. Walk me through creating a Google service-account key and have me put
+      the full path to its .json file in GOOGLE_APPLICATION_CREDENTIALS.
+   c. Tell me to open that .json, copy the client_email value, then open my
+      sheet, click Share, paste that address, set it to EDITOR, and Send.
+      Say this as its own step and wait for me to confirm I have done it.
+      The service account is a different Google identity from my own login,
+      so being able to open the sheet myself proves nothing.
+   d. Run `npm run check-sheet` and show me the result. If it fails with a
+      permission error, I did not finish step c. Do not continue until it
+      passes.
+6. Only then set up the LinkedIn session, and verify it with
+   `npm run check-login`. Do not tell me the setup is ready because the
+   checklist says so; tell me what check-login and check-sheet actually said.
+7. Interview me about my business and my ideal customer before sourcing anything.
    Look at my website first, propose an ICP, and let me correct it.
-6. Do not invent any leads. Do not use your own web search to find prospects.
+8. Do not invent any leads. Do not use your own web search to find prospects.
    Everything comes from the repo's commands.
 ```
 
@@ -56,7 +73,7 @@ English on purpose.
 **It starts a checklist.** `npm run start` looks at what is set up so far and
 tells you the single next thing to do. Then you do that one thing and run it
 again. It never asks you a question you have to answer in a terminal, and it
-never gets stuck waiting. You will run it maybe eight times during setup, and
+never gets stuck waiting. You will run it about eleven times during setup, and
 after that whenever you want to check the system is still healthy.
 
 ---
@@ -84,6 +101,14 @@ copy**. The copy is yours, in your Drive, with all seven tabs, columns, and
 dropdowns already built and nothing in it:
 
 <https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy>
+
+**And then you must share that sheet with the service account.** This is a
+separate action from making the sheet, in a different Google product, and it is
+the single step people skip. Open the `.json` key file, copy the `client_email`
+value — it ends in `.iam.gserviceaccount.com` — then open your sheet, click
+**Share**, paste that address, set it to **Editor**, and Send. Confirm it worked
+with `npm run check-sheet`; nothing on your computer can tell whether you did
+it, so that command is the only thing that knows.
 
 **About twenty minutes of conversation about your business.** Your agent reads
 your website, proposes who it thinks your ideal customer is, and you correct it.

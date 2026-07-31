@@ -19,6 +19,10 @@ function readyFacts(over = {}) {
   // nobody could act on, which would let the item pass review untested.
   // Same coherence rule as envReproduces: a flipped fact must render the text
   // the real code would actually produce, or the step goes untested.
+  if (f.sheetReachable === false && over.sheetReachableReason === undefined) {
+    f.sheetReachableReason = "nothing has confirmed the service account can open this sheet. Binding a sheet only writes down its id; it does not prove the robot account was given access to it.";
+    f.sheetReachableFix = "Run `npm run check-sheet`. It opens the sheet as the service account and says plainly whether it can.\n\nIf it fails with a permission error, the sheet is not shared with the service account yet.";
+  }
   if (f.sessionVerified === false && over.sessionVerifiedReason === undefined) {
     f.sessionVerifiedReason = "no run has ever proved this session works. A profile folder containing a cookie file is not proof: Chrome creates that file the moment it opens, before anyone signs in.";
     f.sessionVerifiedFix = "Run `npm run check-login`. It opens the feed for real and takes a few seconds.";
@@ -49,6 +53,9 @@ function baseFacts(over = {}) {
     activeSlug: "acme", privatePersonaCount: 1,
     persona: { persona: "acme" }, personaValid: true, personaErrors: [],
     sheetId: "1YourOwnSheetIdGoesHere0123456789abcdefgh", sheetBound: true,
+    sheetReachable: true,
+    sheetReachableReason: "the service account opened this sheet on 2026-07-30T12:00:00.000Z.",
+    sheetReachableFix: "",
     includeConnections: false,
     ...over,
   };
@@ -56,13 +63,17 @@ function baseFacts(over = {}) {
 
 test("the checklist is in dependency order — you never install Node after binding a sheet", () => {
   const items = buildChecklist(readyFacts()).map((i) => i.label);
-  assert.equal(items.length, 10);
+  assert.equal(items.length, 11);
   const idx = (needle) => items.findIndex((l) => l.includes(needle));
   assert.ok(idx("Node 20") < idx("dependencies"));
   assert.ok(idx("dependencies") < idx(".env"));
   assert.ok(idx("Chrome profile") < idx("proven to work"));
   assert.ok(idx("persona exists") < idx("complete and valid"));
-  assert.ok(idx("complete and valid") < idx("Google Sheet is bound"));
+  // The sheet and its sharing now come BEFORE the LinkedIn session and the ICP
+  // conversation: it is the part that stalls people, and it blocks every run.
+  assert.ok(idx("Google Sheet is bound") < idx("Chrome profile"));
+  assert.ok(idx("service-account key") < idx("Google Sheet is bound"));
+  assert.ok(idx("Google Sheet is bound") < idx("actually open that sheet"));
 });
 
 test("the FIRST unmet item is the one named as the next step", () => {
@@ -70,9 +81,12 @@ test("the FIRST unmet item is the one named as the next step", () => {
   // never sent to do something that depends on an earlier missing piece.
   const facts = readyFacts({ envFileExists: false, credsExist: false, credsPath: "" });
   const out = formatStatus(facts);
-  assert.match(out, /NEXT STEP \(3 of 10\)/);
+  assert.match(out, /NEXT STEP \(3 of 11\)/);
   assert.match(out, /Copy \.env\.example to \.env/);
-  assert.ok(!out.includes("service account"), out);
+  // Assert on the walkthrough itself, not the phrase: a checklist LABEL now
+  // legitimately contains "service account", and matching that made this test
+  // fail for a reason it was never about.
+  assert.ok(!out.includes("console.cloud.google.com"), out);
 });
 
 test("READY appears only when every single item is done", () => {
@@ -84,7 +98,7 @@ test("READY appears only when every single item is done", () => {
   assert.match(out, /npm run daily/);
   assert.ok(!out.includes("NEXT STEP"));
 
-  for (const key of ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "sessionVerified", "envReproduces", "credsExist", "personaValid", "sheetBound"]) {
+  for (const key of ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "sessionVerified", "envReproduces", "credsExist", "personaValid", "sheetBound", "sheetReachable"]) {
     const broken = formatStatus(readyFacts({ [key]: false }));
     assert.ok(!broken.includes("READY."), `READY leaked when ${key} was false`);
     assert.match(broken, /NEXT STEP/);
@@ -123,7 +137,7 @@ test("the status text never asks the user a question", () => {
   // service-account walkthrough and the sheet copy link) are exactly where a
   // stray question mark would creep in.
   const states = ["nodeOk", "depsInstalled", "envFileExists", "profileExists", "sessionVerified",
-    "envReproduces", "credsExist", "personaValid", "sheetBound"];
+    "envReproduces", "credsExist", "personaValid", "sheetBound", "sheetReachable"];
   const samples = [formatStatus(readyFacts()),
     formatStatus(readyFacts({ credsExist: false, credsPath: "" })),
     ...states.map((k) => formatStatus(readyFacts({ [k]: false })))];
@@ -147,7 +161,7 @@ test("the paused output carries the whole service-account procedure, not a point
   // Codex relays this verbatim to someone who is not a developer. If it says
   // "see README.md" they have to go find it, and setup stalls right here.
   const out = formatStatus(readyFacts({ credsExist: false, credsPath: "" }));
-  assert.match(out, /NEXT STEP \(7 of 10\)/);
+  assert.match(out, /NEXT STEP \(4 of 11\)/);
   for (const beat of [/console\.cloud\.google\.com/, /Google Sheets API/,
     /Service account/i, /JSON/, /GOOGLE_APPLICATION_CREDENTIALS/,
     /client_email/, /Editor/]) {
@@ -167,7 +181,7 @@ test("a wrong credentials path is a path problem, not a fresh walkthrough", () =
 
 test("someone with no sheet is given a copy link, not told to make one", () => {
   const out = formatStatus(readyFacts({ sheetBound: false }));
-  assert.match(out, /NEXT STEP \(10 of 10\)/);
+  assert.match(out, /NEXT STEP \(5 of 11\)/);
   assert.ok(out.includes(SHEET_TEMPLATE_COPY_URL), out);
   assert.match(out, /Make a copy/);
   assert.match(out, /bind-sheet/);

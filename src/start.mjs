@@ -18,6 +18,7 @@ import path from "node:path";
 import { REPO_ROOT, loadDotEnv } from "./config.mjs";
 import { listPersonaSlugs, resolvePersonaPath, loadPersonaFile, validatePersona, personaSheetId, isPlaceholderSheetId, SHEET_TEMPLATE_ID, SHEET_TEMPLATE_COPY_URL } from "./persona.mjs";
 import { profileState, envFileReproducesSession, provenanceOf, describeProvenance, sessionProofState, FROM_ENV_FILE } from "./session.mjs";
+import { sheetProofState } from "./verified.mjs";
 
 const SELECTED_FILE = path.join(REPO_ROOT, "private", "selected-persona.txt");
 
@@ -144,6 +145,16 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
   }
   sheetId = (persona && personaSheetId(persona)) || e.GOOGLE_SHEET_ID || "";
 
+  // Binding a sheet only writes its id down. It does not prove the service
+  // account was ever given access to it — and "share the sheet with the
+  // client_email" is the step almost everyone skips. Nothing local can tell
+  // the difference, so this reads what `npm run check-sheet` recorded when it
+  // actually opened the sheet as that identity.
+  const sheetReachable = sheetProofState({
+    sheetId: isPlaceholderSheetId(sheetId) ? "" : sheetId,
+    proofFile: path.join(repoRoot, "private", "sheet-verified.json"),
+  });
+
   return {
     repoRoot,
     nodeMajor,
@@ -166,6 +177,9 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
     persona, personaValid, personaErrors,
     sheetId,
     sheetBound: !!sheetId && !isPlaceholderSheetId(sheetId),
+    sheetReachable: sheetReachable.ok,
+    sheetReachableReason: sheetReachable.reason,
+    sheetReachableFix: sheetReachable.fix,
     includeConnections: !!(persona && persona.include_connections === true),
   };
 }
@@ -191,6 +205,45 @@ export function buildChecklist(s) {
       label: "A .env file exists (your local settings)",
       done: s.envFileExists,
       next: "Copy .env.example to .env (`cp .env.example .env`), then run `npm run start` again. You will fill it in over the next few steps.",
+    },
+    {
+      label: "Google service-account key file is set and exists",
+      done: s.credsExist,
+      next: s.credsPath
+        ? `GOOGLE_APPLICATION_CREDENTIALS points at "${s.credsPath}", which is not there. Fix the path in .env, then run \`npm run start\` again.`
+        : SERVICE_ACCOUNT_WALKTHROUGH,
+    },
+    {
+      label: "A Google Sheet is bound (you own it; this tool never creates one)",
+      done: s.sheetBound,
+      next: [
+        "Point this at the Google Sheet you want filled in. If you already have one, skip to the commands below.",
+        "",
+        "If you do not have one, open this link and click \"Make a copy\":",
+        "",
+        `  ${SHEET_TEMPLATE_COPY_URL}`,
+        "",
+        "That drops a ready-made, empty copy of the lead sheet into your own Google Drive, owned by you — all seven tabs, headers, and dropdowns already built, and no data in it. It is your copy; nobody else can see it.",
+        "",
+        "Share that sheet with your service account's client_email as an Editor (the address from step 6), then run:",
+        "",
+        `  npm run bind-sheet -- --persona ${s.activeSlug || "<slug>"} --sheet <your-sheet-url>`,
+        "  npm run check-sheet",
+      ].join("\n"),
+    },
+    {
+      // The step that did not exist, which is why the failure it catches kept
+      // happening. Sharing the sheet with the service account's client_email
+      // is a separate action from creating the sheet, in a different product,
+      // and nothing on this machine can observe whether it was done. So the
+      // command that opens the sheet as that identity records the answer.
+      label: "The service account can actually open that sheet (you shared it)",
+      done: s.sheetReachable,
+      next: [
+        `Right now ${s.sheetReachableReason}`,
+        "",
+        s.sheetReachableFix,
+      ].join("\n"),
     },
     {
       label: "A LinkedIn session source is set (Chrome profile folder, or an li_at cookie)",
@@ -235,13 +288,6 @@ export function buildChecklist(s) {
       ].join("\n"),
     },
     {
-      label: "Google service-account key file is set and exists",
-      done: s.credsExist,
-      next: s.credsPath
-        ? `GOOGLE_APPLICATION_CREDENTIALS points at "${s.credsPath}", which is not there. Fix the path in .env, then run \`npm run start\` again.`
-        : SERVICE_ACCOUNT_WALKTHROUGH,
-    },
-    {
       label: "An ICP persona exists and is selected",
       done: !!s.activeSlug && !!s.persona,
       next: s.privatePersonaCount
@@ -254,24 +300,6 @@ export function buildChecklist(s) {
       next: s.personaErrors.length
         ? `Persona "${s.activeSlug}" still needs: ${s.personaErrors.join("; ")}.`
         : "Fill in the remaining persona fields.",
-    },
-    {
-      label: "A Google Sheet is bound (you own it; this tool never creates one)",
-      done: s.sheetBound,
-      next: [
-        "Point this at the Google Sheet you want filled in. If you already have one, skip to the commands below.",
-        "",
-        "If you do not have one, open this link and click \"Make a copy\":",
-        "",
-        `  ${SHEET_TEMPLATE_COPY_URL}`,
-        "",
-        "That drops a ready-made, empty copy of the lead sheet into your own Google Drive, owned by you — all seven tabs, headers, and dropdowns already built, and no data in it. It is your copy; nobody else can see it.",
-        "",
-        "Share that sheet with your service account's client_email as an Editor (the address from step 6), then run:",
-        "",
-        `  npm run bind-sheet -- --persona ${s.activeSlug || "<slug>"} --sheet <your-sheet-url>`,
-        "  npm run check-sheet",
-      ].join("\n"),
     },
   ];
 }

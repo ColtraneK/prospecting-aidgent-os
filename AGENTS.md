@@ -516,6 +516,38 @@ was given before it opens anything, `check-login` records the one it has just
 proved works — so the next command cannot lose it. That is the whole reason you
 never need to set these variables in a shell.
 
+### Do the Sheet and the service account FIRST, and say the sharing step out loud
+
+The setup order is not arbitrary. The Google Sheet, the service-account key and
+the sharing step come before anything about LinkedIn and before the ICP
+conversation, because they block every run and because they are where
+first-time setups stall. Working them last means the person answers twenty
+minutes of ICP questions and only then discovers the sheet was never reachable.
+
+Walk the person through it in this order:
+
+1. **They copy the template.** Open the copy link, click Make a copy. Never
+   `sheets.new`, never a blank sheet, and never one you made — see the rule
+   about not creating spreadsheets.
+2. **They create a service-account key** and put its full path in
+   `GOOGLE_APPLICATION_CREDENTIALS`.
+3. **They share the sheet with that key's `client_email`, as Editor.** State
+   this as its own numbered step, in its own message, and wait for them to
+   confirm. Do not bundle it into the end of the previous step and do not
+   assume it followed from creating the key.
+4. **Run `npm run check-sheet` and report what it said.** This is the only
+   thing that knows whether step 3 happened.
+
+**You must not skip past a failing `check-sheet`.** A permission error there
+means the sheet is not shared with the service account. It is not a bug in this
+tool, it is not a wrong sheet id, and it will not fix itself on the next run.
+Send them back to step 3.
+
+**You must not assume sharing happened because the sheet exists.** The service
+account is a different Google identity from the person's own login. Their being
+able to open the sheet in their browser says nothing at all about whether the
+tool can write to it, and this is the most common reason a first run fails.
+
 ### READY means proved, not merely configured
 
 `npm run start` is offline by contract, so it cannot ask LinkedIn anything. It

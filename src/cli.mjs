@@ -20,6 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { parseFlags, resolveConfig, loadDotEnv, upsertDotEnv, DOTENV_PATH, REPO_ROOT } from "./config.mjs";
 import { preflightSession, formatSessionRefusal, isPlaceholderProfilePath, shouldRememberProfile, writeSessionProof } from "./session.mjs";
+import { recordSheetProof } from "./verified.mjs";
 import {
   getPersona, validatePersona, listPersonaSlugs, personaSheetId,
   personaTemplate, PRIVATE_PERSONA_DIR, resolvePersonaPath, loadPersonaFile,
@@ -353,6 +354,10 @@ async function cmdCheckSheet(flags) {
   const sheets = await getSheets(config.credentialsPath);
   const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
   const tabs = (meta.data.sheets || []).map((s) => s.properties.title);
+  // Getting here means the service account opened the sheet as itself, which
+  // is the only evidence that the share step was actually done. Record it: the
+  // checklist cannot observe a Google sharing setting from this machine.
+  recordSheetProof({ sheetId });
   console.log(`OK: will USE existing sheet "${meta.data.properties.title}" (${sheetId}).`);
   console.log(`Tabs: ${tabs.join(", ")}`);
   if (!tabs.includes("Leads")) console.log('Note: no "Leads" tab yet. Run buildAidgentOsSheet inside THIS sheet (Extensions > Apps Script), or the worker will need a Leads tab to maintain.');

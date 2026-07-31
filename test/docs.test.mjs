@@ -301,3 +301,22 @@ test("AGENTS.md forbids faking the session proof the checklist now depends on", 
   // nothing keeps.
   assert.match(read("src/session.mjs"), /session-verified\.json/);
 });
+
+test("the setup instructions state the sheet-sharing step explicitly", () => {
+  // The step lives in a different Google product from everything else and is
+  // the one people skip. It was previously implied by the service-account
+  // walkthrough rather than stated, and a run then failed with a permission
+  // error that reads like a bug in this tool.
+  const agents = read("AGENTS.md");
+  assert.match(agents, /client_email/);
+  assert.match(agents, /as its own numbered step/i);
+  assert.match(agents, /must not skip past a failing `npm run check-sheet`|must not skip past a failing/i);
+  assert.match(agents, /must not assume sharing happened/i);
+
+  // And the paste block a non-technical person actually uses must say it too,
+  // because that block is the whole of what most people read.
+  const start = read("START-HERE.md");
+  assert.match(start, /client_email/);
+  assert.match(start, /EDITOR|Editor/);
+  assert.match(start, /npm run check-sheet/);
+});

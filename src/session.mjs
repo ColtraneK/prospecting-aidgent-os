@@ -30,8 +30,8 @@
 
 import fsDefault from "node:fs";
 import path from "node:path";
-import { createHash } from "node:crypto";
 import { REPO_ROOT } from "./config.mjs";
+import { recordProof, readProof, fingerprintSecret } from "./verified.mjs";
 
 /** The literal value shipped in .env.example. Rejected by value, not just by existence. */
 export const PLACEHOLDER_PROFILE_PATH = "/absolute/path/outside/repo/aidgent-chrome-profile";
@@ -342,45 +342,23 @@ export const SESSION_PROOF_MAX_AGE_DAYS = 14;
  */
 export function sessionFingerprint({ chromeProfile = "", liAt = "" } = {}) {
   const cookie = String(liAt || "").trim();
-  if (cookie) return `cookie:${sha256(cookie).slice(0, 16)}`;
+  if (cookie) return `cookie:${fingerprintSecret(cookie)}`;
   const p = String(chromeProfile || "").trim();
   return p ? `profile:${p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()}` : "";
 }
 
-function sha256(s) {
-  // Imported lazily so the pure module stays cheap for callers that never
-  // fingerprint anything.
-  return createHash("sha256").update(String(s)).digest("hex");
-}
-
 /** Record that a session was just proved to load the LinkedIn feed. */
 export function writeSessionProof({ chromeProfile = "", liAt = "", nowIso } = {}, deps = {}) {
-  const fs = deps.fs || fsDefault;
-  const proof = {
+  return recordProof({
+    file: deps.proofPath || SESSION_PROOF_PATH,
     fingerprint: sessionFingerprint({ chromeProfile, liAt }),
     method: String(liAt || "").trim() ? "li_at cookie" : "chrome profile",
-    verifiedAt: nowIso || new Date().toISOString(),
-  };
-  if (!proof.fingerprint) return null;
-  const target = deps.proofPath || SESSION_PROOF_PATH;
-  try {
-    fs.mkdirSync(path.dirname(target), { recursive: true });
-    fs.writeFileSync(target, `${JSON.stringify(proof, null, 2)}\n`);
-  } catch {
-    return null; // never fatal: a session that works is not invalidated by a read-only disk
-  }
-  return proof;
+    nowIso,
+  }, deps);
 }
 
 export function readSessionProof(deps = {}) {
-  const fs = deps.fs || fsDefault;
-  try {
-    const raw = fs.readFileSync(deps.proofPath || SESSION_PROOF_PATH, "utf8");
-    const p = JSON.parse(raw);
-    return p && typeof p.fingerprint === "string" ? p : null;
-  } catch {
-    return null;
-  }
+  return readProof({ file: deps.proofPath || SESSION_PROOF_PATH }, deps);
 }
 
 /**

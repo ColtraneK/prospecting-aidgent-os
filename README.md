@@ -19,7 +19,15 @@ runs the offline demo with no session, no credentials and no network. The Leads
 sheet is at layout **v4**: 28 columns, with Post Link, Degree and Score added
 inside the agent band. The Feedback tab is enforced in code — a run refuses to
 start while a correction sits unapplied — not merely documented. The setup
-checklist has 10 steps and names exactly one next action at a time.
+checklist has 11 steps and names exactly one next action at a time.
+
+**Setup order.** The Google Sheet, the service-account key and — stated as its
+own step — **sharing that sheet with the key's `client_email` as Editor** come
+first, before LinkedIn and before the ICP conversation. That sharing step is a
+separate action in a different Google product, nothing on your machine can
+observe whether you did it, and skipping it fails every run with a permission
+error that looks like a bug here. `npm run check-sheet` is the only thing that
+knows, so the checklist requires it to have passed.
 
 **Just fixed.** Two ways the setup could claim to be ready and not be. A run
 with no session used to fail at the login wall and report `login: login page
@@ -257,6 +265,10 @@ npm run validate-persona -- --persona my-persona
 # copy" — you get your own, in your own Drive, tabs already built:
 #   https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy
 # This tool NEVER creates a spreadsheet itself; it maintains the one you bind.
+#
+# THEN SHARE IT with the service account: open the .json key, copy client_email,
+# open your sheet > Share > paste it > Editor > Send. Separate step, different
+# product, and the one people skip. check-sheet is what proves you did it.
 npm run bind-sheet  -- --persona my-persona --sheet <your-sheet-id-or-url>
 npm run check-sheet -- --persona my-persona
 
