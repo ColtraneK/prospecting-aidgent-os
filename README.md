@@ -10,6 +10,35 @@ yours.
 > account needed. If you are an AI agent working in this repo, read
 > [AGENTS.md](AGENTS.md) and follow it exactly.
 
+## Current state — 31 July 2026
+
+Read this before you trust anything below it.
+
+**Working and verified.** A clean clone installs, passes 197 offline tests, and
+runs the offline demo with no session, no credentials and no network. The Leads
+sheet is at layout **v4**: 28 columns, with Post Link, Degree and Score added
+inside the agent band. The Feedback tab is enforced in code — a run refuses to
+start while a correction sits unapplied — not merely documented. The setup
+checklist has 10 steps and names exactly one next action at a time.
+
+**Just fixed.** A run that had no LinkedIn session used to fail at the login
+wall and report `login: login page detected`, which reads as LinkedIn blocking
+you when the truth was usually that `.env` still held the example placeholder.
+Playwright creates any profile directory it is handed, so an unreal path became
+a brand-new signed-out Chrome. Every command that would open a browser now
+checks locally first and refuses with a named reason and a fix.
+
+**Not yet verified.** A full pilot has never completed against live LinkedIn —
+every run so far stopped on setup, not on LinkedIn. Expect the first real run to
+be the first true test of the extractors. `sheet/BuildLeadSheet.gs` has also
+never been executed inside Apps Script; the shared template was built through
+the Sheets API instead. Neither blocks setup, and both fail loudly rather than
+silently if they are wrong.
+
+**Requires.** Node 20 or newer, a LinkedIn account you already use, a Google
+account, and a Chrome or Edge install. Roughly 30–60 minutes for a first setup,
+most of it the Google service account and the ICP conversation.
+
 ## Where am I? — `npm run start`
 
 ```bash
@@ -19,6 +48,10 @@ npm run start
 Prints a plain-English checklist of everything setup needs and names exactly
 **one** next step. It never asks a question and never blocks, so it is safe
 inside an agent harness. Do the one thing, run it again, repeat until READY.
+Expect to run it about ten times during a first setup.
+
+It exits nonzero until every item is done. That is deliberate — it is how your
+agent knows there is work left — and it is not an error.
 
 The ICP is never hardcoded. One reusable Codex skill loads a **private,
 switchable persona**, so you can change businesses or audiences without touching
@@ -38,9 +71,41 @@ first one; no login window ever opens. Verify with `npm run check-login`.
 sign in yourself once, and the profile keeps the session for later headless runs.
 
 No session means no run: `npm run source` stops with a named reason rather than
-degrading into some other way of finding people. Runs happen on **your**
-computer — on and awake, agent app running. This does **not** run with the
-computer off.
+degrading into some other way of finding people.
+
+### Set it in `.env`, not in your shell
+
+This is the one rule worth internalising. Settings can come from a `--flag`,
+from a variable exported in the terminal you happen to be standing in, or from
+`.env` — and **only `.env` survives into the next command.** A session
+configured in a shell makes `npm run start` print READY and the very next run
+stop at a LinkedIn login page, because that run read `.env` and found the
+example placeholder.
+
+So: put the value in `.env`. The checklist has a step for exactly this, and
+`setup-login` and `check-login` write the profile path into `.env` themselves —
+the first before it opens anything, the second once it has proved the session
+works. Only the path is ever written; an `li_at` cookie is a secret and stays
+wherever you put it.
+
+### When it refuses before opening a browser
+
+These are local problems, not LinkedIn's, and none of them are fixed by
+retrying. Each one prints its own fix:
+
+- **`no_session_configured`** — neither `AIDGENT_CHROME_PROFILE` nor
+  `AIDGENT_LI_AT` is set anywhere.
+- **`placeholder_profile`** — `.env` still carries the `.env.example` line,
+  which is a description of a path rather than a path. Do not create that folder
+  to silence it; replace the line.
+- **`profile_missing`** — the path is real-looking but not on this machine.
+  Usually a `.env` copied from another computer. The profile itself is a
+  credential and is not copied between machines.
+- **`profile_never_signed_in`** — the folder exists with no cookie store, so
+  `npm run setup-login` was never completed in it.
+
+Runs happen on **your** computer — on and awake, agent app running. This does
+**not** run with the computer off.
 
 ## What it does each run
 
@@ -64,9 +129,30 @@ computer off.
 - **R–X — system research metadata:** Activity Date, Activity Type, Fit Score, Last Verified, Canonical Key, Research Source, Research Status.
 - **Y–AB — the follow-up pass, read-only:** Connection Status, Reply Status, Last Reply, Follow-up Checked.
 
+Ticking **Reached Out (K)** is what tells the system to start watching whether
+that person accepted and whether they replied. Nothing else you do in the sheet
+starts the follow-up pass.
+
 Column D shows whatever post was actually captured. An older post is shown and
 explicitly marked `(date — older than 7 days)` rather than dropped, so a
 suggested comment in I never points at a post that is missing from the sheet.
+
+## Steering it — the Feedback tab
+
+Write a sentence, not a config change. Add a row with the date, what you want
+different in plain English, and whether it is a Must, a Prefer or an Avoid —
+"no leads outside the US, Must", "stop showing me recruiters, Avoid".
+
+Your agent reads that tab **before every run** and **refuses to start** while a
+row is unapplied. It fills the last three columns with whether it applied the
+note, when, and exactly what changed; if it cannot do what you asked it marks
+the row `Needs a decision` with a reason rather than quietly ignoring you.
+`npm run feedback` is how that gets recorded.
+
+Being straight about it: this is not the system learning from your results.
+Nothing watches who replied and adjusts targeting on its own. What you get is
+the controls today, in plain English, with a record of why your targeting looks
+the way it does.
 
 ## Did they accept? Did they reply?
 
@@ -116,6 +202,23 @@ existing connections first. That answer is saved as `include_connections` in the
 persona; when it is on, connections are searched first and those rows are
 labelled **Connection** in Source Type so warm leads stand out.
 
+## A run that finds nobody is a failure, not a quiet success
+
+There is no such thing as a successful run that inspected zero people. When one
+comes back empty it names which of these applied, and only the first is benign:
+
+- **`no_results`** — LinkedIn itself said there were no matches. The persona is
+  too narrow; widen it.
+- **`parse_failed`** — the page was full of profile links and the collector read
+  none of them. LinkedIn changed its markup; a screenshot and the page HTML land
+  in `run-artifacts/`. Do not hand-edit selectors mid-run.
+- **`page_not_rendered`** / **`no_results_visible`** — the page loaded but was
+  not the search page.
+
+The worker stops after two unreadable pages in a row rather than walking every
+search. A run that ends in twenty seconds with a reason is worth more than one
+that ends in four minutes with a zero.
+
 ## Quickstart
 
 ```bash
@@ -136,6 +239,7 @@ npm run check-sheet -- --persona my-persona
 
 # One-time manual login into a dedicated Chrome profile
 npm run setup-login -- --persona my-persona
+npm run check-login
 
 # Pilot adds 10 leads; review, then a full run that adds 25 and updates the Sheet
 npm run pilot  -- --persona my-persona --headless
@@ -172,12 +276,16 @@ Step 7 is the one people skip. The service account is a *different identity*
 from your own Google login, so an unshared sheet fails every run with a
 permission error that looks like a bug in this tool.
 
-Offline demo (writes nothing, no network):
+Offline demo — writes nothing, opens no browser, makes no network calls, and
+works before any of the setup above is done:
 
 ```bash
 npm run dry-run -- --persona example-generic --fixture test/fixtures/dry-run.json
 npm test
 ```
+
+`npm test` never launches a browser. The browser-backed extractor tests live
+separately in `npm run test:dom`, so a non-technical install stays browser-free.
 
 ## Layout
 
@@ -187,6 +295,7 @@ AGENTS.md                                              the manual your AI agent 
 .agents/skills/research-outreach-prospects/SKILL.md   the one reusable skill
 personas/example-generic.yaml                          public FAKE example
 private/personas/<slug>.yaml                            your real personas (git-ignored)
+src/session.mjs                                         is there a session, and can .env reproduce it
 src/                                                    worker + pure logic + CLI
 sheet/BuildLeadSheet.gs, sheet/SHEET.md                 the 7-tab workbook
 steps/1..4                                              scan ICP → build persona → source → schedule
@@ -194,6 +303,10 @@ sourcing/codex-playwright.md                            the persistent-profile m
 test/                                                   fixture-based tests (no network)
 .env.example                                            variable names only
 ```
+
+Nothing in `.env`, `private/`, `approved-icp.json` or `run-artifacts/` is
+tracked by git, so a fresh clone never carries anyone else's persona, sheet or
+credentials — and deleting the folder takes your persona with it.
 
 ## Safety
 
