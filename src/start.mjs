@@ -213,7 +213,11 @@ export function buildChecklist(s) {
       label: "A .env file exists (your local settings)",
       done: s.envFileExists,
       next: "Nothing for you to do here. Your agent creates this settings file, and the two of you fill it in over the next few steps.",
-      agentRuns: "cp .env.example .env",
+      // Deliberately an npm script rather than `cp`, which only exists on Unix
+      // and on shells that alias it. This step is three of eleven on a first
+      // install, and a shell-specific command here stalls a Windows setup at
+      // the exact moment the person has least idea what they are looking at.
+      agentRuns: "npm run init-env",
     },
     {
       label: "Google service-account key file is set and exists",

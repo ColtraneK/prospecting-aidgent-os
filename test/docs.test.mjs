@@ -431,6 +431,46 @@ test("the docs state why content search drops geography and reposts", () => {
   assert.match(read("src/searchTerms.mjs"), /DELIBERATELY WITHOUT GEOGRAPHY/);
 });
 
+test("nothing tells anyone to run a command that only exists on one OS", () => {
+  // START-HERE says to clone this onto the computer you already own, and a good
+  // share of those are Windows. `cp .env.example .env` is a Unix command; it
+  // survives in PowerShell only because PowerShell happens to alias it, and it
+  // does not exist in cmd.exe at all. An agent driving that shell stalls on step
+  // three of a first install with "'cp' is not recognized", which is
+  // indistinguishable, to the person watching, from something they broke.
+  //
+  // Every command this repo hands out has to run the same on every machine it
+  // asks to be cloned onto. npm and node do; the Unix file utilities do not.
+  const UNIX_ONLY = /(?:^|[\s`])(cp|mv|rm|ls|cat|touch|chmod|mkdir)\s+[^\s`|]/m;
+  const files = [...DOCS, "src/start.mjs", "src/cli.mjs"];
+  for (const f of files) {
+    const src = read(f);
+    // Only the lines that TELL somebody to run something: fences explicitly
+    // tagged as shell, and the agentRuns strings. An untagged fence in these
+    // docs is a sample message to say out loud, not a command.
+    const commands = [
+      ...[...src.matchAll(/```(?:bash|powershell|sh)\n([\s\S]*?)```/g)].flatMap((m) => m[1].split("\n")),
+      ...[...src.matchAll(/agentRuns:\s*[`"']([^`"']+)/g)].map((m) => m[1]),
+    ].filter((l) => l.trim() && !l.trim().startsWith("#"));
+    for (const line of commands) {
+      assert.ok(!UNIX_ONLY.test(line),
+        `${f} hands out "${line.trim()}", which does not run on Windows. Use an npm script instead.`);
+    }
+  }
+  // And the cross-platform replacement has to actually exist.
+  assert.ok(pkg.scripts["init-env"], "npm run init-env must exist");
+  assert.match(read("src/cli.mjs"), /copyFileSync/, "init-env must do the copy in Node, not a shell");
+});
+
+test("init-env refuses to clobber an .env somebody already filled in", () => {
+  // The file it would overwrite holds the profile path and possibly the li_at
+  // cookie. There is no undo.
+  const cli = read("src/cli.mjs");
+  const fn = cli.slice(cli.indexOf("function cmdInitEnv"));
+  assert.match(fn.slice(0, 600), /existsSync\(dest\)/);
+  assert.match(fn.slice(0, 600), /already exists/i);
+});
+
 test("AGENTS.md tells the agent that the person never types a command", () => {
   // Every person-facing hint in `npm run start` is command-free by test. That
   // only holds end to end if the agent also knows not to invent one.

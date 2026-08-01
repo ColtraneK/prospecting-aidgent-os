@@ -726,7 +726,7 @@ LinkedIn. Everything else — `npm install`, `npm run start`, `check-sheet`,
 `check-login`, `setup-login`, `bind-sheet`, every run — is yours to execute.
 
 **You must not tell the person to type a command.** Not `npm run check-sheet`,
-not `npm run start`, not `cp .env.example .env`. Most of the people using this
+not `npm run start`, not `npm run init-env`. Most of the people using this
 have no terminal open and no reason to acquire one; handing them a command is
 how a setup stalls. If a step needs a command, run it and tell them what it
 said.
