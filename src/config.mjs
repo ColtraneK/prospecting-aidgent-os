@@ -119,18 +119,10 @@ const bool = (v, dflt = false) => {
  * Does NOT read secrets values here beyond names/paths.
  */
 export function resolveConfig(flags = {}, env = { ...loadDotEnv(), ...process.env }) {
-  const mode = (flags["connections"] || flags["from-connections"])
-    ? "connections"
-    : "local-linkedin";
-  const headless = flags["headed"] ? false : bool(flags["headless"], bool(env.HEADLESS, false));
+  const headless = flags["headed"] ? false : bool(flags["headless"], bool(env.HEADLESS, true));
   return {
-    mode,
     persona: flags.persona || env.AIDGENT_PERSONA || "",
-    target: intOr(flags.target, intOr(env.TARGET_COUNT, 25)),
     headless,
-    dryRun: bool(flags["dry-run"]),
-    updateSheet: flags["csv-only"] ? false : bool(flags["update-sheet"], !flags["dry-run"]),
-    csvOnly: bool(flags["csv-only"]),
     // `str` because parseFlags gives a bare `--profile` the value `true`, and a
     // boolean flowing into a path is a raw Playwright type error four calls
     // later. A valueless flag is not a value; fall through to the environment.
@@ -141,7 +133,6 @@ export function resolveConfig(flags = {}, env = { ...loadDotEnv(), ...process.en
     liAt: str(flags["li-at"]) || env.AIDGENT_LI_AT || "",
     sheetId: flags.sheet || env.GOOGLE_SHEET_ID || "",
     credentialsPath: env.GOOGLE_APPLICATION_CREDENTIALS || "",
-    dailyCap: intOr(flags["daily-cap"], intOr(env.AIDGENT_DAILY_CAP, 120)),
     // v6 daily budgets, persisted across invocations (src/budget.mjs).
     openBudget: intOr(env.AIDGENT_OPEN_BUDGET, 120),
     inspectBudget: intOr(env.AIDGENT_INSPECT_BUDGET, 60),

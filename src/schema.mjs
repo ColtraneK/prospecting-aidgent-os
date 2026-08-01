@@ -36,15 +36,15 @@ export const SYSTEM_FIELDS = [
   "Canonical Key", // V
   "Research Source", // W
   "Research Status", // X
-  // Follow-up loop (Y-AB). Written ONLY by the follow-up pass, which reads
-  // LinkedIn read-only. These are observations, never actions.
-  "Connection Status", // Y  connected | pending | not_connected | unknown
-  "Reply Status", // Z  replied | no_reply | unknown
-  "Last Reply", // AA verbatim snippet of their latest message to you (+ date)
-  "Follow-up Checked", // AB ISO date the follow-up pass last observed this row
+  // Y-AB: reserved for the follow-up loop. UNWRITTEN in v6 — the headers stay
+  // so existing sheets keep their layout, and nothing here writes them.
+  "Connection Status", // Y  reserved
+  "Reply Status", // Z  reserved
+  "Last Reply", // AA reserved
+  "Follow-up Checked", // AB reserved
 ];
 
-/** The Y-AB subset the follow-up pass owns. Nothing else may write these. */
+/** The reserved Y-AB subset. Nothing in v6 writes these. */
 export const FOLLOWUP_FIELDS = [
   "Connection Status",
   "Reply Status",

@@ -4,13 +4,11 @@ Read this before running anything, and say it out loud in any demo.
 
 ## What the worker does and does not do
 
-- **Read-only research.** It navigates and extracts. It NEVER clicks Connect, Message, Follow, Like, Celebrate, Support, React, Comment, Share, Repost, or Post.
-- **The follow-up pass is read-only too.** It opens your own sent-invitations page, connections list, and message list to record who accepted and who replied. It never accepts, withdraws, replies, sends, or marks anything as read.
+- **Read-only research.** It navigates and extracts. It NEVER clicks Connect, Message, Follow, Like, Celebrate, Support, React, Comment, Share, Repost, or Post. `npm run open` refuses messaging/connect/compose URLs outright.
 - **Never automates login.** It does not type your username, password, or MFA, and never completes a login for you. You sign in manually once, in a headed window.
 - **Never bypasses controls.** It does not defeat CAPTCHAs, checkpoints, bot detection, or access controls. On any such page it stops and exits nonzero.
-- **No fabrication.** It never invents activity, dates, quotes, geography, titles, or URLs. Unverified fields are left blank.
-- **Human-approved outreach.** It drafts Why Them and an opener; you decide and send.
-- **No guessed observations.** If the follow-up pass could not read a page, it records `unknown` — never a "no reply" it did not verify — and leaves untouched anything it did not see.
+- **No fabrication.** Nothing reaches the sheet unless this repo's own browser opened the profile and captured the facts verbatim, and every drafted message must quote the captured post (checked in code). Unverified fields are left blank.
+- **Human-approved outreach.** It drafts a comment and an intro; you decide and send.
 
 ## Credentials and the Chrome profile — the honest version
 
@@ -30,15 +28,16 @@ LinkedIn session**. Treat it like a credential:
 
 ## Rate and volume discipline
 
-Conservative randomized pacing between actions and a hard **daily cap**
-(`AIDGENT_DAILY_CAP`). Keep volumes low. If you would not do it by hand at a
+Conservative randomized pacing between navigations (3.5–9s) and hard **daily
+budgets persisted across invocations** (`AIDGENT_OPEN_BUDGET` 120 page opens,
+`AIDGENT_INSPECT_BUDGET` 60 profile inspections). Exhausted budgets refuse
+until the next day. Keep volumes low: if you would not do it by hand at a
 human pace, do not script it. Respect LinkedIn's and every platform's terms.
 
-The practical limit on the human side of this is connection requests: LinkedIn
-objects to accounts sending much more than about **30 a day**. That is why the
-default target is 25 researched leads — it keeps the outreach you do by hand
-inside a range LinkedIn is comfortable with, and 25 is already about twenty
-minutes of real work. Raising the target does not produce more conversations.
+The practical limit on the human side is connection requests: LinkedIn objects
+to accounts sending much more than about **30 a day**. A short researched list
+is the point — it keeps the outreach you do by hand inside a range LinkedIn is
+comfortable with, and more rows do not mean more conversations.
 
 ## Data hygiene
 

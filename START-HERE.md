@@ -1,13 +1,16 @@
 # Start here
 
-You do not need a GitHub account. You do not need to know how to code. You need
-about 30 to 60 minutes, a LinkedIn account you already use, and a Google Sheet.
+You do not need a GitHub account or any coding. You need about 30–45 minutes,
+a LinkedIn account you already use, and a Google account.
 
----
+## Before you paste: let your agent work
+
+Run your agent (Codex, Claude Code, or similar) with **workspace-write sandbox
+and on-request approvals for this folder**. A research run is dozens of small
+file reads and commands; approving each one by hand turns a ten-minute pilot
+into 41 permission prompts. Scope the trust to this folder only.
 
 ## The paste block
-
-Open Codex (or Claude Code) on your computer and paste this, exactly as it is:
 
 ```
 Set up my prospect research system.
@@ -15,178 +18,55 @@ Set up my prospect research system.
 1. Make a folder called prospecting in my home directory and work inside it.
 2. Get the code:
    git clone https://github.com/ColtraneK/prospecting-aidgent-os.git .
-   If git is not available or that fails, download and unzip
+   If git is not available, download and unzip
    https://github.com/ColtraneK/prospecting-aidgent-os/archive/refs/heads/main.zip
    into that folder instead.
-3. Read AGENTS.md in the repo root and follow it exactly, start to finish.
+3. Read AGENTS.md in the repo root and follow it exactly.
 4. Run `npm install`, then `npm run start`, and work the checklist it prints
    one step at a time until it says READY.
-5. Do the Google Sheet and the service account FIRST, before anything about
-   LinkedIn or my ICP. Walk me through it in this order and do not skip ahead:
-   a. Have me open the template link and click Make a copy, so the sheet is
-      mine, in my Drive. Never build one from a blank sheet.
-   b. Walk me through creating a Google service-account key and have me put
-      the full path to its .json file in GOOGLE_APPLICATION_CREDENTIALS.
-   c. Tell me to open that .json, copy the client_email value, then open my
-      sheet, click Share, paste that address, set it to EDITOR, and Send.
-      Say this as its own step and wait for me to confirm I have done it.
-      The service account is a different Google identity from my own login,
-      so being able to open the sheet myself proves nothing.
-   d. Run `npm run check-sheet` and show me the result. If it fails with a
-      permission error, I did not finish step c. Do not continue until it
-      passes.
-6. Only then set up the LinkedIn session, and verify it with
-   `npm run check-login`. Do not tell me the setup is ready because the
-   checklist says so; tell me what check-login and check-sheet actually said.
-7. Interview me about my business and my ideal customer before sourcing anything.
-   Look at my website first, propose an ICP, and let me correct it.
-8. Before you save the persona, read the exact buyer titles and the exclusions
-   back to me as a list and get a yes on the titles specifically. Titles are
-   matched as substrings, so a short one like "Founder" also matches
-   "Founder & Fractional CMO" and most of LinkedIn. If I say something like
-   "you suggest and proceed", that is not agreement to a list I have not seen.
-   Ask again, with the list in front of me.
-9. Do not invent any leads. Do not use your own web search to find prospects.
-   Everything comes from the repo's commands.
+5. Do the Google Sheet and the service account FIRST: I copy the sheet
+   template myself (Make a copy), you walk me through the service-account
+   key, I share the sheet with its client_email as EDITOR, and you prove it
+   with `npm run check-sheet` before anything else.
+6. Then the LinkedIn session, proven with `npm run check-login`. Never type
+   my password or touch my 2FA.
+7. Then interview me about my business ONCE: look at my website, propose an
+   ICP, let me correct it, confirm it back to me, and save the persona.
+8. Never invent leads and never use your own web search to find prospects.
+   Everything comes from this repo's commands.
 ```
-
-That is all you have to do. Everything below is just so you know what is
-happening to your computer and your accounts.
-
----
-
-## What that paste block actually does
-
-**It downloads a public folder of code onto your machine.** `git clone` copies a
-public repository — no account, no login, nothing shared back. If your computer
-does not have `git`, the ZIP link is the same files in a zip archive. The repo
-is public and readable in a browser if you want to look before you run it:
-[github.com/ColtraneK/prospecting-aidgent-os](https://github.com/ColtraneK/prospecting-aidgent-os).
-
-**It installs the pieces the code needs.** `npm install` pulls down a browser
-engine along with the Google and YAML libraries, so on a normal connection it
-takes a few minutes and prints very little while it works. That is the one step
-in the whole setup that looks like it has frozen when it has not. Leave it
-alone until it gives you your prompt back.
-
-**It points your AI agent at a file called `AGENTS.md`.** That file is the real
-instruction manual — several pages of rules the agent has to follow, including a
-list of things it is not allowed to do. That is the whole design: the
-complicated parts live in the repo, so the thing you paste stays twelve lines
-long. If you are curious, `AGENTS.md` is worth a read; it is written in plain
-English on purpose.
-
-**It starts a checklist.** `npm run start` looks at what is set up so far and
-tells you the single next thing to do. Then you do that one thing and run it
-again. It never asks you a question you have to answer in a terminal, and it
-never gets stuck waiting. You will run it about eleven times during setup, and
-after that whenever you want to check the system is still healthy.
-
----
-
-## What you will be asked for along the way
-
-**A separate Chrome profile.** An empty folder that becomes a Chrome profile
-used only by this tool. Your normal browser, bookmarks, and other logins are
-untouched.
-
-**A one-time LinkedIn sign-in.** A Chrome window opens and you sign in yourself,
-including any two-factor step. The tool never types your password and never
-touches your 2FA. It just waits for you to finish and closes.
-
-**A Google service-account key.** This is the fiddliest part, and it is a
-one-time thing: a small JSON file from Google Cloud that lets the tool write to
-your sheet without you being logged in. You share your sheet with an email
-address from that file, exactly like sharing with a colleague. Your agent will
-walk you through it — `npm run start` prints every step when you get there, and
-`README.md` has the same list.
-
-**Your Google Sheet.** Your own sheet — this system will never create one for
-you. If you do not have one yet, open the template below and click **Make a
-copy**. The copy is yours, in your Drive, with all seven tabs, columns, and
-dropdowns already built and nothing in it:
-
-<https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy>
-
-**And then you must share that sheet with the service account.** This is a
-separate action from making the sheet, in a different Google product, and it is
-the single step people skip. Open the `.json` key file, copy the `client_email`
-value — it ends in `.iam.gserviceaccount.com` — then open your sheet, click
-**Share**, paste that address, set it to **Editor**, and Send. Then tell your
-agent you have done it and let it check — nothing on your computer can observe
-a Google sharing setting, so opening the sheet as that robot account is the
-only way to know, and your agent does that for you.
-
-**About twenty minutes of conversation about your business.** Your agent reads
-your website, proposes who it thinks your ideal customer is, and you correct it.
-This is the part that determines whether the leads are any good, so it is worth
-the twenty minutes. It ends up saved as a file you can edit later.
-
----
 
 ## What happens after setup
 
-You ask your agent for a run each day, or have it set up a scheduled one. It
-looks first for people who posted about your topics **in the last week**, then
-falls back to searching by job title, and keeps going until 25 qualified leads
-have been added. For each one it writes their name and role, their profile link,
-their most recent post quoted word for word with a link to it, and why they are
-a fit.
+Each run is a short loop your agent drives (see AGENTS.md):
 
-Then it does a second pass and writes the two message columns: a suggested
-comment on that post, and a suggested intro message. That part is separate on
-purpose. The run itself gathers the evidence, and then your agent reads each post
-and writes something specific about it, which is checked by the code before it
-lands in the sheet. Among other things, every message has to quote at least four
-consecutive words from the person's actual post. A message about a post nobody
-wrote reads perfectly well, and that check is what stops one reaching you.
+1. It crafts LinkedIn searches for your topics and opens them with
+   `npm run open` — read-only, paced, budgeted.
+2. It nominates the people it judges worth a look, and `npm run inspect`
+   opens every profile itself and captures what they actually posted,
+   word for word.
+3. It judges each candidate against your ICP, drafts a comment and an intro
+   message that quote the person's own post, and `npm run qualify` checks
+   every draft in code before writing rows to your sheet.
 
-So if you look at the sheet the moment the run finishes and those two columns are
-empty, nothing is broken. The second pass has not happened yet.
+Then it stops. **Nothing is sent.** You open the sheet, pick the people worth
+your time, and send things yourself. Every message suggestion must quote at
+least four consecutive words of the person's real post — a message about a
+post nobody wrote cannot reach your sheet.
 
-Then it checks back on the people you already reached out to — who accepted your
-connection request and who wrote back — and records that in the sheet too.
-
-Then it stops. **Nothing is sent.** No connection requests, no messages, no
-comments, no likes. You open the sheet, pick the people worth your time, and
-send things yourself. That is roughly twenty minutes of work against a list that
-took you nothing to build.
-
-Twenty-five a day is deliberate. LinkedIn starts objecting to accounts sending
-much more than thirty connection requests a day, and twenty-five well-researched
-people is already more than most people follow up on properly.
-
----
+You steer it in plain English on the sheet's **Feedback** tab; your agent
+applies each note to the ICP and records what changed.
 
 ## The honest limitations
 
-It runs on your computer, not in the cloud. A scheduled daily run needs the
-machine on, awake, and running your agent app at that hour. If your laptop is
-shut, nothing happens — you just run it when you open it.
+It runs on your computer, not in the cloud: machine on, awake, agent running.
+If LinkedIn shows a CAPTCHA or rate-limit page, the tool stops and tells you —
+clear it by hand, try later. Daily budgets (120 page opens, 60 profile
+inspections) are safety rails, not settings. The signed-in Chrome profile and
+the `li_at` cookie are real credentials; keep them out of shared drives.
 
-Scheduled tasks need a paid agent plan (OpenAI Plus, if you are using Codex).
-Without one, everything still works, you just start the run yourself.
+If something goes wrong, ask your agent where you are up to — `npm run start`
+names exactly one next step, and AGENTS.md obliges it to tell you the truth
+about what happened.
 
-If LinkedIn shows a CAPTCHA, a checkpoint, or a rate-limit page, the tool stops
-and tells you. It will not try to get around it, and you should not ask it to.
-Clear it by hand in that browser profile and try again later.
-
-The signed-in Chrome profile is a real credential. Anyone with that folder can
-act as you on LinkedIn. Keep it somewhere sensible and do not put it in a shared
-drive.
-
----
-
-## If something goes wrong
-
-Ask your agent where you are up to. Nine times out of ten it will name the
-problem and the fix, because the checklist it reads names exactly one thing.
-
-If it does not, tell your agent exactly what you saw. It has `AGENTS.md`, which
-has a section on what to do when a run is blocked — and, importantly, a rule
-that it has to tell you the truth about what happened rather than paper over it.
-
----
-
-Next: [Step 1 — Scan the business](steps/1-scan-business.md) ·
 [SECURITY.md](SECURITY.md) is worth reading before you demo this to anyone.
