@@ -1,37 +1,31 @@
-# Example persona (FAKE, public). Copy this to private/personas/<slug>.yaml and
-# edit with your real ICP. Real personas must live under private/ and stay
-# git-ignored. Everything here is invented for illustration.
+# Example persona (FAKE, public). A real persona is written by your agent from
+# the ICP conversation and saved with `npm run save-persona`, which puts it
+# under private/personas/ where git never sees it. Everything here is invented.
+#
+# The split: `icp`, `topics` and `voice` are GUIDANCE the agent judges against.
+# `hard_exclusions` and `geography` are HARD LINES the code enforces.
 
 persona: Example Generic Persona
-version: 1
 
-business:
-  name: Acme Example Co
-  website: https://example.com
+# Prose, not fields. The agent reads this to judge fit, so write it the way
+# you would brief a sharp colleague: who buys, what they look like on
+# LinkedIn, and what makes someone worth reaching THIS WEEK.
+icp: >
+  Owners and operations leads of 1-50 person service businesses in the US and
+  Canada — professional services, local services, B2B software — who are
+  drowning in recurring operational busywork. The buyer is the person who
+  personally feels the dropped balls: they post about being overwhelmed,
+  about hiring before they are ready, or about trying to automate a workflow
+  themselves. Someone writing about scaling pain this week beats a perfect
+  title who has not posted in a year.
 
-offer: A done-for-you service that removes a recurring operational headache.
-customer_outcome: The buyer gets hours back each week and fewer dropped balls.
-
-target_industries:
-  - Professional services
-  - Local service businesses
-  - B2B software
-
-company_sizes:
-  - 1-10 employees
-  - 11-50 employees
-
-# NOTE: "Founder" and "Owner" are here because this file also drives the offline
-# demo, and they are exactly the shape `npm run validate-persona` warns about.
-# Titles are matched as SUBSTRINGS, so "Founder" also matches "Founder &
-# Fractional CMO" and a large fraction of LinkedIn. A real persona should use the
-# exact multi-word titles the person named — "Fractional COO", "Operations
-# Consultant" — and lean on `exclusions` for the adjacent roles they do not want.
-buyer_titles:
-  - Founder
-  - Owner
-  - Managing Director
-  - Operations Lead
+# Substrings. Any match against title/company/headline is a hard disqualify,
+# enforced in code — the one list the agent cannot judge its way around.
+hard_exclusions:
+  - student
+  - job seeker
+  - recruiter
+  - agency that sells the same service
 
 geography:
   include:
@@ -40,43 +34,20 @@ geography:
   exclude:
     - India   # example exclusion only
 
-buying_signals:
-  - Posting about being overwhelmed or hiring
-  - Talking about scaling operations
-  - Recently mentioned trying to automate a workflow
-
-# Core topics to PRIORITIZE recent (last-7-day) posts/comments about.
-core_topics:
-  - operations
-  - automation
+# Search STARTING POINTS, not query strings. The agent turns these into real
+# content searches (quoted phrases, OR) using references/linkedin-search-urls.md.
+topics:
+  - drowning in ops busywork
+  - hiring an operations manager
+  - automating client onboarding
   - scaling a small team
 
-exclusions:
-  - Students
-  - Job seekers
-  - Agencies that sell the same service
-  - Recruiters
+# How an opener should sound. The agent drafts; the grounding validator checks.
+voice: >
+  Warm, concise, curious, no pitch. React to the specific thing they said —
+  quote their own words back. One light question at the end. Never "came
+  across your profile", never a link, never a call ask in the first message.
 
-opener_voice: Warm, concise, curious, no pitch. React to something specific they said.
-
-# How a message describes this audience when there is no post to react to.
-# Used INSTEAD of the person's own headline, which is where "how Award-Winning
-# Founder | 500+ Speaking Engagements | …s are approaching this" came from.
-audience_phrase: small-business owners doing their own operations
-
-search_keywords:
-  - operations
-  - founder
-  - small business
-
-research_sources:
-  - linkedin_profile
-  - linkedin_activity
-  - company_website
-  - conference_or_podcast
-
-# Point this at YOUR Google Sheet. This example ID is fake and will not resolve.
+# Point this at YOUR Google Sheet (bind-sheet writes it for you).
+# This example ID is fake and will not resolve.
 sheet_id: EXAMPLE_SHEET_ID_replace_me
-
-created: 2026-07-23
-last_updated: 2026-07-23

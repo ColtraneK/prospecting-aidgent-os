@@ -20,7 +20,7 @@ import { parseFlags, resolveConfig, loadDotEnv, upsertDotEnv, DOTENV_PATH, REPO_
 import { preflightSession, formatSessionRefusal, isPlaceholderProfilePath, shouldRememberProfile, writeSessionProof } from "./session.mjs";
 import { recordSheetProof } from "./verified.mjs";
 import {
-  getPersona, personaSheetId,
+  getPersona, personaSheetId, validatePersona, PRIVATE_PERSONA_DIR,
   resolvePersonaPath, loadPersonaFile,
   extractSheetId, isPlaceholderSheetId, isSharedTemplateId, sheetSetupHelp,
   sheetUrlFor,
@@ -42,10 +42,11 @@ async function main() {
     case "inspect": return cmdInspect(flags);
     case "qualify": return cmdQualify(flags);
     case "feedback": return cmdFeedback(flags);
+    case "save-persona": return cmdSavePersona(flags);
     case "bind-sheet": return cmdBindSheet(flags);
     case "check-sheet": return cmdCheckSheet(flags);
     default:
-      console.log("Unknown command. See: start | init-env | setup-login | check-login | open | inspect | qualify | feedback | bind-sheet | check-sheet");
+      console.log("Unknown command. See: start | init-env | setup-login | check-login | open | inspect | qualify | feedback | save-persona | bind-sheet | check-sheet");
       process.exit(2);
   }
 }
@@ -440,6 +441,46 @@ async function cmdFeedback(flags) {
   if (waiting.length) console.log(`${waiting.length} row(s) are waiting on the person's decision.`);
 }
 
+/**
+ * save-persona — validate a persona file's structure, save it privately, and
+ * select it. One command, one confirmation: the ICP conversation happens in
+ * chat (propose, correct, confirm ONCE), the agent writes the YAML, and this
+ * checks the shape and makes it the active persona.
+ *
+ *   npm run save-persona -- --file my-persona.yaml [--slug my-persona]
+ */
+async function cmdSavePersona(flags) {
+  const file = flags.file;
+  if (!file || file === true) {
+    fail([
+      "Usage: npm run save-persona -- --file <persona.yaml> [--slug <slug>]",
+      "",
+      "The file needs: icp (a prose paragraph), hard_exclusions (a list),",
+      "geography (optional), topics (a list of search starting points), and",
+      "voice (how an opener should sound). See personas/example-generic.yaml.",
+    ].join("\n"));
+  }
+  const persona = await loadPersonaFile(String(file));
+  const { valid, errors } = validatePersona(persona);
+  if (!valid) fail(`That persona file is not usable yet:\n- ${errors.join("\n- ")}`);
+  const slug = slugify(flags.slug && flags.slug !== true ? String(flags.slug)
+    : persona.persona || path.basename(String(file)).replace(/\.ya?ml$/i, ""));
+  if (!slug) fail("Could not derive a slug. Pass --slug <name>.");
+  const { default: YAML } = await import("js-yaml");
+  fs.mkdirSync(PRIVATE_PERSONA_DIR, { recursive: true });
+  const dest = path.join(PRIVATE_PERSONA_DIR, slug + ".yaml");
+  fs.writeFileSync(dest, YAML.dump(persona, { lineWidth: 100 }));
+  fs.mkdirSync(path.dirname(SELECTED_FILE), { recursive: true });
+  fs.writeFileSync(SELECTED_FILE, slug + "\n");
+  console.log(`Saved and selected persona "${slug}" (${dest}, git-ignored).`);
+  console.log(`  hard exclusions: ${(persona.hard_exclusions || []).join(", ") || "(none)"}`);
+  console.log(`  topics: ${(persona.topics || []).join(", ")}`);
+  const sheet = personaSheetId(persona);
+  console.log(sheet && !isPlaceholderSheetId(sheet)
+    ? `  sheet: ${sheet}`
+    : "  sheet: none yet — bind one with: npm run bind-sheet -- --sheet <their-sheet-url>");
+}
+
 async function cmdBindSheet(flags) {
   const slug = resolvePersonaSlug(flags);
   if (!slug) fail("Usage: npm run bind-sheet -- --persona <slug> --sheet <id-or-url>");
@@ -544,6 +585,7 @@ export function formatHandoff({ sheetId, added = 0, updated = 0, topScore = null
   return lines.join("\n");
 }
 
+function slugify(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""); }
 function fail(msg) { console.error(msg); process.exit(2); }
 
 main().catch(async (e) => {

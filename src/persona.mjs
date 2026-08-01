@@ -1,6 +1,14 @@
-// persona.mjs — load, validate, list, and scaffold ICP personas.
-// A persona is a private, switchable profile that drives all sourcing. The
-// sourcing implementation never hardcodes an ICP; it reads the active persona.
+// persona.mjs — load, validate, list, and save ICP personas.
+//
+// A v6 persona is agent GUIDANCE plus hard lines, not a query config:
+//   icp              prose paragraph — who this person sells to, in sentences
+//   hard_exclusions  list — substrings that hard-disqualify (code enforces)
+//   geography        optional — list/string, or { include: [], exclude: [] }
+//   topics           list — search starting points, not query strings
+//   voice            prose — how an opener should sound
+//   sheet_id         added by bind-sheet
+// The agent reads icp/topics/voice and judges; the code enforces only
+// hard_exclusions and geography (disqualify.mjs).
 
 import fs from "node:fs";
 import path from "node:path";
@@ -11,138 +19,32 @@ export const REPO_ROOT = path.resolve(__dirname, "..");
 export const PUBLIC_PERSONA_DIR = path.join(REPO_ROOT, "personas");
 export const PRIVATE_PERSONA_DIR = path.join(REPO_ROOT, "private", "personas");
 
-export const REQUIRED_FIELDS = [
-  "persona",
-  "version",
-  "business",
-  "offer",
-  "customer_outcome",
-  "target_industries",
-  "company_sizes",
-  "buyer_titles",
-  "geography",
-  "buying_signals",
-  "exclusions",
-  "opener_voice",
-  "search_keywords",
-  "research_sources",
-  "created",
-  "last_updated",
-];
-
-const ARRAY_FIELDS = [
-  "target_industries",
-  "company_sizes",
-  "buyer_titles",
-  "buying_signals",
-  "exclusions",
-  "search_keywords",
-];
-
 /**
- * Buyer titles so generic that, as a SUBSTRING needle, they match most of
- * LinkedIn. This is the list the 2026-08-01 pilot was built out of: "Founder"
- * and "CMO" went into buyer_titles, `anyMatch` is a normalized substring test,
- * and ten marketing people cleared an ICP written for operations leaders.
- *
- * Nothing here is a bad title to SELL to. They are bad titles to MATCH ON,
- * because "Founder" matches "Founder & Fractional CMO", "Co-Founder", "Founding
- * Partner" and several thousand people who are none of those things.
- */
-export const GENERIC_BUYER_TITLES = [
-  "founder", "co-founder", "cofounder", "owner", "ceo", "coo", "cfo", "cto", "cmo",
-  "cro", "president", "principal", "partner", "director", "manager", "lead",
-  "head", "chief", "vp", "executive", "consultant", "advisor", "operator",
-  "entrepreneur", "fractional",
-];
-
-/**
- * Are any buyer titles too loose to match on? Returns one warning per offender.
- *
- * A WARNING and not an error, deliberately. A persona is the person's own
- * description of who they sell to, and refusing to save one because a title is
- * short would leave them unable to run at all; the shipped example persona uses
- * "Founder" precisely because it is the shape people reach for first. So the
- * system says what will happen, loudly, at the moment the persona is written and
- * again on every checklist — and AGENTS.md makes the agent read the titles back
- * and get an explicit yes before saving them.
- */
-export function checkBuyerTitles(titles) {
-  const list = Array.isArray(titles) ? titles : titles ? [titles] : [];
-  const warnings = [];
-  for (const raw of list) {
-    const t = String(raw || "").trim();
-    if (!t) continue;
-    const norm = t.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-+|-+$/g, "");
-    const words = t.split(/\s+/).filter(Boolean).length;
-    if (words <= 1 && GENERIC_BUYER_TITLES.includes(norm)) {
-      warnings.push(
-        `buyer title "${t}" is matched as a substring, so it also matches ` +
-        `"${t} & Fractional CMO", "Co-${t}" and a large fraction of LinkedIn. ` +
-        "Use the exact multi-word titles the person actually named, or add " +
-        "exclusions for the adjacent roles they do not want.",
-      );
-    }
-  }
-  return warnings;
-}
-
-/**
- * Validate a persona object. Returns { valid, errors: [], warnings: [] }. Pure.
- *
- * `valid` turns on errors only. Warnings never block a run — they are things
- * that will quietly produce the wrong people, which is why they have to be said
- * rather than enforced.
+ * Validate a persona object. Returns { valid, errors: [] }. Pure.
+ * The sheet binding is checked by the commands that need it, not here — a
+ * persona is saved before a sheet is bound.
  */
 export function validatePersona(p) {
   const errors = [];
-  if (!p || typeof p !== "object") return { valid: false, errors: ["persona is not an object"], warnings: [] };
-  const warnings = checkBuyerTitles(p.buyer_titles);
-  // Warm-first is an opt-in, and it has to be an explicit one. The pilot's
-  // persona acquired `include_connections` from an agent answering its own
-  // question, and half the leads came back 1st-degree.
-  if (p.include_connections !== undefined && p.include_connections !== true && p.include_connections !== false) {
-    warnings.push(
-      `include_connections is "${p.include_connections}" — only a literal true opts in, ` +
-      "so this run will be net-new only. Set it to true or false, in a sentence the person said.",
-    );
+  if (!p || typeof p !== "object") return { valid: false, errors: ["persona is not an object"] };
+  if (typeof p.icp !== "string" || p.icp.trim().length < 40) {
+    errors.push("icp must be a prose paragraph (a real description, not a label) — who they sell to, what the buyer looks like, what makes someone worth reaching this week");
   }
-
-  for (const f of REQUIRED_FIELDS) {
-    if (p[f] === undefined || p[f] === null || p[f] === "") errors.push(`missing required field: ${f}`);
+  if (!Array.isArray(p.hard_exclusions)) {
+    errors.push("hard_exclusions must be a list (it may be empty) — these are the substrings code hard-disqualifies on");
   }
-  for (const f of ARRAY_FIELDS) {
-    if (p[f] !== undefined && !Array.isArray(p[f])) errors.push(`field ${f} must be a list`);
-    if (Array.isArray(p[f]) && p[f].length === 0) errors.push(`field ${f} must not be empty`);
+  if (!Array.isArray(p.topics) || p.topics.filter((t) => String(t).trim()).length === 0) {
+    errors.push("topics must be a non-empty list of search starting points");
   }
-  if (p.business && typeof p.business === "object") {
-    if (!p.business.name) errors.push("business.name is required");
-    if (!p.business.website) errors.push("business.website is required");
-  } else if (p.business !== undefined) {
-    errors.push("business must be an object with name and website");
+  if (typeof p.voice !== "string" || !p.voice.trim()) {
+    errors.push("voice must describe how an opener should sound");
   }
-  // At least one Sheet target.
-  if (!p.sheet_id && !p.sheet_url) errors.push("one of sheet_id or sheet_url is required");
-  // Geography can be a list, a string, or { include, exclude }.
-  if (p.geography !== undefined) {
+  if (p.geography !== undefined && p.geography !== null) {
     const g = p.geography;
     const ok = Array.isArray(g) || typeof g === "string" || (g && typeof g === "object");
     if (!ok) errors.push("geography must be a list, string, or { include, exclude }");
   }
-  return { valid: errors.length === 0, errors, warnings };
-}
-
-/** The block a command prints when a persona has warnings. Never silent. */
-export function formatPersonaWarnings(warnings = []) {
-  if (!warnings.length) return "";
-  return [
-    "",
-    "TARGETING WARNING — this persona will match more people than it should:",
-    ...warnings.map((w) => `  - ${w}`),
-    "",
-    "Read the buyer titles and exclusions back to the person and get an explicit",
-    "yes on the titles specifically before sourcing with this.",
-  ].join("\n");
+  return { valid: errors.length === 0, errors };
 }
 
 /** Extract a spreadsheet ID from a raw id or a full Google Sheets URL. */
@@ -161,13 +63,8 @@ export function personaSheetId(p) {
 }
 
 /**
- * The person's sheet as a clickable link.
- *
- * The sheet IS the deliverable — not the run report, not the console, not the
- * agent's summary of what it found. The pilot run that prompted v5 ended
- * without one, so the person had ten researched leads and no way to reach them
- * except to go looking. Every response that ends a step or a run now carries
- * this, which is only possible if building it is one call.
+ * The person's sheet as a clickable link. The sheet IS the deliverable, and
+ * every response that ends a run carries this line.
  */
 export function sheetUrlFor(id) {
   const s = extractSheetId(id);
@@ -180,22 +77,14 @@ export function isPlaceholderSheetId(id) {
   return !s || /EXAMPLE_SHEET_ID/i.test(s) || s === "replace_me";
 }
 
-// The shared sheet everyone copies. It lives here rather than in start.mjs so
-// the CLI can refuse it without importing the whole status engine; start.mjs
-// re-exports it and builds the /copy URL from it.
+// The shared sheet everyone copies. Clicking "Make a copy" puts a copy in the
+// person's OWN Drive; this tool never creates a spreadsheet through the API.
 export const SHEET_TEMPLATE_ID = "1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g";
 
 export const SHEET_TEMPLATE_COPY_URL =
   `https://docs.google.com/spreadsheets/d/${SHEET_TEMPLATE_ID}/copy`;
 
-/**
- * What to say whenever the system needs a sheet and has not been given one.
- *
- * "Bind your existing sheet" is a dead end for someone who has never had one,
- * and that is most people on their first run. Every path that discovers a
- * missing sheet prints this, so the offer does not depend on an agent
- * remembering to make it.
- */
+/** What to say whenever the system needs a sheet and has not been given one. */
 export function sheetSetupHelp() {
   return [
     "",
@@ -210,13 +99,9 @@ export function sheetSetupHelp() {
 }
 
 /**
- * True when someone bound the shared template instead of their own copy.
- *
- * This is the easiest mistake in the whole setup: the template link is sitting
- * right there in the docs, and pasting it "works" as far as bind-sheet is
- * concerned. It then fails at the first Sheets call with a permission error —
- * which reads exactly like the service-account sharing step failed, so people
- * troubleshoot the wrong thing. Catch it at bind time, where the fix is obvious.
+ * True when someone bound the shared template instead of their own copy — the
+ * easiest setup mistake, and it fails later with a permission error that looks
+ * like the service-account sharing step went wrong. Refused at bind time.
  */
 export function isSharedTemplateId(id) {
   return extractSheetId(id) === SHEET_TEMPLATE_ID;
@@ -270,37 +155,4 @@ export async function getPersona(slug) {
   const { valid, errors } = validatePersona(persona);
   if (!valid) throw new Error(`persona ${slug} is invalid:\n- ${errors.join("\n- ")}`);
   return { persona, path: p };
-}
-
-/** Build a persona object from an approved ICP intake (for create-persona). */
-export function personaTemplate(icp = {}, { nowIso = new Date().toISOString() } = {}) {
-  const date = nowIso.slice(0, 10);
-  return {
-    persona: icp.persona || "New Persona",
-    version: 1,
-    business: { name: icp.businessName || "", website: icp.website || "" },
-    offer: icp.offer || "",
-    customer_outcome: icp.outcome || "",
-    target_industries: icp.industries || [],
-    company_sizes: icp.companySizes || [],
-    buyer_titles: icp.titles || [],
-    geography: icp.geography || { include: [], exclude: [] },
-    buying_signals: icp.signals || [],
-    core_topics: icp.coreTopics || icp.topics || [], // topics to prioritize recent activity about
-    exclusions: icp.exclusions || [],
-    opener_voice: icp.openerVoice || "",
-    // How to describe this audience in a message when there is no post to react
-    // to. Used INSTEAD of the person's own headline, which is where the pipe
-    // soup came from. Optional; falls back to "people in <first title> roles".
-    audience_phrase: icp.audiencePhrase || "",
-    search_keywords: icp.keywords || [],
-    research_sources: icp.researchSources || ["linkedin_profile", "linkedin_activity"],
-    // Asked once during setup. true = also mine the people you are ALREADY
-    // connected to for ICP matches (warm, low-hanging fruit). Default false, so
-    // a run is net-new search unless you opted in.
-    include_connections: icp.includeConnections === true,
-    sheet_id: icp.sheetId || "",
-    created: date,
-    last_updated: date,
-  };
 }
