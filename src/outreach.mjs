@@ -1,22 +1,15 @@
-// outreach.mjs — the guardrails around the ONE thing a model is now allowed to
-// write: the words in columns I and J.
+// outreach.mjs — the grounding validator: the anti-fabrication core.
 //
 // THE BOUNDARY THIS FILE DEFENDS
 //
-// v5 relaxes exactly one rule and hardens everything around it. A model may
-// write words; it may never pick people. Sourcing and scoring stay deterministic
-// — the same code, the same persona, the same reproducible answer about who
-// qualifies. What changed is that the suggested comment and the suggested intro
-// DM may now be drafted by the agent instead of assembled by a template, because
-// a template that quotes a fragment of someone's post back at them reads exactly
-// like the automation it is.
-//
-// The risk that relaxation creates is fabrication: a fluent message about a post
-// nobody wrote. So a drafted message is not trusted, it is CHECKED — here, in
-// code, against the evidence already in the row. The load-bearing check is
-// grounding: the draft must quote at least four consecutive words that really
-// appear in column D. A model cannot pass that by being plausible; it can only
-// pass it by having actually read the post.
+// In v6 the agent judges fit AND drafts the messages; the code verifies the
+// evidence. The risk that split creates is fabrication: a fluent message about
+// a post nobody wrote. So a drafted message is not trusted, it is CHECKED —
+// here, in code, against the evidence the worker's own browser captured. The
+// load-bearing check is grounding: the draft must quote at least four
+// consecutive words that really appear in column D. A model cannot pass that
+// by being plausible; it can only pass it by having actually read the post.
+// This validator runs on EVERY sheet write path (merge.mjs), never around it.
 //
 // A draft that fails any check is not repaired and not quietly reworded. It is
 // left BLANK, with the reason reported to the agent that wrote it. A blank cell
@@ -258,53 +251,6 @@ export function enforceOutreach({ name = "", postText = "", comment = "", dm = "
     dm: d.ok ? String(dm || "") : "",
     rejected,
   };
-}
-
-/**
- * Match a batch of drafted messages to the rows they belong to, check each one,
- * and return the writes that survived.
- *
- * Pure, and separate from the CLI on purpose: this is the logic that decides
- * what reaches somebody's sheet, and it was worth being able to test without a
- * Google account. A draft that matches no row is dropped rather than guessed at
- * — a message can only be written onto a person this system actually researched.
- *
- * @param {object} o
- * @param {Array} o.rows     sheet rows: { rowNumber, cells }
- * @param {Array} o.drafts   [{ url, name?, comment?, dm? }]
- * @param {(x:{url?:string,name?:string})=>{key:string}} o.keyOf  canonicalKey
- * @returns {{updates:Array, failures:Array, unmatched:Array}}
- */
-export function planOutreachWrites({ rows = [], drafts = [], keyOf } = {}) {
-  const byKey = new Map();
-  for (const row of rows) {
-    const cells = row.cells || {};
-    const key = String(cells["Canonical Key"] || "").trim() ||
-      (keyOf ? keyOf({ url: cells["LinkedIn (or profile URL)"], name: cells["Name"] }).key : "");
-    if (key && !byKey.has(key)) byKey.set(key, row);
-  }
-
-  const updates = [];
-  const failures = [];
-  const unmatched = [];
-  for (const d of drafts) {
-    const key = keyOf ? keyOf({ url: d.url, name: d.name }).key : "";
-    const row = key ? byKey.get(key) : null;
-    if (!row) { unmatched.push(d.url || d.name || "(no url)"); continue; }
-    const name = row.cells["Name"] || "";
-    const postText = row.cells["Recent Post (verbatim + date)"] || "";
-    const checked = enforceOutreach({ name, postText, comment: d.comment || "", dm: d.dm || "" });
-    if (checked.rejected.length) {
-      failures.push({ name, rowNumber: row.rowNumber, rejected: checked.rejected });
-    }
-    // Only ever columns I and J, and only what passed. A blank is left alone
-    // rather than overwriting a draft an earlier pass got right.
-    const set = {};
-    if (checked.comment) set["Suggested Comment"] = checked.comment;
-    if (checked.dm) set["Suggested Intro DM"] = checked.dm;
-    if (Object.keys(set).length) updates.push({ rowNumber: row.rowNumber, set });
-  }
-  return { updates, failures, unmatched };
 }
 
 /** One line per rejection, for the run report. Never written to the sheet. */

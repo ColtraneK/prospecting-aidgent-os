@@ -8,14 +8,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   validateDraft, enforceOutreach, sharesPhrase, normalizeWords, firstNameOf,
-  formatOutreachRejections, postTextOf, unfoundedClaim, planOutreachWrites,
+  formatOutreachRejections, postTextOf, unfoundedClaim,
   MAX_DM, MAX_COMMENT,
 } from "../src/outreach.mjs";
-import { composeComment, composeIntroDM, recentPostCell } from "../src/evidence.mjs";
+import { recentPostCell } from "../src/evidence.mjs";
 import { toLeadRow, toRefreshSet, planSheetUpdate } from "../src/merge.mjs";
 import { buildValueUpdates } from "../src/sheetPlan.mjs";
-import { canonicalKey } from "../src/url.mjs";
-import { runPipeline } from "../src/pipeline.mjs";
 
 const POST =
   '"Capacity is the constraint nobody budgets for. We stopped hiring against the backlog ' +
@@ -182,28 +180,6 @@ test("a plan reports the drafts it blanked, and never writes the reason to Notes
   assert.equal(plan.newRows[0].cells["Notes"], "");
 });
 
-// --- the offline templates are held to the same bar as an agent's drafts ----
-
-test("the fallback templates pass the validator they now share", () => {
-  const candidate = {
-    name: "Dara Okonjo",
-    activity: {
-      type: "post",
-      date: "2026-07-29",
-      url: "https://www.linkedin.com/feed/update/urn:li:activity:1",
-      summary: "Capacity is the constraint nobody budgets for. We stopped hiring against the backlog and mapped the handoffs instead.",
-    },
-  };
-  const postText = `"${candidate.activity.summary}"\n(2026-07-29)`;
-  const comment = composeComment(candidate);
-  const dm = composeIntroDM(candidate, { buyer_titles: ["Fractional COO"] });
-
-  const c = validateDraft({ text: comment, kind: "comment", name: candidate.name, postText });
-  const d = validateDraft({ text: dm, kind: "dm", name: candidate.name, postText });
-  assert.equal(c.ok, true, `template comment fails its own validator: ${c.errors.join("; ")}`);
-  assert.equal(d.ok, true, `template DM fails its own validator: ${d.errors.join("; ")}`);
-});
-
 test("normalizeWords is punctuation- and accent-blind", () => {
   assert.deepEqual(normalizeWords('  "José’s   ops-team" — fast! '), ["jose", "s", "ops", "team", "fast"]);
   assert.deepEqual(normalizeWords(""), []);
@@ -280,13 +256,6 @@ test("a post shorter than four words can still be quoted", () => {
     validateDraft({ text: "Hi Dara, congratulations on the growth. Worth a chat?", kind: "dm", name: "Dara Okonjo", postText: cell }).ok,
     false,
   );
-  // The templates cope with a short post too, which is what the earlier version
-  // of this suite only ever checked against one long one.
-  const short = { name: "Dara Okonjo", activity: { type: "post", date: "2026-07-29", summary: "We are hiring." } };
-  const c = composeComment(short);
-  assert.equal(validateDraft({ text: c, kind: "comment", name: short.name, postText: cell }).ok, true, c);
-  const d = composeIntroDM(short, { buyer_titles: ["Fractional COO"] });
-  assert.equal(validateDraft({ text: d, kind: "dm", name: short.name, postText: cell }).ok, true, d);
 });
 
 // --- a refresh must never erase the drafts validate-outreach just wrote -----
@@ -312,89 +281,16 @@ test("re-sourcing someone does not blank the comment and DM already in their row
   assert.equal(withDraft["Suggested Intro DM"], good.dm);
 });
 
-test("a live run leaves I and J blank; an offline one fills them from templates", () => {
-  const persona = {
-    buyer_titles: ["Fractional COO"], core_topics: ["capacity"],
-    geography: { include: ["United States"] }, exclusions: [],
-  };
-  const candidate = {
-    name: "Dara Okonjo", title: "Fractional COO", location: "Austin, United States",
-    url: "https://www.linkedin.com/in/dara-okonjo",
-    activity: { summary: "Capacity is the constraint nobody budgets for.", date: "2026-07-29", url: "u", type: "post" },
-  };
-  const args = { persona, existingSheet: { rows: [] }, candidates: [candidate], nowMs: Date.parse("2026-08-01T00:00:00Z"), nowIso: "2026-08-01T00:00:00Z" };
-
-  const live = runPipeline({ ...args, composeOpeners: false }).plan.newRows[0].cells;
-  assert.equal(live["Suggested Comment"], "");
-  assert.equal(live["Suggested Intro DM"], "");
-  assert.match(live["Recent Post (verbatim + date)"], /Capacity is the constraint/, "the evidence still lands");
-  assert.ok(live["Why Them"].length > 0);
-
-  const offline = runPipeline({ ...args, composeOpeners: true }).plan.newRows[0].cells;
-  assert.ok(offline["Suggested Comment"].length > 0);
-  assert.ok(offline["Suggested Intro DM"].length > 0);
-});
-
-// --- what validate-outreach actually does, without a Google account ---------
-
-const sheetRows = [
-  {
-    rowNumber: 4,
-    cells: {
-      "Name": "Dara Okonjo",
-      "LinkedIn (or profile URL)": "https://www.linkedin.com/in/dara-okonjo",
-      "Recent Post (verbatim + date)": POST,
-      "Canonical Key": "https://www.linkedin.com/in/dara-okonjo",
-      "Reached Out": "TRUE", "Notes": "spoke at the summit",
-    },
-  },
-];
-
-test("planOutreachWrites writes only what passed, only to I and J", () => {
-  const { updates, failures, unmatched } = planOutreachWrites({
-    rows: sheetRows,
-    drafts: [
-      { url: "https://www.linkedin.com/in/dara-okonjo", comment: "Nice one.", dm: good.dm },
-      { url: "https://www.linkedin.com/in/nobody-here", dm: "Hi there." },
-    ],
-    keyOf: canonicalKey,
-  });
-
-  assert.equal(updates.length, 1);
-  assert.equal(updates[0].rowNumber, 4);
-  assert.deepEqual(Object.keys(updates[0].set), ["Suggested Intro DM"], "the failing comment is simply absent");
-  assert.equal(failures.length, 1);
-  assert.deepEqual(unmatched, ["https://www.linkedin.com/in/nobody-here"]);
-
-  // And the concrete ranges never reach the human band.
-  const { cellUpdates } = buildValueUpdates({ newRows: [], updates });
-  for (const u of cellUpdates) assert.match(u.range, /^Leads![IJ]4$/);
-});
-
-test("a draft cannot be written onto a person this system never researched", () => {
-  const { updates, unmatched } = planOutreachWrites({
-    rows: [],
-    drafts: [{ url: "https://www.linkedin.com/in/dara-okonjo", dm: good.dm }],
-    keyOf: canonicalKey,
-  });
-  assert.equal(updates.length, 0);
-  assert.equal(unmatched.length, 1);
-});
-
 test("every draft is checked against ITS OWN row's post, not any row's", () => {
-  // Grounding is only a real check if the post it grounds against belongs to the
-  // person being messaged.
-  const rows = [
-    ...sheetRows,
-    { rowNumber: 5, cells: { "Name": "Marisol Vega", "Canonical Key": "https://www.linkedin.com/in/marisol-vega", "LinkedIn (or profile URL)": "https://www.linkedin.com/in/marisol-vega", "Recent Post (verbatim + date)": '"Every ops audit finds the same thing first."\n(2026-07-26)' } },
-  ];
-  const { updates, failures } = planOutreachWrites({
-    rows,
-    // Dara's post, sent to Marisol.
-    drafts: [{ url: "https://www.linkedin.com/in/marisol-vega", dm: good.dm }],
-    keyOf: canonicalKey,
-  });
-  assert.equal(updates.length, 0);
-  assert.equal(failures[0].rowNumber, 5);
-  assert.match(failures[0].rejected[0].reasons.join(" "), /consecutive words/);
+  // Grounding is only a real check if the post it grounds against belongs to
+  // the person being messaged. Dara's quote, submitted for Marisol's row:
+  const plan = planSheetUpdate({ rows: [] }, [{
+    name: "Marisol Vega",
+    url: "https://www.linkedin.com/in/marisol-vega",
+    accepted: true, score: 60,
+    recentPost: '"Every ops audit finds the same thing first."\n(2026-07-26)',
+    introDM: good.dm, // quotes Dara's post, not Marisol's
+  }], { nowIso: "2026-08-01T00:00:00Z" });
+  assert.equal(plan.newRows[0].cells["Suggested Intro DM"], "");
+  assert.match(plan.outreachRejected[0].rejected[0].reasons.join(" "), /consecutive words/);
 });
