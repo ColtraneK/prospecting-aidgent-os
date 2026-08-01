@@ -24,10 +24,9 @@ const REFRESHABLE_AGENT_FIELDS = [
  *
  * Every write path funnels through toLeadRow/toRefreshSet, so putting the
  * validator here means no drafted message reaches the sheet unchecked by any
- * route — not the pipeline's own templates, not an agent's drafts submitted
- * through validate-outreach, not a fixture. A draft that fails is blanked and
- * the reason is attached to the row for the report. It is never repaired: a
- * message this code rewrote is a message nobody wrote.
+ * route — qualify goes through it, and nothing goes around it. A draft that
+ * fails is blanked and the reason is attached to the row for the report. It
+ * is never repaired: a message this code rewrote is a message nobody wrote.
  *
  * Note what is NOT done here. The reason does not go into Notes (column Q).
  * K–Q are the person's own columns and the system does not write them, no
@@ -93,13 +92,11 @@ export function toRefreshSet(candidate, opts = {}) {
   set["Why Them"] = candidate.whyThem || "";
   // I and J are the ONE pair of agent columns a refresh may not blank.
   //
-  // Every other agent column is re-derived from this run's own observations, so
-  // overwriting is correct. These two are not: on a live run the pipeline leaves
-  // them empty by design and the agent fills them in afterwards through
-  // validate-outreach. Assigning "" here would mean the next `npm run source`
-  // silently erased the drafted comment and DM of every person it re-inspected —
-  // deleting, on a weekly schedule, the only cells the person was told to act on.
-  // So a blank leaves them alone, exactly as Degree does above.
+  // Every other agent column is re-derived from this run's own observations,
+  // so overwriting is correct. These two are not: assigning "" here would mean
+  // a later qualify silently erased the drafted comment and DM of every person
+  // it refreshed — deleting the only cells the person was told to act on. So a
+  // blank leaves them alone, exactly as Degree does above.
   const openers = checkedOpeners(candidate);
   if (openers.comment) set["Suggested Comment"] = openers.comment;
   if (openers.dm) set["Suggested Intro DM"] = openers.dm;

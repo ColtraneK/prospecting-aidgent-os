@@ -234,9 +234,8 @@ export function validateDraft({ text, kind = "dm", name = "", postText = "" } = 
  * Check a whole row's pair of drafts and return what may actually be written.
  *
  * Anything that fails comes back as "" plus a stated reason. This is the
- * function the sheet-write path calls, so an unchecked draft cannot reach a
- * cell by any route — not through the pipeline, not through the
- * validate-outreach command, not through a fixture.
+ * function the sheet-write path calls (merge.mjs), so an unchecked draft
+ * cannot reach a cell by any route — qualify goes through it, never around it.
  *
  * @returns {{comment:string, dm:string, rejected:[{field,reasons}]}}
  */
