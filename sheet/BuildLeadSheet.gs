@@ -655,11 +655,15 @@ function rebuildPromptLibrary_(ss) {
     ["2  LOCK THE ICP INTO A PERSONA", "Turn your corrections into a private persona the worker can run.",
       "Here are my corrections: {{ANSWERS}}. Lock the ICP in five lines: who I sell to, the exact titles, the geography, " +
       "the buying signal, and my opener voice. Then create a private persona at private/personas/{{SLUG}}.yaml with " +
-      "keywords, exclusions, and my Google Sheet id. Do not source anything yet."],
+      "core topics (what a good prospect posts about), keywords, exclusions, and my Google Sheet id.\n\nBefore you save " +
+      "it, read the exact buyer titles and exclusions back to me as a list and get a yes on the titles specifically. " +
+      "Titles match as substrings, so a short one like Founder also matches most of LinkedIn. Do not source anything yet."],
     ["3  ASK FOR A RUN", "You do not paste anything for this one. You just ask.",
-      "Do a test run that adds ten leads first, then show me what landed in the sheet. Read-only research only: prefer the " +
-      "last 7 days, never send, connect or comment on my behalf, never touch my columns K to Q, and stop and tell me if " +
-      "you hit a login, CAPTCHA, checkpoint or rate-limit page."],
+      "Do a test run that adds ten leads first, then draft the suggested comment and intro message for each new row from " +
+      "the post in column D and put them through the validation command, then show me what landed in the sheet. " +
+      "Read-only research only: prefer the last 7 days, never send, connect or comment on my behalf, never touch my " +
+      "columns K to Q, and stop and tell me if you hit a login, CAPTCHA, checkpoint or rate-limit page. Finish by giving " +
+      "me the link to my sheet."],
     ["4  SCHEDULE IT", "Same job, every weekday, still nothing auto-sent.",
       "Set up a scheduled task that does the daily run for me every weekday morning, adding 25 leads. Remind me what has " +
       "to be true for it to actually fire: this computer on, awake, and running the agent app at that hour."],

@@ -25,6 +25,23 @@ Two more, asked once, because they change what a run does:
 
    <https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy>
 
+## Before you save it, say the titles out loud
+
+Titles are matched as **substrings**. "Founder" matches "Founder & Fractional
+CMO", "Co-Founder", "Founding Partner", and a large fraction of everyone on
+LinkedIn. That is how one pilot run built for operations leaders came back with
+ten marketers.
+
+So before the persona is written, your agent reads the exact `buyer_titles` and
+`exclusions` back to you as a list, and gets a yes on **the titles specifically**.
+Saying "you suggest and proceed" earlier in the conversation does not count; that
+is agreement to a proposal, not to a list you have not seen.
+
+`npm run create-persona` and `npm run validate-persona` both print the titles,
+the exclusions and the warm-first setting, and both print a **TARGETING WARNING**
+for any one-word generic title. A warning is not a refusal, since a short title is
+sometimes genuinely right, but it should never be sailed past in silence.
+
 Then create the persona (private, git-ignored) and bind your sheet:
 
 ```bash
@@ -36,8 +53,23 @@ npm run check-sheet -- --persona my-persona
 ```
 
 Personas support: business + website, offer, customer outcome, target
-industries, company sizes, buyer titles, geography, buying signals, exclusions,
-opener voice, search keywords, research sources, the Google Sheet id, and created
-/ last-updated dates. See `personas/example-generic.yaml` for the shape (fake).
+industries, company sizes, buyer titles, geography, buying signals, **core
+topics**, exclusions, opener voice, **audience phrase**, search keywords,
+research sources, the Google Sheet id, and created / last-updated dates. See
+`personas/example-generic.yaml` for the shape (fake).
+
+Two of those do more work than they look like they do.
+
+**Core topics** is what a run searches for. Sourcing walks LinkedIn content
+searches on those topics, filtered to the past week, before it searches anyone by
+job title. A topic missing here is a topic nobody gets found by, so make them the
+words a good prospect would actually write, rather than category labels.
+
+**Audience phrase** is how a message describes your audience when there is no
+post to react to, like "fractional operators" or "independent advisory
+principals". Leave it out and it falls back to "people in <your first title>
+roles". It exists so a message never has to interpolate the prospect's own
+headline, which is where "how Award-Winning Founder | 500+ Speaking Engagements |
+…s are approaching this" came from.
 
 Next: [Step 3 — Source leads](3-source-leads.md)

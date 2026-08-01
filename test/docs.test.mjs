@@ -360,6 +360,40 @@ test("a rejected draft is left blank, and the reason never goes in the person's 
   assert.match(read("src/merge.mjs"), /enforceOutreach/);
 });
 
+test("the title-consent rule reaches the docs people actually paste", () => {
+  // AGENTS.md is the manual, and it is not what most people read. START-HERE is
+  // the twelve-line block they paste, and the Prompt Library is what they copy
+  // out of their own sheet. The rule that would have prevented the 2026-08-01
+  // pilot lived only in the manual, which is a rule an agent meets after it has
+  // already had the ICP conversation.
+  // Backticks, bold and line wrapping are formatting, not content. Compare the
+  // words, so rewrapping a paragraph never fails this and never silently
+  // stops it from checking anything either.
+  const plain = (f) => read(f).replace(/[`*]/g, "").replace(/\s+/g, " ");
+  const READS_BACK = /reads? the exact buyer[_ ]titles and (the )?exclusions back to (me|you) as a list/i;
+  for (const f of ["START-HERE.md", "steps/2-confirm-icp.md", "PROMPTS.md", "sheet/BuildLeadSheet.gs"]) {
+    assert.match(plain(f), /substring/i, `${f} never says why a one-word title is dangerous`);
+    assert.match(plain(f), READS_BACK,
+      `${f} never asks the agent to read the titles back before saving`);
+  }
+  // And the phrase that actually caused it, where the agent will meet it.
+  assert.match(read("START-HERE.md"), /you suggest and proceed/i);
+  assert.match(read("AGENTS.md"), /you suggest and proceed/i);
+});
+
+test("no doc still promises that a run fills the two message columns", () => {
+  // A live run leaves I and J blank for the drafting pass. A doc that says the
+  // run writes them sends someone to a sheet with two empty columns and no idea
+  // whether that is the design or a failure.
+  const claims = /writes? (them |the leads? )?into your sheet with[^.]*suggested (comment|intro)/i;
+  for (const f of DOCS) {
+    assert.ok(!claims.test(read(f)), `${f} still says a run writes the suggested messages`);
+  }
+  // The two-beat flow has to be stated where a non-technical person will see it.
+  assert.match(read("START-HERE.md"), /second pass/i);
+  assert.match(read("START-HERE.md"), /four\s+consecutive words/i);
+});
+
 test("AGENTS.md makes the agent get consent on buyer titles specifically", () => {
   // "you suggest and proceed" is what produced ten marketers for an operations
   // ICP. The refusal has to name that exact phrase, or an agent reading this

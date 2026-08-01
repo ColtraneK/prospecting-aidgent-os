@@ -40,7 +40,13 @@ Set up my prospect research system.
    checklist says so; tell me what check-login and check-sheet actually said.
 7. Interview me about my business and my ideal customer before sourcing anything.
    Look at my website first, propose an ICP, and let me correct it.
-8. Do not invent any leads. Do not use your own web search to find prospects.
+8. Before you save the persona, read the exact buyer titles and the exclusions
+   back to me as a list and get a yes on the titles specifically. Titles are
+   matched as substrings, so a short one like "Founder" also matches
+   "Founder & Fractional CMO" and most of LinkedIn. If I say something like
+   "you suggest and proceed", that is not agreement to a list I have not seen.
+   Ask again, with the list in front of me.
+9. Do not invent any leads. Do not use your own web search to find prospects.
    Everything comes from the repo's commands.
 ```
 
@@ -121,10 +127,22 @@ the twenty minutes. It ends up saved as a file you can edit later.
 ## What happens after setup
 
 You ask your agent for a run each day, or have it set up a scheduled one. It
-keeps researching until 25 qualified leads have been added, and writes them into your
-sheet with, for each one: their name and role, their profile link, their most
-recent post quoted word for word with a link to it, why they are a fit, a
-suggested comment on that post, and a suggested intro message.
+looks first for people who posted about your topics **in the last week**, then
+falls back to searching by job title, and keeps going until 25 qualified leads
+have been added. For each one it writes their name and role, their profile link,
+their most recent post quoted word for word with a link to it, and why they are
+a fit.
+
+Then it does a second pass and writes the two message columns: a suggested
+comment on that post, and a suggested intro message. That part is separate on
+purpose. The run itself gathers the evidence, and then your agent reads each post
+and writes something specific about it, which is checked by the code before it
+lands in the sheet. Among other things, every message has to quote at least four
+consecutive words from the person's actual post. A message about a post nobody
+wrote reads perfectly well, and that check is what stops one reaching you.
+
+So if you look at the sheet the moment the run finishes and those two columns are
+empty, nothing is broken. The second pass has not happened yet.
 
 Then it checks back on the people you already reached out to — who accepted your
 connection request and who wrote back — and records that in the sheet too.

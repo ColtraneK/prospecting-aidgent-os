@@ -32,11 +32,16 @@ It does **not** run with the computer off. There is no cloud worker.
 
 ## What a run does
 
-Appends fresh, deduped leads and refreshes existing ones in your Sheet,
-prioritizes prospects with a last-7-day post or relevant comment about a core
-topic, never sends or connects, never touches your human columns K–Q, and writes
-a Run Log row. If it hits a blocker it stops and exits nonzero, so a scheduler
-can surface the failure.
+Searches LinkedIn content from the past week on your core topics before it
+searches anyone by job title, appends fresh, deduped leads and refreshes existing
+ones in your Sheet, never sends or connects, never touches your human columns
+K–Q, and writes a Run Log row. If it hits a blocker it stops and exits nonzero,
+so a scheduler can surface the failure.
+
+The run leaves the two message columns blank and your agent fills them in a
+second pass, checked by `npm run validate-outreach` before anything is written.
+A re-run never overwrites them, so a message you edited by hand survives every
+scheduled run after it.
 
 ## Your daily loop
 
