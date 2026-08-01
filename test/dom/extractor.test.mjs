@@ -1,20 +1,20 @@
-// dom.test.mjs — runs the real DOM extractor against saved result pages in a
-// real browser. NOT part of `npm test`, because a browser download is not
+// dom/extractor.test.mjs — runs the real DOM extractor against saved pages in
+// a real browser. NOT part of `npm test`, because a browser download is not
 // something a non-technical user should hit on install: run `npm run test:dom`.
 //
 // This exists because the extractor is the one piece of this system that can
-// break without anything failing — LinkedIn changes its markup, the collector
-// matches nothing, and a run reports "0 candidates" as if that were an answer.
-// Pinning it to a saved page is how that stays honest between LinkedIn redesigns.
+// break without anything failing — LinkedIn changes its markup, extraction
+// matches nothing, and column D goes quietly blank. Pinning it to saved pages
+// is how evidence capture stays honest between LinkedIn redesigns.
 //
-// To pin a NEW page shape: save the results page from your browser
-// (Ctrl+S, "Webpage, HTML only") into test/fixtures/ and add a case below.
+// To pin a NEW page shape: save the page from your browser (Ctrl+S, "Webpage,
+// HTML only") into test/fixtures/ and add a case below.
 
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { extractPeopleFromDom, extractActivityFromDom, extractPostsFromDom } from "../../src/worker.mjs";
+import { extractActivityFromDom, extractPostsFromDom } from "../../src/worker.mjs";
 
 const FIXTURES = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "fixtures");
 
@@ -32,58 +32,6 @@ before(async () => {
 
 after(async () => {
   await browser?.close().catch(() => {});
-});
-
-const load = async (file) => {
-  await page.goto(pathToFileURL(path.join(FIXTURES, file)).href, { waitUntil: "domcontentloaded" });
-  return page.evaluate(extractPeopleFromDom);
-};
-
-test("reads current LinkedIn markup, which carries no meaningful class names", async () => {
-  const people = await load("search-results-modern.html");
-  assert.equal(people.length, 3, `expected 3 people, got ${JSON.stringify(people, null, 2)}`);
-
-  const ada = people.find((p) => p.name === "Ada Lovelace");
-  assert.ok(ada, "did not find Ada Lovelace");
-  assert.match(ada.url, /\/in\/ada-lovelace-7b21/);
-  assert.equal(ada.title, "Head of Operations at Analytical Engines");
-  assert.equal(ada.location, "London, United Kingdom");
-
-  // The screen-reader duplicate of the name must not leak into the name.
-  for (const p of people) {
-    assert.ok(!/view /i.test(p.name), `"${p.name}" contains the screen-reader label`);
-    assert.ok(!/profile/i.test(p.name), `"${p.name}" contains the screen-reader label`);
-  }
-});
-
-test("the same person linked twice in one card is one person", async () => {
-  const people = await load("search-results-modern.html");
-  const karen = people.filter((p) => /karen/i.test(p.name));
-  assert.equal(karen.length, 1);
-  assert.equal(karen[0].title, "Director of Research at Retrieval Ltd");
-});
-
-test("degree badges and buttons are never mistaken for people", async () => {
-  const people = await load("search-results-modern.html");
-  for (const p of people) {
-    assert.ok(!/^\d+(st|nd|rd|th)/.test(p.name), `degree badge captured as a name: ${p.name}`);
-    assert.ok(!/^(connect|message|see more)$/i.test(p.name), `a button captured as a name: ${p.name}`);
-    assert.ok(!/^(connect|message)$/i.test(p.title), `a button captured as a title: ${p.title}`);
-  }
-});
-
-test("nothing outside <main> is collected", async () => {
-  const people = await load("search-results-modern.html");
-  assert.ok(!people.some((p) => /my-own-account/.test(p.url)),
-    "collected a link from the nav bar — that is the signed-in user, not a lead");
-});
-
-test("the old 2023 markup still reads, so this is a superset not a swap", async () => {
-  const people = await load("search-results-legacy.html");
-  assert.equal(people.length, 1);
-  assert.equal(people[0].name, "Alan Turing");
-  assert.equal(people[0].title, "Chief Scientist at Bletchley Systems");
-  assert.equal(people[0].location, "Manchester, United Kingdom");
 });
 
 const loadActivity = async (file) => {
@@ -124,59 +72,7 @@ test("the old 2023 activity markup still reads too", async () => {
   assert.match(items[0].dateText, /2023/);
 });
 
-test("the degree badge is captured as a fact, not just filtered out as noise", async () => {
-  // "• 2nd" is noise for the title and a fact about the relationship. The
-  // extractor has to do both things with it, which is why this is pinned.
-  const people = await load("search-results-modern.html");
-  const by = Object.fromEntries(people.map((p) => [p.name, p]));
-
-  assert.equal(by["Ada Lovelace"].degree, "2nd");
-  assert.equal(by["Grace Hopper"].degree, "3rd", "3rd+ collapses to 3rd");
-  // No badge on Karen's card, so no degree. Never inferred from anything else.
-  assert.equal(by["Karen Spärck Jones"].degree, "");
-
-  // And the badge still never leaks into the title or the location.
-  for (const p of people) {
-    assert.ok(!/\b(1st|2nd|3rd)\b/.test(p.title), `degree leaked into title: "${p.title}"`);
-    assert.ok(!/\b(1st|2nd|3rd)\b/.test(p.location), `degree leaked into location: "${p.location}"`);
-  }
-});
-
-test("a degree-shaped word inside a headline is not read as a connection degree", async () => {
-  // "1st Officer" and "3rd Generation Owner" are real headlines. A bare
-  // /\b1st\b/ would turn either into a first-degree connection, which is a
-  // fabricated fact about the person — the one thing this repo must not do.
-  await page.setContent(`
-    <main><ul><li>
-      <a href="https://www.linkedin.com/in/robin-vale/">
-        <span aria-hidden="true">Robin Vale</span>
-        <span class="visually-hidden">View Robin Vale's profile</span>
-      </a>
-      <div>1st Officer at Coastal Air, 3rd generation aviator</div>
-      <div>Seattle, Washington, United States</div>
-    </li></ul></main>`);
-  const [robin] = await page.evaluate(extractPeopleFromDom);
-  assert.equal(robin.name, "Robin Vale");
-  assert.equal(robin.degree, "", `read "${robin.degree}" from a headline that only mentions ranks`);
-  assert.match(robin.title, /1st Officer at Coastal Air/);
-});
-
-test("a badge on its own line is still captured", async () => {
-  await page.setContent(`
-    <main><ul><li>
-      <a href="https://www.linkedin.com/in/lee-park/">
-        <span aria-hidden="true">Lee Park</span>
-      </a>
-      <div>1st</div>
-      <div>Head of Ops at Northwind</div>
-      <div>Denver, Colorado, United States</div>
-    </li></ul></main>`);
-  const [lee] = await page.evaluate(extractPeopleFromDom);
-  assert.equal(lee.degree, "1st");
-  assert.equal(lee.title, "Head of Ops at Northwind");
-});
-
-// --- v5: the wrong-node bug, and the two shapes that captured nothing --------
+// --- the wrong-node bug, and the two shapes that captured nothing ------------
 
 test("a tag list of forty names is never mistaken for the post body", async () => {
   // The Leah Cone row from the 2026-08-01 pilot. The tag strip and the actor
@@ -210,7 +106,10 @@ test("a post whose permalink anchor is gone is still captured, with no link", as
   assert.ok(!/Fractional Chief of Staff/i.test(post.summary), post.summary);
 });
 
-// --- v5: content search, the surface a run now sources from first ------------
+// --- content-search pages: the same walk, with authors ------------------------
+// The agent reads these pages itself via `npm run open`, but the extractor's
+// authorship rules are pinned here because they are the anti-fabrication rules:
+// whose words a card carries must never depend on LinkedIn's DOM order.
 
 const loadPosts = async (file) => {
   await page.goto(pathToFileURL(path.join(FIXTURES, file)).href, { waitUntil: "domcontentloaded" });

@@ -3,8 +3,17 @@
 // strong ICP matches with older or no activity. Recency+topic is a boost, not a gate.
 
 import { normalizeText } from "./url.mjs";
-import { geoIncludes, geoExcludes, personaTopics } from "./searchTerms.mjs";
+import { geoIncludes, geoExcludes } from "./disqualify.mjs";
 import { isRecent } from "./recency.mjs";
+
+/** The subjects this ICP cares about: explicit core_topics, else keywords+signals. */
+function personaTopics(persona) {
+  const arr = (v) => (Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean)
+    : typeof v === "string" && v.trim() ? [v.trim()] : []);
+  if (!persona || typeof persona !== "object") return [];
+  if (Array.isArray(persona.core_topics) && persona.core_topics.length) return arr(persona.core_topics);
+  return [...arr(persona.search_keywords), ...arr(persona.buying_signals)];
+}
 
 // A required buyer-title match (25) plus one more strong ICP signal — geography
 // (12), industry (12), or recent activity (12) — clears this. Recent-topic

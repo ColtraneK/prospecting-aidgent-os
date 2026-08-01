@@ -6,15 +6,18 @@
 // Celebrate, Comment, Share, Repost, Post). Navigation and extraction are
 // read-only. On any blocker page it stops safely and exits nonzero.
 //
+// v6 shape: there is no search parser here. The agent crafts search URLs and
+// reads the pages `openPage` saves; the worker's own extraction runs only on
+// the surfaces it opens to VERIFY a nomination — the profile and its activity
+// page — via the structural extractor `extractUpdatesFromDom`.
+//
 // playwright is imported lazily so the pure logic modules and tests do not
 // require it to be installed.
 
-import { detectBlocker, diagnoseEmptyResults, diagnoseActivity } from "./blockers.mjs";
+import { detectBlocker, diagnoseActivity } from "./blockers.mjs";
 import { preflightSession, PROFILE_MISSING, PROFILE_NEVER_SIGNED_IN } from "./session.mjs";
 import { parseActivityDate } from "./recency.mjs";
 import { createPacer } from "./pacing.mjs";
-import { canonicalizeLinkedInUrl, canonicalKey } from "./url.mjs";
-import { buildSources, SENT_INVITES_URL, CONNECTIONS_URL, MESSAGING_URL } from "./searchTerms.mjs";
 import { disqualify } from "./disqualify.mjs";
 
 export const FORBIDDEN_ACTION_LABELS = [
@@ -50,18 +53,10 @@ async function launch({ profilePath, liAt = "", channel = "chrome", headless = t
   }
   // Last line of defence, below the CLI preflight. launchPersistentContext
   // CREATES whatever directory it is handed, so an unreal profile path is not
-  // an error here — it is a brand-new signed-out Chrome, and the run only
-  // finds out at the login wall. Refuse instead of manufacturing a profile.
-  //
-  // setup-login is the one caller that legitimately makes a profile that does
-  // not exist yet, so it passes allowNewProfile. Even then the placeholder is
-  // refused: signing into it would leave a real session at a path nobody meant.
-  //
-  // With an li_at cookie the profile line is optional, and .env.example ships
-  // the placeholder — so a perfectly valid cookie-only setup routinely carries
-  // a junk path. That must not be fatal, and it must not be persisted to disk
-  // either: drop the profile and run the cookie through a plain context, so
-  // nothing gets created at a path nobody chose.
+  // an error here — it is a brand-new signed-out Chrome. Refuse instead of
+  // manufacturing a profile. setup-login is the one caller that legitimately
+  // makes a profile that does not exist yet (allowNewProfile). With an li_at
+  // cookie a junk profile path is dropped rather than persisted to disk.
   let usableProfile = "";
   if (profilePath) {
     const v = preflightSession({ chromeProfile: profilePath });
@@ -102,7 +97,7 @@ async function launch({ profilePath, liAt = "", channel = "chrome", headless = t
 /**
  * Preflight: is there a working signed-in LinkedIn session? Opens the feed,
  * runs the same blocker detection as a real run, and reports a named verdict
- * instead of letting the first sourcing run be the discovery mechanism.
+ * instead of letting the first run be the discovery mechanism.
  * Returns { ok, kind, reason }.
  */
 export async function checkLogin({ config }) {
@@ -128,35 +123,6 @@ export async function checkLogin({ config }) {
     ).catch(() => false);
     if (!signedIn) return { ok: false, kind: "signed_out", reason: "the feed loaded without any signed-in navigation — the session cookie is missing or expired." };
     return { ok: true, kind: "signed_in", reason: "LinkedIn feed loads with a live session." };
-  } catch (err) {
-    if (err instanceof BlockerError) return { ok: false, kind: err.kind, reason: err.message };
-    return { ok: false, kind: "error", reason: err.message };
-  } finally {
-    await context.close().catch(() => {});
-  }
-}
-
-/**
- * Diagnostic: open ONE LinkedIn URL with the signed-in session, read-only, and
- * save its rendered HTML + a screenshot to run-artifacts. This exists so that
- * when extraction misses something on the live DOM, a copy of that DOM can be
- * captured once and turned into a fixture — instead of anyone hand-editing
- * selectors against a page only they can see.
- */
-export async function savePageCopy({ config, url, label = "page" }) {
-  const context = await launch({
-    profilePath: config.chromeProfile,
-    liAt: config.liAt,
-    channel: config.chromeChannel,
-    headless: true,
-  });
-  try {
-    const page = context.pages()[0] || (await context.newPage());
-    const resp = await page.goto(url, { waitUntil: "domcontentloaded" }).catch(() => null);
-    await page.waitForTimeout(4000); // let lazy content render
-    await guard(page, resp ? resp.status() : 0);
-    const shot = await saveSnapshot(page, config.outDir, `copy-${label}`);
-    return { ok: true, snapshot: shot };
   } catch (err) {
     if (err instanceof BlockerError) return { ok: false, kind: err.kind, reason: err.message };
     return { ok: false, kind: "error", reason: err.message };
@@ -328,19 +294,20 @@ export async function runInspect({ nominations = [], persona = {}, config, budge
  * two fields are carried as provenance, never as facts.
  */
 export function evidenceEntry(row, profile, persona, { unreachable = false, unreachableReason = "" } = {}) {
-  const p = profile || {};
+  const merged = mergeProfile({ name: row.name || "", url: row.url }, profile || {});
   const facts = {
-    name: row.name || "",
+    name: merged.name,
     url: row.url,
-    headline: p.headline || "",
-    title: p.headline || "",
-    company: p.company || "",
-    location: p.location || "",
-    degree: p.degree || "",
+    headline: merged.headline || "",
+    title: merged.title || merged.headline || "",
+    company: merged.company || "",
+    location: merged.location || "",
+    degree: merged.degree || "",
     unreachable,
     unreachableReason,
   };
   const dq = disqualify(persona, facts);
+  const p = profile || {};
   return {
     key: row.url,
     name: facts.name,
@@ -373,10 +340,6 @@ async function guard(page, status = 0) {
 }
 
 /**
- * HEADED setup: open LinkedIn so the user can sign in manually. We never type
- * credentials or complete login. We wait until the user has a session, then exit.
- */
-/**
  * Open a headed window so the PERSON signs into LinkedIn themselves, then wait
  * until their feed actually loads, then shut the browser down cleanly.
  *
@@ -384,15 +347,9 @@ async function guard(page, status = 0) {
  * and told the person to press Ctrl+C. Ctrl+C kills the Node process, so the
  * `context.close()` underneath that line was unreachable and Chrome was killed
  * rather than closed. Chrome writes its cookie store on a clean shutdown, so a
- * sign-in that the person completed perfectly could still fail to reach disk —
- * leaving a profile directory holding a cookie FILE (created at launch) and no
- * LinkedIn session inside it. That is indistinguishable from success to
- * anything that only looks at the filesystem, which is precisely how the setup
- * checklist came to print READY over a profile that had never been signed in.
- *
+ * sign-in that the person completed perfectly could still fail to reach disk.
  * So: detect success ourselves, close the context properly to flush cookies,
- * and hand back a verdict the caller can record. Ctrl+C is still honoured, but
- * now it closes the browser on the way out instead of severing it.
+ * and hand back a verdict the caller can record.
  *
  * @returns {{ok:boolean, reason:string}}
  */
@@ -422,8 +379,8 @@ export async function setupLogin({
 
     const deadline = Date.now() + (waitMs > 0 ? waitMs : timeoutMs);
     while (Date.now() < deadline) {
-      // A closed window is the person telling us they are done, one way or the
-      // other. Stop rather than polling a dead context.
+      // A closed window is the person telling us they are done. Stop rather
+      // than polling a dead context.
       if (!context.pages().length) {
         return { ok: false, reason: "the window was closed before a signed-in feed was seen." };
       }
@@ -450,277 +407,24 @@ export async function setupLogin({
 }
 
 /**
- * Count how many NEW rows a run has earned so far.
- *
- * The target used to cap people INSPECTED, which meant "pilot 10" delivered ten
- * profiles opened and, after scoring, often two rows in the sheet. What anyone
- * actually asks for is ten LEADS. So acceptance is decided inside the collection
- * loop — `accept` is the same pure scorer the pipeline runs, called on facts
- * this browser observed, so nothing about "no model decides who qualifies"
- * changes — and only a candidate that both scores accepted AND is not already in
- * the sheet moves the counter.
- *
- * Duplicates still get their row refreshed downstream; they just do not count as
- * added, because refreshing a row you already had is not a new lead.
- */
-export function makeAddedCounter({ accept, existingKeys }) {
-  const keys = existingKeys instanceof Set ? existingKeys : new Set(existingKeys || []);
-  const addedKeys = new Set();
-  return {
-    /** Register one inspected candidate; returns true if it counts as added. */
-    consider(candidate) {
-      let ok = false;
-      try {
-        ok = accept ? !!accept(candidate) : false;
-      } catch {
-        ok = false; // a scorer that throws must never stop the run
-      }
-      if (!ok) return false;
-      const key = canonicalKey({ url: candidate.url, name: candidate.name, company: candidate.company }).key;
-      if (!key || keys.has(key) || addedKeys.has(key)) return false;
-      addedKeys.add(key);
-      return true;
-    },
-    get added() {
-      return addedKeys.size;
-    },
-  };
-}
-
-/**
- * Why a run stopped short of its target. Never a failure — a short day is the
- * correct outcome when the cap or the sources run out — but always said out
- * loud, because "10 of 25" read as "25" is how someone talks themselves into
- * raising the cap.
- */
-export function shortfallFor({ added, target, capReached, inspected, sourcesWalked, sourcesTotal }) {
-  if (added >= target) return null;
-  if (capReached) {
-    return {
-      kind: "daily_cap",
-      text: `${added} of ${target} added; stopped at the daily inspection cap after ${inspected} profile(s).`,
-    };
-  }
-  return {
-    kind: "sources_exhausted",
-    text: `${added} of ${target} added; walked all ${sourcesWalked} of ${sourcesTotal} source(s) and ran out of people to inspect (${inspected} inspected).`,
-  };
-}
-
-/**
- * HEADLESS research run. Returns { candidates, blocker, inspected, added }.
- * candidates carry only VERIFIED, captured fields, and include the ones that did
- * NOT qualify, so every rejection still reaches the report with its reason.
- * Why-Them/opener composition happens in the pipeline (cli.mjs), not here.
- *
- * `accept` and `existingKeys` are what make `--target` mean ADDED rows. Without
- * them the run falls back to the old inspected-count behaviour rather than
- * looping forever.
- */
-export async function runResearch({ persona, config, accept = null, existingKeys = null }) {
-  const pacer = createPacer({
-    minDelayMs: config.minDelayMs,
-    maxDelayMs: config.maxDelayMs,
-    dailyCap: config.dailyCap,
-  });
-  const sources = buildSources(persona, config);
-  const context = await launch({ profilePath: config.chromeProfile, liAt: config.liAt, channel: config.chromeChannel, headless: config.headless });
-  const page = context.pages()[0] || (await context.newPage());
-  const candidates = [];
-  const seen = new Set();
-  const sourceReports = [];
-  const counter = makeAddedCounter({ accept, existingKeys });
-  // With no scorer supplied there is nothing to count, so the inspected count
-  // stands in for it and the run behaves exactly as it did before.
-  const reached = () => (accept ? counter.added >= config.target : candidates.length >= config.target);
-  let blocker = null;
-  let unreadableInARow = 0;
-
-  try {
-    for (const source of sources) {
-      if (reached() || pacer.capReached) break;
-      const resp = await page.goto(source.url, { waitUntil: "domcontentloaded" }).catch(() => null);
-      await guard(page, resp ? resp.status() : 0);
-      await pacer.wait();
-
-      const results = source.kind === "connections"
-        ? await collectConnections(page)
-        : source.kind === "content"
-          ? await collectContentResults(page)
-          : await collectSearchResults(page);
-
-      // A source that yields nothing is either an empty search (fine) or a page
-      // we can no longer read (a defect). Never let the second look like the
-      // first: find out which, and stop early if the page is unreadable rather
-      // than repeating the same failure across every remaining search.
-      if (!results.length) {
-        const ev = await pageEvidence(page);
-        const d = diagnoseEmptyResults(ev);
-        sourceReports.push({ url: source.url, kind: d.kind, reason: d.reason, profileLinks: ev.profileLinkCount });
-        if (d.benign) { unreadableInARow = 0; continue; }
-        unreadableInARow++;
-        const shot = unreadableInARow === 1 ? await saveSnapshot(page, config.outDir, d.kind) : null;
-        if (unreadableInARow >= 2) {
-          throw new BlockerError(
-            d.kind,
-            `${d.reason} Two sources in a row came back unreadable, so the run stopped instead of ` +
-            `walking the rest.${shot ? ` Snapshot: ${shot}` : ""}`,
-          );
-        }
-        continue;
-      }
-      unreadableInARow = 0;
-      sourceReports.push({ url: source.url, kind: "ok", found: results.length });
-      let fromThisSource = 0;
-      for (const r of results) {
-        if (reached()) break;
-        if (source.limit && fromThisSource >= source.limit) break;
-        const canon = canonicalizeLinkedInUrl(r.url);
-        if (!canon || seen.has(canon)) continue;
-        seen.add(canon);
-        if (!pacer.tick()) break; // daily cap — the hard stop, never negotiated
-        const profile = await inspectProfile(page, canon, pacer);
-        const candidate = { ...mergeProfile(r, profile), url: canon, fromConnection: source.kind === "connections" };
-        candidates.push(candidate);
-        counter.consider(candidate);
-        fromThisSource++;
-      }
-    }
-  } catch (err) {
-    if (err instanceof BlockerError) {
-      blocker = { kind: err.kind, reason: err.message };
-    } else {
-      blocker = { kind: "error", reason: err.message };
-    }
-  } finally {
-    await context.close().catch(() => {});
-  }
-
-  // A run that walked every source, found nobody, and reported no reason is the
-  // worst outcome this system can produce: it looks like a clean run. Give it a
-  // reason, so it reaches the Run Log, the console, and the exit code.
-  if (!candidates.length && !blocker) {
-    const benign = sourceReports.filter((r) => r.kind === "no_results").length;
-    blocker = {
-      kind: benign === sourceReports.length && benign > 0 ? "no_results" : "no_candidates",
-      reason:
-        `walked ${sourceReports.length} of ${sources.length} source(s) and extracted nobody. ` +
-        (benign === sourceReports.length && benign > 0
-          ? "Every search legitimately returned no results — the persona's titles/keywords are too narrow."
-          : `Breakdown: ${summarize(sourceReports)}.`),
-    };
-  }
-
-  const shortfall = blocker || !accept
-    ? null
-    : shortfallFor({
-        added: counter.added, target: config.target, capReached: pacer.capReached,
-        inspected: pacer.inspected, sourcesWalked: sourceReports.length, sourcesTotal: sources.length,
-      });
-
-  return { candidates, blocker, inspected: pacer.inspected, added: counter.added, shortfall, sourceReports };
-}
-
-/**
- * AGENT-READ run. The agent opened LinkedIn in its own browser tab, read the
- * search results, and handed back rows. We do not trust those rows — we trust
- * that the profile URLs were on a page — so this opens each one with the
- * signed-in profile and captures the evidence itself, exactly as a search-driven
- * run would. Scoring still happens in the pipeline, on facts this code observed.
- *
- * This exists because LinkedIn's search markup changes and a hardcoded parser
- * goes to zero when it does. Reading the page is the part an agent is good at.
- * Deciding who qualifies is the part it must never do.
- */
-export async function runAgentRead({ observed, config, accept = null, existingKeys = null }) {
-  const pacer = createPacer({
-    minDelayMs: config.minDelayMs,
-    maxDelayMs: config.maxDelayMs,
-    dailyCap: config.dailyCap,
-  });
-  const context = await launch({
-    profilePath: config.chromeProfile,
-    liAt: config.liAt,
-    channel: config.chromeChannel,
-    headless: config.headless,
-  });
-  const page = context.pages()[0] || (await context.newPage());
-  const candidates = [];
-  const unreachable = [];
-  const counter = makeAddedCounter({ accept, existingKeys });
-  const reached = () => (accept ? counter.added >= config.target : candidates.length >= config.target);
-  let blocker = null;
-
-  try {
-    for (const row of observed) {
-      if (reached() || pacer.capReached) break;
-      if (!pacer.tick()) break; // daily cap
-      try {
-        const profile = await inspectProfile(page, row.url, pacer);
-        const candidate = { ...mergeProfile(row, profile), url: row.url };
-        candidates.push(candidate);
-        counter.consider(candidate);
-      } catch (err) {
-        if (err instanceof BlockerError) throw err;
-        // One dead profile is not a dead run: record it and keep going.
-        unreachable.push({ url: row.url, reason: err.message });
-      }
-    }
-  } catch (err) {
-    blocker = err instanceof BlockerError
-      ? { kind: err.kind, reason: err.message }
-      : { kind: "error", reason: err.message };
-  } finally {
-    await context.close().catch(() => {});
-  }
-
-  if (!candidates.length && !blocker) {
-    blocker = {
-      kind: "no_candidates",
-      reason:
-        `the agent supplied ${observed.length} row(s) and none of them opened. ` +
-        (unreachable.length
-          ? `First failure: ${unreachable[0].reason}`
-          : "Nothing was attempted — check the target and the daily cap."),
-    };
-  }
-
-  const shortfall = blocker || !accept
-    ? null
-    : shortfallFor({
-        added: counter.added, target: config.target, capReached: pacer.capReached,
-        inspected: pacer.inspected, sourcesWalked: observed.length, sourcesTotal: observed.length,
-      });
-
-  return { candidates, blocker, inspected: pacer.inspected, added: counter.added, shortfall, unreachable };
-}
-
-/**
- * Fold first-hand profile observations into a search/observed row WITHOUT
- * letting an empty field erase a captured one. The old spread ({...row,
- * ...profile}) quietly wiped the search card's location with the profile
- * page's "" whenever the profile parse missed — which zeroed everyone's
- * geography points. A blank never overwrites a fact.
+ * Fold first-hand profile observations into a nomination row WITHOUT letting
+ * an empty field erase a captured one. A blank never overwrites a fact.
  */
 export function mergeProfile(base, profile) {
   const merged = { ...base };
   for (const [k, v] of Object.entries(profile || {})) {
     if (v !== "" && v !== null && v !== undefined) merged[k] = v;
   }
-  // A search card sometimes carries no title line; the profile headline is the
+  // A base row sometimes carries no title line; the profile headline is the
   // same fact observed first-hand, so it may stand in. Never the reverse.
   if (!merged.title && merged.headline) merged.title = merged.headline;
-  // Degree is the one field where the BASE is the better witness: the search
-  // card and the connections list put the badge in a known place, while the
-  // profile top card is a wall of text a headline can imitate. So a captured
-  // base degree wins, and the profile may only fill a blank.
+  // Degree is the one field where the BASE is the better witness when it has
+  // one: a card badge sits in a known place, while the profile top card is a
+  // wall of text a headline can imitate. A captured base degree wins.
   if (base && base.degree) merged.degree = base.degree;
-  // Activity is the second such field, and only when the base is a content-search
-  // hit. That post is why this person is a candidate at all: it is recent by
-  // construction and on one of the persona's topics, which the newest thing on
-  // their activity page may not be. Letting a profile visit replace it would
-  // hand the comment and the DM a post nobody searched for. Both were read
-  // first-hand by this browser, so neither is less verified than the other.
+  // Activity captured with the base (e.g. the post that led to the nomination
+  // being verified) survives a profile visit that saw something newer only if
+  // the base capture was first-hand. Both sides here are this browser's own.
   if (base && base.activity && base.activityStatus === "captured") {
     merged.activity = base.activity;
     merged.activityStatus = "captured";
@@ -728,198 +432,9 @@ export function mergeProfile(base, profile) {
   return merged;
 }
 
-function summarize(reports) {
-  const counts = {};
-  for (const r of reports) counts[r.kind] = (counts[r.kind] || 0) + 1;
-  return Object.entries(counts).map(([k, n]) => `${n}× ${k}`).join(", ") || "no sources walked";
-}
-
 /**
- * Read-only extraction of people-search result cards.
- *
- * This deliberately does NOT key on LinkedIn's class names. Those are generated
- * and they change; a collector built on `.entity-result` returns zero the day
- * they rename it, and zero is indistinguishable from "nobody matched". The one
- * thing a people-search result page cannot stop doing is linking to profiles,
- * so we anchor on `a[href*='/in/']` inside <main> and read the card around it.
- */
-async function collectSearchResults(page) {
-  // Results render after domcontentloaded. Wait for the anchor rather than
-  // trusting the pacing delay to be long enough.
-  await page.waitForSelector("main a[href*='/in/']", { timeout: 12000 }).catch(() => {});
-  return page.evaluate(extractPeopleFromDom).catch(() => []);
-}
-
-/**
- * Read-only extraction of a CONTENT-search results page.
- *
- * Each hit is a post from the last week on one of the persona's topics, so the
- * person who wrote it arrives already carrying the evidence: the post text, its
- * date, its permalink. That is the difference from people search, where the post
- * is discovered later at profile-inspection time and often not at all.
- *
- * Shaped exactly like collectSearchResults' rows — name, url, plus an `activity`
- * — so runResearch treats both the same and mergeProfile decides what a profile
- * visit is allowed to overwrite.
- */
-async function collectContentResults(page) {
-  await page.waitForSelector("main a[href*='/in/']", { timeout: 12000 }).catch(() => {});
-  const posts = await page.evaluate(extractUpdatesFromDom, { withAuthor: true }).catch(() => []);
-  return contentRowsFromPosts(posts);
-}
-
-/**
- * Turn extracted post cards into candidate rows. Pure, and exported so the rules
- * about WHOSE words end up in column D are testable without a browser.
- */
-export function contentRowsFromPosts(posts) {
-  const rows = [];
-  const seen = new Set();
-  for (const p of posts || []) {
-    if (!p || !p.author || !p.author.url) continue;
-    // A repost is somebody else's words. Sourcing someone because of it, then
-    // quoting it back to them as "your post on …", attributes a stranger's
-    // writing to them — and it would pass the grounding check, because the words
-    // really are in column D. Content search is looking for people who wrote
-    // something this week; a resharer is not one.
-    if (p.type === "repost") continue;
-    const key = (p.author.url.match(/\/in\/([^/?#]+)/) || [])[1];
-    if (!key || seen.has(key.toLowerCase())) continue;
-    seen.add(key.toLowerCase());
-    rows.push({
-      name: p.author.name,
-      url: p.author.url,
-      title: "",
-      location: "",
-      degree: "",
-      activity: {
-        summary: p.summary || "",
-        date: normalizeDate(p.dateText),
-        url: p.url || "",
-        type: p.type === "comment" ? "comment" : "post",
-      },
-      activityStatus: "captured",
-      researchSource: "linkedin_content_search",
-    });
-  }
-  return rows;
-}
-
-/**
- * The DOM walk itself, as a standalone function so it can be run against a
- * saved page in `npm run test:dom` instead of only against live LinkedIn.
- * It must close over nothing: Playwright ships its source into the page.
- */
-export function extractPeopleFromDom() {
-  {
-    const root = document.querySelector("main") || document.body;
-    if (!root) return [];
-    // A line that is a degree badge and NOTHING else. LinkedIn renders it as
-    // "2nd", "• 2nd", "3rd+" and, for screen readers, "2nd degree connection".
-    // All of those are noise in a title; "1st Officer at Coastal Air" is not.
-    const isDegreeBadgeLine = (s) =>
-      /^\d+(st|nd|rd|th)\+?(\s*degree)?(\s*connection)?\s*([•·|]|$)/i.test(s);
-    const out = new Map();
-    for (const a of root.querySelectorAll("a[href*='/in/']")) {
-      const href = a.href || "";
-      const m = href.match(/\/in\/([^/?#]+)/);
-      if (!m) continue;
-      const key = m[1].toLowerCase();
-      if (out.has(key)) continue;
-
-      // The visible name sits in an aria-hidden span (the anchor's own text
-      // repeats it and appends "View X's profile" for screen readers).
-      const hidden = a.querySelector("span[aria-hidden='true']");
-      let name = (hidden?.textContent || a.textContent || "").replace(/\s+/g, " ").trim();
-      name = name.split(/\bView\b|['’]s profile/)[0].trim();
-      // Degree badges ("• 2nd") and empty/CTA anchors are not people.
-      if (!name || name.length > 120) continue;
-      if (/^(\d+(st|nd|rd|th)|view|message|connect|follow|see more)\b/i.test(name)) continue;
-
-      // Title and location are simply the first two lines of the card that are
-      // not the person's own name, a screen-reader label, a degree badge, or a
-      // button. innerText renders the anchor as one inline run — "Ada Lovelace
-      // View Ada Lovelace's profile • 2nd" — so leading-name is the real filter.
-      const card = a.closest("li") || a.parentElement?.parentElement || a;
-      const lower = name.toLowerCase();
-      const rawLines = (card.innerText || "")
-        .split("\n")
-        .map((s) => s.replace(/\s+/g, " ").trim())
-        .filter(Boolean);
-
-      // The degree badge is noise for the title, but it is a FACT about the
-      // person, so capture it before throwing it away. Anchored on the shape
-      // LinkedIn actually renders — a bullet-prefixed badge, or a line that is
-      // nothing but the badge — rather than a bare /\b1st\b/, which would read
-      // "1st Officer" in someone's headline as a first-degree connection.
-      // "3rd+" collapses to "3rd". Blank when not seen; never inferred.
-      let degree = "";
-      const badge = (card.innerText || "").match(/[•·]\s*(1st|2nd|3rd)\+?/i);
-      if (badge) degree = badge[1].toLowerCase();
-      else {
-        const own = rawLines.find((s) => /^(1st|2nd|3rd)\+?(\s*degree)?(\s*connection)?\s*$/i.test(s));
-        if (own) degree = own.slice(0, 3).toLowerCase();
-      }
-
-      const lines = rawLines
-        .filter((s) => {
-          if (!s || s.toLowerCase().startsWith(lower)) return false;
-          if (/\bview\b[\s\S]*\bprofile\b/i.test(s)) return false;
-          // A degree badge and NOTHING else — bare ("2nd"), spelled out
-          // ("2nd degree connection", which LinkedIn also renders for screen
-          // readers), or followed by a separator. A headline that opens
-          // "1st Officer at Coastal Air" is a title, not a degree, and dropping
-          // it used to cost that person their title entirely.
-          if (isDegreeBadgeLine(s)) return false;
-          if (/^(view|message|connect|follow|see more|status is)\b/i.test(s)) return false;
-          if (/^[•·|]/.test(s)) return false;
-          if (/mutual connection/i.test(s)) return false; // social proof, not a title
-          return true;
-        });
-
-      out.set(key, {
-        name,
-        url: href,
-        title: lines[0] || "",
-        location: lines[1] || "",
-        degree,
-      });
-    }
-    return [...out.values()];
-  }
-}
-
-/**
- * What is actually on this page? Used only when a source produced nothing, to
- * tell "nobody matched" apart from "we cannot read this page any more".
- */
-async function pageEvidence(page) {
-  return page.evaluate(() => {
-    const root = document.querySelector("main") || document.body;
-    return {
-      url: location.href,
-      profileLinkCount: root ? root.querySelectorAll("a[href*='/in/']").length : 0,
-      bodyTextSample: (root && root.innerText ? root.innerText : "").slice(0, 3000),
-    };
-  }).catch(() => ({ url: "", profileLinkCount: 0, bodyTextSample: "" }));
-}
-
-/**
- * Did we really observe this surface, or did we just fail to read it?
- *
- * Rows came back — we observed it. Nothing came back — believe that only when
- * the page itself says the list is empty. Anything else is an unread page, and
- * an unread page is not evidence that nobody replied.
- */
-async function trustEmpty(page, rows) {
-  if (Array.isArray(rows) && rows.length) return true;
-  const d = diagnoseEmptyResults(await pageEvidence(page));
-  return d.benign;
-}
-
-/**
- * Save a screenshot + the rendered HTML of a page we could not read, so the
- * next person does not have to reproduce the failure to see it.
+ * Save a screenshot + the rendered HTML of a page, so the agent (or the next
+ * person) can read exactly what the browser saw.
  * Best-effort: a failure to write a diagnostic must never mask the real problem.
  */
 async function saveSnapshot(page, outDir, label) {
@@ -928,7 +443,7 @@ async function saveSnapshot(page, outDir, label) {
     const fs = await import("node:fs");
     const path = await import("node:path");
     fs.mkdirSync(outDir, { recursive: true });
-    const base = path.join(outDir, `diagnostic-${label}`);
+    const base = path.join(outDir, `${label}`);
     await page.screenshot({ path: `${base}.png`, fullPage: false }).catch(() => {});
     const html = await page.content().catch(() => "");
     if (html) fs.writeFileSync(`${base}.html`, html.slice(0, 2_000_000));
@@ -939,43 +454,17 @@ async function saveSnapshot(page, outDir, label) {
 }
 
 /**
- * Read-only extraction of the user's own existing connections (opt-in mode).
- * Tries LinkedIn's named connection-card classes first, then falls back to the
- * same structural walk the search collector uses — a connections list is also
- * just a list of links to profiles, so a class rename cannot empty it.
- */
-async function collectConnections(page) {
-  await page.waitForSelector("main a[href*='/in/']", { timeout: 12000 }).catch(() => {});
-  const carded = await page.$$eval("li.mn-connection-card, div.mn-connection-card", (nodes) =>
-    nodes.map((n) => {
-      const nameEl = n.querySelector(".mn-connection-card__name");
-      const titleEl = n.querySelector(".mn-connection-card__occupation");
-      const linkEl = n.querySelector("a[href*='/in/']");
-      return {
-        name: nameEl?.textContent?.trim() || "",
-        title: titleEl?.textContent?.trim() || "",
-        url: linkEl?.href || "",
-        location: "",
-      };
-    }).filter((r) => r.name && r.url),
-  ).catch(() => []);
-  const rows = carded.length ? carded : await page.evaluate(extractPeopleFromDom).catch(() => []);
-  // Everyone on your own connections page is a first-degree connection. That is
-  // an observation about the page we opened, not an inference about the person.
-  return rows.map((r) => ({ ...r, degree: "1st" }));
-}
-
-/**
- * The update-card DOM walk. ONE function, used for two surfaces — a profile's
- * recent-activity page and a content-search results page — because they are the
- * same shape: a list of update cards, each with a body, a stamp, a permalink,
- * and (on content search) an author. Exported standalone so `npm run test:dom`
- * can run it against saved pages. It must close over nothing: Playwright ships
- * its source into the page, so everything it needs is defined inside it.
+ * The update-card DOM walk. ONE function, used for the surfaces that carry
+ * update cards — a profile's recent-activity page, and (when the agent saved
+ * one with `open`) a content-search page — because they are the same shape: a
+ * list of update cards, each with a body, a stamp, a permalink, and (on
+ * content search) an author. Exported standalone so `npm run test:dom` can run
+ * it against saved pages. It must close over nothing: Playwright ships its
+ * source into the page, so everything it needs is defined inside it.
  *
- * `opts.withAuthor` asks for the card's author link as well. On an activity page
- * every card has the same author and it is not needed; on a content search it is
- * the whole point, because the author IS the candidate.
+ * `opts.withAuthor` asks for the card's author link as well. On an activity
+ * page every card has the same author and it is not needed; on a content
+ * search it is the whole point, because the author IS the candidate.
  *
  * It deliberately keys on NOTHING LinkedIn can rename:
  *
@@ -984,13 +473,10 @@ async function collectConnections(page) {
  * - The BODY is the card minus its actor header. The header is whatever element
  *   wraps the author link, and its lines are removed by value before the longest
  *   remaining line is taken. Without that step a long headline in the header
- *   ("Fractional COO for lean advisory firms serving larger clients…") competes
- *   with a short post and sometimes wins, which is one half of the wrong-node bug.
- * - A line made of the card's own linked NAMES is a tag strip, not prose. A
- *   celebration post that tags forty people put forty names in column D and then
- *   into the suggested DM. Three or more of the card's linked names covering
- *   most of the line is a structural signature of that strip; two names
- *   mentioned inside a real sentence is not.
+ *   competes with a short post and sometimes wins (the wrong-node bug).
+ * - A line made of the card's own linked NAMES is a tag strip, not prose. Three
+ *   or more of the card's linked names covering most of the line is the
+ *   structural signature of that strip; two names inside a real sentence is not.
  * - The date comes from a <time> element or the "2d •"-style stamp anywhere in
  *   the card; "commented" in the header marks a comment rather than a post.
  *
@@ -1105,7 +591,7 @@ export function extractUpdatesFromDom(opts) {
       // have left the card and entered the feed — that boundary is structural
       // and survives any redesign, unlike text-length guesses (which stopped
       // short of the timestamp on the live page and cost every candidate
-      // their recency points).
+      // their recency).
       let card = a;
       while (card.parentElement && card.parentElement !== root) {
         const next = card.parentElement;
@@ -1125,9 +611,9 @@ export function extractUpdatesFromDom(opts) {
     // A card whose permalink anchor is gone is still an update. LinkedIn has
     // moved the permalink behind an overflow menu before, and when it does the
     // loop above returns nothing at all — which reads as "they never posted"
-    // and is how three of ten rows came back with an empty column D. So fall
-    // back to the other thing an update card cannot stop doing: carrying a
-    // timestamp. No permalink means no column E, and that is the honest
+    // and is how three of ten rows once came back with an empty column D. So
+    // fall back to the other thing an update card cannot stop doing: carrying
+    // a timestamp. No permalink means no column E, and that is the honest
     // outcome — an unlinkable post is still a post we read.
     if (!items.length) {
       for (const card of root.querySelectorAll("li, article")) {
@@ -1172,13 +658,11 @@ async function inspectProfile(page, profileUrl, pacer) {
     let company = "";
     let degree = "";
     {
-      // The top card carries the same degree badge the search card does. This is
-      // only ever a FALLBACK: mergeProfile refuses to let a blank overwrite a
-      // value the search card already captured.
-      const main = document.querySelector("main") || document.body;
+      // The top card carries the same degree badge the search card does.
       // Anchored per LINE, never across a 1500-character blob: "Owner · 3rd
       // generation aviator" is a headline, and reading "3rd" out of it would
       // write a fabricated relationship into column F.
+      const main = document.querySelector("main") || document.body;
       const lines = (main.innerText || "").split("\n").map((s) => s.replace(/\s+/g, " ").trim());
       for (const line of lines.slice(0, 40)) {
         const m = line.match(/^(?:[•·]\s*)?(1st|2nd|3rd)\+?(?:\s*degree)?(?:\s*connection)?\s*(?:[•·|]|$)/i)
@@ -1229,7 +713,7 @@ async function inspectProfile(page, profileUrl, pacer) {
       date: normalizeDate(activity.dateText),
       url: activity.url || "",
       // "repost" is carried through rather than flattened into "post". Column S
-      // then says whose words those are, and the drafted message says "your
+      // then says whose words those are, and a drafted message says "your
       // repost on …" instead of crediting someone else's writing to them.
       type: activity.type === "comment" ? "comment" : activity.type === "repost" ? "repost" : "post",
     };
@@ -1237,9 +721,8 @@ async function inspectProfile(page, profileUrl, pacer) {
     out.activityVerdict = null;
   } else {
     // Nothing extracted. Was there really nothing, or can we not read the page?
-    // The difference matters: an unreadable page must never quietly cost this
-    // person their recency points — and it must never be reported as "they do
-    // not post", which is a claim about them rather than about our parser.
+    // The difference matters: an unreadable page must never be reported as
+    // "they do not post", which is a claim about them rather than our parser.
     const ev = await page.evaluate(() => {
       const root = document.querySelector("main") || document.body;
       return {
@@ -1249,138 +732,16 @@ async function inspectProfile(page, profileUrl, pacer) {
     }).catch(() => ({ updateLinks: 0, bodyTextSample: "" }));
     const d = diagnoseActivity({ ...ev, itemCount: 0 });
     out.activityVerdict = { kind: d.kind, reason: d.reason, benign: d.benign };
-    // The two words the rest of the system already understands, now derived
-    // from a named verdict rather than an inline guess.
     out.activityStatus = d.benign ? "none" : "unreadable";
   }
   return out;
 }
 
 /**
- * READ-ONLY follow-up pass.
- *
- * Opens three of your own LinkedIn pages — sent invitations, connections, and
- * the messaging list — and reports what it saw. It clicks nothing that sends,
- * withdraws, accepts or replies. Nothing here changes anything on LinkedIn.
- *
- * Returns the plain observation object planFollowUp() consumes:
- *   { connections, pendingInvites, threads,
- *     observedConnections, observedInvites, observedMessages, blocker }
- * Each observed* flag is false when that surface could not be read, so the
- * planner records "unknown" instead of guessing a negative.
- */
-export async function runFollowUp({ config }) {
-  const pacer = createPacer({
-    minDelayMs: config.minDelayMs,
-    maxDelayMs: config.maxDelayMs,
-    dailyCap: config.dailyCap,
-  });
-  const context = await launch({
-    profilePath: config.chromeProfile,
-    liAt: config.liAt,
-    channel: config.chromeChannel,
-    headless: config.headless,
-  });
-  const page = context.pages()[0] || (await context.newPage());
-
-  const out = {
-    connections: [],
-    pendingInvites: [],
-    threads: [],
-    observedConnections: false,
-    observedInvites: false,
-    observedMessages: false,
-    blocker: null,
-  };
-
-  try {
-    // 1) Invitations you SENT that are still outstanding -> "pending".
-    const iresp = await page.goto(SENT_INVITES_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
-    await guard(page, iresp ? iresp.status() : 0);
-    await pacer.wait();
-    out.pendingInvites = await collectSentInvites(page);
-    out.observedInvites = await trustEmpty(page, out.pendingInvites);
-
-    // 2) People already in your network -> "connected".
-    const cresp = await page.goto(CONNECTIONS_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
-    await guard(page, cresp ? cresp.status() : 0);
-    await pacer.wait();
-    out.connections = await collectConnections(page);
-    out.observedConnections = await trustEmpty(page, out.connections);
-
-    // 3) Message threads -> did they reply, and what did they say.
-    const mresp = await page.goto(MESSAGING_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
-    await guard(page, mresp ? mresp.status() : 0);
-    await pacer.wait();
-    out.threads = await collectThreads(page);
-    out.observedMessages = await trustEmpty(page, out.threads);
-  } catch (err) {
-    out.blocker = err instanceof BlockerError
-      ? { kind: err.kind, reason: err.message }
-      : { kind: "error", reason: err.message };
-  } finally {
-    await context.close().catch(() => {});
-  }
-
-  return out;
-}
-
-/** Read-only extraction of your outstanding SENT invitations. */
-async function collectSentInvites(page) {
-  const carded = await page.$$eval(
-    "li.invitation-card, div.invitation-card, li[class*='invitation-card']",
-    (nodes) =>
-      nodes.map((n) => {
-        const linkEl = n.querySelector("a[href*='/in/']");
-        const nameEl = n.querySelector(
-          ".invitation-card__title, .artdeco-entity-lockup__title, span[aria-hidden='true']",
-        );
-        return {
-          name: nameEl?.textContent?.trim() || "",
-          url: linkEl?.href || "",
-        };
-      }).filter((r) => r.name || r.url),
-  ).catch(() => []);
-  if (carded.length) return carded;
-  return page.evaluate(extractPeopleFromDom).catch(() => []);
-}
-
-/**
- * Read-only extraction of the messaging conversation list.
- *
- * LinkedIn's list view shows the participant's name, a snippet of the most
- * recent message, and a timestamp. When the newest message is yours the snippet
- * is prefixed "You: " — so the absence of that prefix is how we tell that THEY
- * spoke last. Threads carry no profile URL here, which is why the planner also
- * matches on a normalized name key.
- */
-async function collectThreads(page) {
-  return page.$$eval(
-    "li.msg-conversation-listitem, li[class*='msg-conversation-listitem'], div.msg-conversation-card",
-    (nodes) =>
-      nodes.map((n) => {
-        const t = (sel) => n.querySelector(sel)?.textContent?.replace(/\s+/g, " ").trim() || "";
-        const name = t(".msg-conversation-listitem__participant-names, .msg-conversation-card__participant-names");
-        const raw = t(".msg-conversation-card__message-snippet, .msg-conversation-listitem__message-snippet");
-        const date = t("time, .msg-conversation-listitem__time-stamp, .msg-conversation-card__time-stamp");
-        const linkEl = n.querySelector("a[href*='/in/']");
-        const mine = /^you\s*:/i.test(raw);
-        return {
-          name,
-          url: linkEl?.href || "",
-          lastMessageFromThem: !!raw && !mine,
-          lastMessageText: mine ? raw.replace(/^you\s*:\s*/i, "") : raw,
-          lastMessageDate: date,
-        };
-      }).filter((r) => r.name),
-  ).catch(() => []);
-}
-
-/**
  * Best-effort ISO date; returns "" if not confidently parseable (no fabrication).
  * Relative stamps ("2d", "1w") ARE confidently parseable — they are the only
- * dates LinkedIn's activity feed shows, and leaving them blank silently costs
- * every candidate their recency points.
+ * dates LinkedIn's activity feed shows, and leaving them blank silently hides
+ * every candidate's recency.
  */
 function normalizeDate(text) {
   return parseActivityDate(text, Date.now());
