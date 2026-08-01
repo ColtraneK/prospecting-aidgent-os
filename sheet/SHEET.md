@@ -28,8 +28,8 @@ existing ones, and it never touches your human tracking. Nothing is auto-sent.
 | F | Degree | agent (1st / 2nd / 3rd, blank when the badge was not on the page) |
 | G | Score (1-10) | agent (the Fit Score in column T, at reading scale) |
 | H | Why Them | agent |
-| I | Suggested Comment | agent (reply to their recent post/comment) |
-| J | Suggested Intro DM | agent (short, no pitch) |
+| I | Suggested Comment | agent (drafted from column D, checked in code) |
+| J | Suggested Intro DM | agent (drafted from column D, checked in code) |
 | K | Reached Out | you (checkbox) |
 | L | Replied | you (checkbox) |
 | M | Outcome | you (No response / Neutral / Positive / Not a fit / Follow up) |
@@ -62,12 +62,39 @@ burying it under a quoted paragraph.
 **Degree (F)** is copied from the badge LinkedIn shows on the card or profile.
 It is blank when no badge was visible, and never guessed. Everyone found through
 your own connections list is 1st by definition. A 1st or 2nd degree contact
-scores a few points higher, because they are warmer; a 3rd degree contact still
-qualifies on everything else.
+sorts higher in the list, because they are warmer — but those points are
+**ranking only** and are left out of the score the accept threshold sees. Being
+connected to someone is a reason to reach them sooner, never evidence that they
+fit. A 3rd degree contact qualifies on everything else exactly as before.
 
 **Score (G)** is column T divided by ten and rounded, nothing more. It exists
 because "72" and "8 out of 10" take different amounts of effort to read at
 speed, and the raw score is still there in T when you want it.
+
+**Why Them (H)** is the scorer's own factor breakdown — "title matches
+'Fractional COO'; in target geography 'United States'; recent (<=7d) activity
+about 'capacity'" — so a 6 out of 10 can be argued with. It is not a summary of
+their headline.
+
+**Suggested Comment (I)** and **Suggested Intro DM (J)** are the only cells a
+model writes. A run leaves them blank and captures the evidence instead; the
+agent then drafts them from the post in column D, and `npm run validate-outreach`
+checks each draft **in code** before it is written: under 280 characters (250 for
+a comment), at least four consecutive words quoted from column D, no pipes, no
+URLs, no word cut in half, and greeting the person column A names. A draft that
+fails is left blank with the reason printed to the agent — never repaired, and
+never explained in your Notes column, which nothing here writes.
+
+That four-word rule is the point of the whole arrangement. A message about a post
+nobody wrote reads perfectly well; quoting four consecutive words of a post is
+something only a reader can do. When column D is blank the message may ask for
+your prospect's view and say who you work with, and may claim nothing about them
+— no post, no article, no "I saw you have been…". A comment is not written at
+all in that state, because there is nothing to comment on.
+
+Re-running a search never blanks I or J. Every other agent column is re-derived
+from what that run saw; these two are left alone, so a scheduled run cannot erase
+the messages you or your agent already wrote.
 
 ## The follow-up pass (Y–AB)
 

@@ -242,7 +242,15 @@ test("a session that lives only in this terminal never reports READY", async () 
   const item = buildChecklist(s).find((i) => i.label.includes("written in .env"));
   assert.equal(item.done, false);
   assert.match(item.next, /placeholder/);
-  assert.ok(item.next.includes(profile), "the fix must name the path to write into .env");
+  // Compared with the slashes normalised, because the fix message deliberately
+  // suggests forward slashes even on Windows: .env is read as raw KEY=VALUE and
+  // a backslash in the value reads as an escape to anyone who later edits it
+  // (see forEnvFile in session.mjs). Comparing raw made this the one test that
+  // could not pass on Windows — on a repo whose whole promise is that it is
+  // cloned onto whatever machine the person already owns.
+  const sameSlashes = (s) => String(s).replace(/\\/g, "/");
+  assert.ok(sameSlashes(item.next).includes(sameSlashes(profile)),
+    "the fix must name the path to write into .env");
   assert.ok(!item.next.includes("?"), item.next);
 
   // And once .env names it, this step stops complaining.

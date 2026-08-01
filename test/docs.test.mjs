@@ -321,6 +321,116 @@ test("the setup instructions state the sheet-sharing step explicitly", () => {
   assert.match(start, /npm run check-sheet/);
 });
 
+// --- v5: a model may write words, never pick people -------------------------
+
+test("AGENTS.md states the write/pick boundary in both directions", () => {
+  // The one rule v5 relaxes and the one it must not. Stated loosely, "the agent
+  // writes the messages now" is one short step from "the agent picks who gets
+  // one", and that step is invisible in the output.
+  const a = read("AGENTS.md");
+  assert.match(a, /you may write words,\s+you may never pick people/i);
+  assert.match(a, /must not decide who qualifies/i,
+    "relaxing the message columns must not have softened the sourcing rule");
+  assert.match(a, /npm run validate-outreach/, "AGENTS.md must name the command that checks a draft");
+  assert.match(read(".agents/skills/research-outreach-prospects/SKILL.md"), /never pick PEOPLE/i);
+});
+
+test("the drafting rules AGENTS.md promises are the ones outreach.mjs enforces", () => {
+  // Every limit stated in prose has to be a number in the code, or the doc is
+  // describing a check that does not exist.
+  const a = read("AGENTS.md");
+  const src = read("src/outreach.mjs");
+  assert.match(src, /export const MAX_DM = 280/);
+  assert.match(src, /export const MAX_COMMENT = 250/);
+  assert.match(src, /export const GROUNDING_WORDS = 4/);
+  assert.match(a, /280\s*\n?characters \(250 for a comment\)|under 280\s+characters/i);
+  assert.match(a, /four consecutive words/i, "the anti-fabrication rule must be stated, not implied");
+  for (const doc of ["AGENTS.md", "sheet/SHEET.md", "steps/3-source-leads.md"]) {
+    assert.match(read(doc), /four consecutive words/i, `${doc} never states the grounding rule`);
+  }
+});
+
+test("a rejected draft is left blank, and the reason never goes in the person's Notes", () => {
+  // The tempting place to put the reason is column Q, and column Q is theirs.
+  const a = read("AGENTS.md");
+  assert.match(a, /must not work around a rejected draft/i);
+  assert.match(a, /left blank/i);
+  assert.match(a, /never written into\s+Notes/i);
+  // And the code must actually gate the write path, not just the command.
+  assert.match(read("src/merge.mjs"), /enforceOutreach/);
+});
+
+test("AGENTS.md makes the agent get consent on buyer titles specifically", () => {
+  // "you suggest and proceed" is what produced ten marketers for an operations
+  // ICP. The refusal has to name that exact phrase, or an agent reading this
+  // will believe a general go-ahead covered the list it invented.
+  const a = read("AGENTS.md");
+  assert.match(a, /must not treat "you suggest and proceed" as consent to buyer titles/i);
+  assert.match(a, /substring/i, "the doc must say WHY a one-word title is dangerous");
+  assert.match(a, /TARGETING WARNING/, "the doc must name the warning the code prints");
+  // The code prints that warning and defaults warm-first off.
+  assert.match(read("src/persona.mjs"), /TARGETING WARNING/);
+  assert.match(read("src/persona.mjs"), /GENERIC_BUYER_TITLES/);
+  assert.match(a, /include_connections.*defaults to\s*\n?false|defaults to\s*\n?false/i);
+});
+
+test("AGENTS.md requires every finished response to end at the sheet", () => {
+  // The pilot's final message had no sheet link in it, so the person had ten
+  // researched leads and nowhere to look at them.
+  const a = read("AGENTS.md");
+  assert.match(a, /Every run ends by pointing at the sheet/i);
+  assert.match(a, /must end any response that finishes a step or a run/i);
+  assert.match(a, /npm run start -- --json|npm run start\s+-- --json/,
+    "AGENTS.md must offer the machine-readable checklist it promises");
+  // The code prints the three lines, so the rule does not depend on memory.
+  const cli = read("src/cli.mjs");
+  assert.match(cli, /formatHandoff/);
+  assert.match(cli, /Rows: \$\{added\} added/);
+  assert.match(read("src/start.mjs"), /export function toJson/);
+  assert.match(read("src/persona.mjs"), /export function sheetUrlFor/);
+});
+
+test("the activity verdicts in the docs are the ones blockers.mjs emits", () => {
+  const src = read("src/blockers.mjs");
+  const kinds = [...src.matchAll(/kind:\s*"([a-z_]+)"/g)].map((m) => m[1]);
+  const a = read("AGENTS.md");
+  for (const k of ["activity_none", "activity_parse_failed", "activity_not_rendered", "activity_not_visible"]) {
+    assert.ok(kinds.includes(k), `src/blockers.mjs no longer emits "${k}"`);
+    assert.ok(a.includes(k), `AGENTS.md never explains the "${k}" verdict`);
+  }
+  assert.match(a, /empty column D also has to say which kind of empty/i);
+});
+
+test("a live run leaves columns I and J for the agent, and offline runs do not", () => {
+  // The split is the whole of Job 3. The BEHAVIOUR is pinned in
+  // test/outreach.test.mjs; what this checks is that cli.mjs still decides it
+  // from the offline flags rather than shipping templates on a live run.
+  const cli = read("src/cli.mjs");
+  assert.match(cli, /composeOpeners\s*=\s*!!\(\s*flags\.fixture\s*\|\|\s*config\.dryRun\s*\)/);
+  assert.match(cli, /runPipeline\(\{[^}]*composeOpeners[^}]*\}\)/s);
+  assert.match(read("src/pipeline.mjs"), /composeOpeners = true/);
+});
+
+test("with no post captured, the docs say a draft may claim nothing at all", () => {
+  // The weak version of this rule was a blocklist of four nouns, and "loved
+  // your piece on…" walked past it. If the doc goes back to describing a list of
+  // forbidden words, the code and the instruction have drifted apart.
+  const a = read("AGENTS.md");
+  assert.match(a, /may claim nothing about them at all/i);
+  assert.match(read("src/outreach.mjs"), /ABSTRACT_SECOND_PERSON/,
+    "the check must stay an allowlist of abstract nouns, not a blocklist");
+  assert.match(read("sheet/SHEET.md"), /claim nothing about them/i);
+});
+
+test("the docs state why content search drops geography and reposts", () => {
+  // Both look like omissions and are load-bearing. Undocumented, the next person
+  // to read the code "fixes" them and quietly returns the run to v4 behaviour.
+  const a = read("AGENTS.md");
+  assert.match(a, /does \*\*not\*\* add the geography|not\*\* add the geography/i);
+  assert.match(a, /skips reposts/i);
+  assert.match(read("src/searchTerms.mjs"), /DELIBERATELY WITHOUT GEOGRAPHY/);
+});
+
 test("AGENTS.md tells the agent that the person never types a command", () => {
   // Every person-facing hint in `npm run start` is command-free by test. That
   // only holds end to end if the agent also knows not to invent one.

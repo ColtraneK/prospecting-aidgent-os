@@ -16,7 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { REPO_ROOT, loadDotEnv } from "./config.mjs";
-import { listPersonaSlugs, resolvePersonaPath, loadPersonaFile, validatePersona, personaSheetId, isPlaceholderSheetId, SHEET_TEMPLATE_ID, SHEET_TEMPLATE_COPY_URL } from "./persona.mjs";
+import { listPersonaSlugs, resolvePersonaPath, loadPersonaFile, validatePersona, personaSheetId, isPlaceholderSheetId, sheetUrlFor, SHEET_TEMPLATE_ID, SHEET_TEMPLATE_COPY_URL } from "./persona.mjs";
 import { profileState, envFileReproducesSession, provenanceOf, describeProvenance, sessionProofState, FROM_ENV_FILE } from "./session.mjs";
 import { sheetProofState } from "./verified.mjs";
 
@@ -127,7 +127,7 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
   const personaDirs = [path.join(repoRoot, "private", "personas"), path.join(repoRoot, "personas")];
   const personas = listPersonaSlugs(personaDirs).filter((p) => p.scope === "private");
 
-  let persona = null, personaValid = false, personaErrors = [], sheetId = "";
+  let persona = null, personaValid = false, personaErrors = [], personaWarnings = [], sheetId = "";
   if (activeSlug) {
     const p = resolvePersonaPath(activeSlug, personaDirs);
     if (p) {
@@ -136,6 +136,7 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
         const v = validatePersona(persona);
         personaValid = v.valid;
         personaErrors = v.errors;
+        personaWarnings = v.warnings || [];
       } catch (err) {
         personaErrors = [`could not read ${p}: ${err.message}`];
       }
@@ -175,8 +176,11 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
     credsPath, credsExist,
     activeSlug,
     privatePersonaCount: personas.length,
-    persona, personaValid, personaErrors,
+    persona, personaValid, personaErrors, personaWarnings,
+    buyerTitles: (persona && Array.isArray(persona.buyer_titles) ? persona.buyer_titles : []),
+    exclusions: (persona && Array.isArray(persona.exclusions) ? persona.exclusions : []),
     sheetId,
+    sheetUrl: sheetUrlFor(sheetId),
     sheetBound: !!sheetId && !isPlaceholderSheetId(sheetId),
     sheetReachable: sheetReachable.ok,
     sheetReachableReason: sheetReachable.reason,
@@ -317,12 +321,25 @@ export function formatStatus(s, checklist = buildChecklist(s)) {
   for (const item of checklist) lines.push(`  ${item.done ? OK : NO} ${item.label}`);
   lines.push("");
 
+  // A persona can be complete, valid, and aimed at half of LinkedIn. That is
+  // not a checklist step — nothing here is unmet — so it is said next to the
+  // list rather than hidden inside it.
+  if (Array.isArray(s.personaWarnings) && s.personaWarnings.length) {
+    lines.push("TARGETING WARNING — this persona will match more people than it should:");
+    for (const w of s.personaWarnings) for (const l of wrap("- " + w, 74)) lines.push(("  " + l).trimEnd());
+    lines.push("");
+    lines.push("  Read the buyer titles and exclusions back to the person and get an");
+    lines.push("  explicit yes on the titles specifically before sourcing with this.");
+    lines.push("");
+  }
+
   const pending = checklist.find((i) => !i.done);
   if (!pending) {
     lines.push("READY. Everything is set up.");
     lines.push("");
     lines.push(`  Persona:  ${s.activeSlug}`);
-    lines.push(`  Sheet:    ${s.sheetId}`);
+    lines.push(`  Sheet:    ${s.sheetUrl || s.sheetId}`);
+    lines.push(`  Titles:   ${(s.buyerTitles || []).join(", ") || "(none)"}`);
     // Printing WHERE the session came from, not just that there is one. READY
     // has to be a claim about this machine, not about this terminal.
     lines.push(`  Session:  ${s.liAt ? "li_at cookie" : s.chromeProfile || "none"} (${describeProvenance(s.sessionFrom)})`);
@@ -388,11 +405,46 @@ function wrap(text, width) {
   return out;
 }
 
+/**
+ * The same checklist as a machine-readable object.
+ *
+ * `npm run start` is the loop an agent lives in, and until now the only way to
+ * know what it said was to scrape the prose it prints for humans. That is a
+ * parser aimed at a paragraph, and it breaks the first time the wording
+ * improves. `--json` gives the agent the same facts as data: which steps are
+ * met, which one is next, the command to run for it, and — so the agent can
+ * report back — the sheet's URL.
+ */
+export function toJson(s, checklist = buildChecklist(s)) {
+  const pending = checklist.find((i) => !i.done) || null;
+  return {
+    ready: checklist.every((i) => i.done),
+    persona: s.activeSlug || null,
+    personaValid: s.personaValid,
+    personaWarnings: s.personaWarnings || [],
+    buyerTitles: s.buyerTitles || [],
+    exclusions: s.exclusions || [],
+    includeConnections: s.includeConnections,
+    sheetId: s.sheetId || null,
+    sheetUrl: s.sheetUrl || null,
+    sessionVerified: s.sessionVerified,
+    sessionVerifiedAt: s.sessionVerifiedAt || null,
+    checklist: checklist.map((i) => ({ label: i.label, done: !!i.done })),
+    nextStep: pending
+      ? { number: checklist.indexOf(pending) + 1, of: checklist.length, label: pending.label, hint: pending.next, agentRuns: pending.agentRuns || null }
+      : null,
+  };
+}
+
 /** Entry point. Exit code 0 when READY, 1 when something is still pending. */
-export async function main() {
+export async function main(argv = process.argv.slice(2)) {
   const s = await inspectSetup();
   const checklist = buildChecklist(s);
-  console.log(formatStatus(s, checklist));
+  if (argv.includes("--json")) {
+    console.log(JSON.stringify(toJson(s, checklist), null, 2));
+  } else {
+    console.log(formatStatus(s, checklist));
+  }
   process.exitCode = checklist.every((i) => i.done) ? 0 : 1;
 }
 

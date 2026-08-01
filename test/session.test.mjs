@@ -495,3 +495,22 @@ test("no proof at all is reported as unverified, not as broken", () => {
   assert.match(none.reason, /nothing to verify/);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("a Windows profile path is suggested with forward slashes", () => {
+  // .env is read as raw KEY=VALUE with no unescaping, so a backslash survives
+  // literally — and then reads as an escape to the next person who opens the
+  // file. So the suggested line always uses forward slashes, which Windows
+  // accepts everywhere a path is used.
+  //
+  // This is pinned because the ONLY test that ever failed on Windows failed by
+  // comparing this message against a backslash path, which made the correct
+  // behaviour look like the bug.
+  const winProfile = "C:\\Users\\someone\\aidgent-chrome-profile";
+  const v = envFileReproducesSession({
+    fileEnv: { AIDGENT_CHROME_PROFILE: "/absolute/path/outside/repo/aidgent-chrome-profile" },
+    resolvedProfile: winProfile,
+  });
+  assert.equal(v.ok, false);
+  assert.match(v.fix, /AIDGENT_CHROME_PROFILE=C:\/Users\/someone\/aidgent-chrome-profile/);
+  assert.ok(!v.fix.includes("\\"), `a backslash reached the suggested .env line: ${v.fix}`);
+});

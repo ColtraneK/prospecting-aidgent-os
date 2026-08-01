@@ -21,6 +21,12 @@ company_sizes:
   - 1-10 employees
   - 11-50 employees
 
+# NOTE: "Founder" and "Owner" are here because this file also drives the offline
+# demo, and they are exactly the shape `npm run validate-persona` warns about.
+# Titles are matched as SUBSTRINGS, so "Founder" also matches "Founder &
+# Fractional CMO" and a large fraction of LinkedIn. A real persona should use the
+# exact multi-word titles the person named — "Fractional COO", "Operations
+# Consultant" — and lean on `exclusions` for the adjacent roles they do not want.
 buyer_titles:
   - Founder
   - Owner
@@ -52,6 +58,11 @@ exclusions:
   - Recruiters
 
 opener_voice: Warm, concise, curious, no pitch. React to something specific they said.
+
+# How a message describes this audience when there is no post to react to.
+# Used INSTEAD of the person's own headline, which is where "how Award-Winning
+# Founder | 500+ Speaking Engagements | …s are approaching this" came from.
+audience_phrase: small-business owners doing their own operations
 
 search_keywords:
   - operations

@@ -3,13 +3,33 @@
 // strong ICP matches with older or no activity. Recency+topic is a boost, not a gate.
 
 import { normalizeText } from "./url.mjs";
-import { geoIncludes, geoExcludes } from "./searchTerms.mjs";
+import { geoIncludes, geoExcludes, personaTopics } from "./searchTerms.mjs";
 import { isRecent } from "./recency.mjs";
 
 // A required buyer-title match (25) plus one more strong ICP signal — geography
 // (12), industry (12), or recent activity (12) — clears this. Recent-topic
 // activity boosts rank but is never required, so strong static matches still pass.
 export const DEFAULT_ACCEPT_THRESHOLD = 35;
+
+// Factors that RANK but do not QUALIFY: their points order the list and are
+// excluded from the number compared against the threshold.
+//
+// Only connection degree is in here, and it is here because of what it did.
+// Degree points were added in v4 without revisiting the bar, and 25 (title) + 10
+// (1st degree) is exactly 35 — so knowing someone became a complete substitute
+// for the "one more real ICP signal" the threshold was designed to require.
+// Half the 2026-08-01 pilot's leads were 1st-degree connections with no
+// geography, industry, or activity match at all, and they were accepted by
+// arithmetic nobody had noticed.
+//
+// Rank-only rather than a higher threshold, of the two options in the work
+// order, because the two are not equivalent. Raising the bar to 45 also
+// disqualifies people whose second signal is real but modest (a size match at 8,
+// an older on-topic post at 8), and it would still let a title + 1st degree +
+// any 10 points through. Excluding the factor fixes the actual defect: being
+// connected to someone is a reason to reach them SOONER, never a reason they
+// are a fit. `test/scoring.test.mjs` runs both against the pilot's shape.
+export const RANK_ONLY_FACTORS = ["degree_match"];
 
 function anyMatch(haystack, needles) {
   const h = normalizeText(haystack);
@@ -21,10 +41,13 @@ function anyMatch(haystack, needles) {
   return null;
 }
 
-/** Core topics the ICP cares about: explicit core_topics, else keywords + signals. */
+/**
+ * Core topics the ICP cares about: explicit core_topics, else keywords + signals.
+ * One definition, shared with the content searches that go looking for them —
+ * a topic the scorer pays for is a topic the run searched.
+ */
 export function coreTopics(persona) {
-  if (Array.isArray(persona.core_topics) && persona.core_topics.length) return persona.core_topics;
-  return [...list(persona.search_keywords), ...list(persona.buying_signals)];
+  return personaTopics(persona);
 }
 
 export function scoreCandidate(persona, candidate, { nowMs = Date.now(), threshold = DEFAULT_ACCEPT_THRESHOLD } = {}) {
@@ -92,11 +115,27 @@ export function scoreCandidate(persona, candidate, { nowMs = Date.now(), thresho
     : "connection degree not observed";
   add("degree_match", degPts, degDetail);
 
-  let score = Math.max(0, Math.min(100, factors.reduce((s, f) => s + f.points, 0)));
-  const accepted = score >= threshold && !!titleHit;
-  const rejectedReason = accepted ? null : !titleHit ? "no buyer-title match" : `score ${score} below threshold ${threshold}`;
+  // Two numbers, on purpose. `score` is everything, and it is what column T
+  // shows and what the list is ranked by — a warm 1st-degree lead still sorts
+  // above an identical cold one. `qualifyingScore` is what the threshold sees,
+  // and it leaves out the factors that only rank. Reporting one number for both
+  // jobs is what let a connection degree buy someone a place in the sheet.
+  const score = Math.max(0, Math.min(100, factors.reduce((s, f) => s + f.points, 0)));
+  const rankOnlyPoints = factors
+    .filter((f) => RANK_ONLY_FACTORS.includes(f.name))
+    .reduce((s, f) => s + f.points, 0);
+  const qualifyingScore = Math.max(0, score - rankOnlyPoints);
 
-  return { score, accepted, rejectedReason, factors, recent, topicHit: !!topicHit };
+  const accepted = qualifyingScore >= threshold && !!titleHit;
+  const rejectedReason = accepted
+    ? null
+    : !titleHit
+      ? "no buyer-title match"
+      : rankOnlyPoints > 0
+        ? `score ${qualifyingScore} below threshold ${threshold} (the ${rankOnlyPoints}-point connection-degree bonus ranks this person higher but does not qualify them)`
+        : `score ${qualifyingScore} below threshold ${threshold}`;
+
+  return { score, qualifyingScore, accepted, rejectedReason, factors, recent, topicHit: !!topicHit };
 }
 
 function list(v) {

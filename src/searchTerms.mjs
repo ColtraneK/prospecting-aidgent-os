@@ -11,6 +11,90 @@ export function peopleSearchUrl({ keywords, geo } = {}) {
 }
 
 /**
+ * Build a LinkedIn CONTENT-search URL, filtered to posts from the last week.
+ *
+ * This is the axis flip. A people search asks "who describes themselves this
+ * way", and recency is then something you hope for at profile-inspection time —
+ * which is why half a run's column D came back blank or years old. A content
+ * search asks "who was talking about this in the last seven days", so recency is
+ * a property of the search itself and the post is captured with the candidate
+ * rather than hunted for afterwards.
+ *
+ * `datePosted` is quoted because that is the literal value LinkedIn's own facet
+ * puts in the query string (`datePosted=%22past-week%22`); an unquoted value is
+ * ignored and you silently get all-time results, which is the failure mode this
+ * whole job exists to remove.
+ */
+export function contentSearchUrl({ keywords, geo, datePosted = "past-week" } = {}) {
+  const params = new URLSearchParams();
+  const kw = [keywords, geo].filter(Boolean).join(" ").trim();
+  if (kw) params.set("keywords", kw);
+  if (datePosted) params.set("datePosted", `"${datePosted}"`);
+  params.set("origin", "FACETED_SEARCH");
+  return `https://www.linkedin.com/search/results/content/?${params.toString()}`;
+}
+
+/**
+ * The subjects this ICP cares about, in priority order: explicit `core_topics`,
+ * else the keywords and buying signals.
+ *
+ * Defined here rather than in scoring.mjs because BOTH now need it — content
+ * searches are built from the same topics the scorer pays 30 points for, so a
+ * topic that earns points is a topic the run actually searched. scoring.mjs
+ * imports it from here; the reverse would be a cycle.
+ */
+export function personaTopics(persona) {
+  if (!persona || typeof persona !== "object") return [];
+  if (Array.isArray(persona.core_topics) && persona.core_topics.length) return arr(persona.core_topics);
+  return [...arr(persona.search_keywords), ...arr(persona.buying_signals)];
+}
+
+/**
+ * Content searches: one per topic, filtered to the past week.
+ *
+ * DELIBERATELY WITHOUT GEOGRAPHY. A people search matches a profile, where
+ * "United States" is a field and adding it narrows sensibly. A content search
+ * matches the TEXT OF A POST, where "United States" is just a phrase — so
+ * folding the geography into the keywords asks for posts that happen to contain
+ * the name of a country, which almost none do. That would return near-nothing on
+ * every content search, and an empty content search is diagnosed as the benign
+ * `no_results`, so the run would fall quietly back to people search and look
+ * exactly like it was working.
+ *
+ * Geography is not lost by leaving it out: `scoreCandidate` checks the
+ * candidate's own location against the persona's include/exclude lists, on the
+ * profile this worker opened itself. Filtering on where someone actually is
+ * beats filtering on whether they typed a country name.
+ *
+ * Each descriptor: { kind:"content", topic, keywords, geo, url, excludeTerms }.
+ */
+export function buildContentSearches(persona, { maxSearches = 12, datePosted = "past-week" } = {}) {
+  if (!persona || typeof persona !== "object") return [];
+  const topics = personaTopics(persona);
+  if (!topics.length) return [];
+  const excludeTerms = arr(persona.exclusions);
+
+  const searches = [];
+  const seen = new Set();
+  for (const topic of topics) {
+    const dedupeKey = topic.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    searches.push({
+      kind: "content",
+      topic,
+      title: null,
+      keywords: topic,
+      geo: null, // see above: geography is scored on the profile, not searched in the post
+      excludeTerms,
+      url: contentSearchUrl({ keywords: topic, datePosted }),
+    });
+    if (searches.length >= maxSearches) return searches;
+  }
+  return searches;
+}
+
+/**
  * Construct an ordered, de-duplicated list of search descriptors from a persona.
  * Each descriptor: { title, keywords, geo, url, excludeTerms }.
  * Titles are the primary axis; each is combined with the persona keywords and a
@@ -37,6 +121,7 @@ export function buildSearches(persona, { maxSearches = 24 } = {}) {
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
         searches.push({
+          kind: "people",
           title: title || null,
           keywords: keywordString || null,
           geo: geo || null,
@@ -78,7 +163,10 @@ export function buildSources(persona, config = {}, { connectionShare = 0.4, insp
   if (config.mode === "connections") {
     return [{ url: CONNECTIONS_URL, kind: "connections" }];
   }
-  const searches = buildSearches(persona);
+  // Content first, people second. The order IS the fix: whoever a content
+  // search returns arrives with a dated, on-topic post already attached, and
+  // the run only falls back to headline matching once those are exhausted.
+  const searches = [...buildContentSearches(persona), ...buildSearches(persona)];
   if (!includeConnections(persona)) return searches;
   const target = Number(config.target) > 0 ? Number(config.target) : 25;
   const limit = Math.max(1, Math.ceil(target * connectionShare * inspectionsPerAdd));
