@@ -2,18 +2,16 @@
 //
 // The tab is how a non-technical person steers targeting: they write plain
 // English in columns A–C, the agent translates each note into a persona change,
-// and columns D–F record what happened. The TRANSLATION is deliberately an
-// agent job — the deterministic sourcing code must never read free text — but
-// the reading, the blocking, and the write-back live here as code, so none of
-// it can be forgotten.
+// and columns D–F record what happened.
 //
-// The contract this file enforces:
-//   - a sourcing run REFUSES to start while any feedback row is still New
+// The v6 contract: an unapplied row NEVER bricks a run — it is printed as a
+// LOUD warning at the start of `inspect` and `qualify`, and the agent applies
+// it inline (it edits the persona anyway) and stamps it:
 //   - `npm run feedback -- --list` shows what is waiting
 //   - `npm run feedback -- --apply <row> --changed "<what changed>"` stamps D–F
 //   - `npm run feedback -- --needs-decision <row> --reason "<why>"` stamps D+F
-// A row marked "Needs a decision" no longer blocks runs — it has been triaged
-// and is waiting on the human — but it is printed loudly until resolved.
+// A row marked "Needs a decision" is waiting on the human and is printed until
+// resolved.
 
 export const FEEDBACK_TAB = "Feedback";
 export const FEEDBACK_HEADERS = [
@@ -59,17 +57,12 @@ export function parseFeedback(values = []) {
   return { headerRow, rows };
 }
 
-/** Rows that BLOCK a sourcing run: written by the person, not yet handled. */
-export function blockingRows(rows = []) {
+/** Rows the person wrote that nobody has handled yet. Status New (blank). */
+export function unappliedRows(rows = []) {
   return rows.filter((r) => {
     const s = r.status.toLowerCase();
     return s !== STATUS_APPLIED.toLowerCase() && s !== STATUS_NEEDS_DECISION.toLowerCase();
   });
-}
-
-/** Rows the person wrote that nobody has handled yet. Status New (blank). */
-export function unappliedRows(rows = []) {
-  return blockingRows(rows);
 }
 
 /**
@@ -110,25 +103,6 @@ export function formatFeedback(rows = []) {
       (r.changed ? `\n      -> ${r.changed}` : ""));
   }
   return lines.join("\n");
-}
-
-/**
- * The message a refused run prints. Named here (not inline in cli.mjs) so the
- * wording is testable: this is the moment the person learns the tab is real.
- */
-export function formatRefusal(blocking) {
-  return [
-    `REFUSING to source: ${blocking.length} feedback row(s) on the sheet's Feedback tab have not been applied.`,
-    "",
-    formatFeedback(blocking),
-    "",
-    "The person wrote these to change the targeting, so running without them would",
-    "ignore their instructions. For each row: express it as a persona change, then",
-    `  npm run feedback -- --apply <row> --changed "<what you changed>"`,
-    "or, if it cannot be expressed as a persona change,",
-    `  npm run feedback -- --needs-decision <row> --reason "<why>"`,
-    "then re-run. See AGENTS.md section 4b for how to translate notes into persona fields.",
-  ].join("\n");
 }
 
 /** Read the Feedback tab. Returns { headerRow, rows }; missing tab -> no rows. */

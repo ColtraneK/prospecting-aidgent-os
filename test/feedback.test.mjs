@@ -1,14 +1,14 @@
 // feedback.test.mjs — the Feedback tab's code path, offline.
 //
-// The tab's promise is behavioural: a note the person writes MUST change the
-// next run or visibly block it. These tests pin the reading, the blocking
-// decision, and the refusal wording — the parts that are code. Translating a
-// note into persona fields is the agent's job and is not tested here.
+// The tab's promise is behavioural: a note the person writes MUST be applied
+// or loudly surfaced — never silently skipped, and (v6) never a bricked run.
+// These tests pin the reading, the triage, and the warning wording — the parts
+// that are code. Translating a note into persona fields is the agent's job.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  parseFeedback, blockingRows, needsDecisionRows, formatFeedback, formatRefusal,
+  parseFeedback, unappliedRows, needsDecisionRows, formatFeedback, formatWarning,
   STATUS_APPLIED, STATUS_NEEDS_DECISION, FEEDBACK_HEADERS,
 } from "../src/feedback.mjs";
 
@@ -40,11 +40,11 @@ test("a header row that is not row 3 is still found", () => {
   assert.equal(rows[0].rowNumber, 5);
 });
 
-test("a New row blocks; Applied and Needs-a-decision rows do not", () => {
+test("a New row is unapplied; Applied and Needs-a-decision rows are not", () => {
   const { rows } = parseFeedback(SHEET);
-  const blocking = blockingRows(rows);
-  assert.equal(blocking.length, 1);
-  assert.equal(blocking[0].note, "no leads outside the US");
+  const waitingNew = unappliedRows(rows);
+  assert.equal(waitingNew.length, 1);
+  assert.equal(waitingNew[0].note, "no leads outside the US");
   const waiting = needsDecisionRows(rows);
   assert.equal(waiting.length, 1);
   assert.match(waiting[0].changed, /needs your call/);
@@ -57,24 +57,28 @@ test("status comparison ignores case, because humans type in sheets", () => {
     ["", "note two", "", "APPLIED", "", ""],
     ["", "note three", "", "new", "", ""],
   ]);
-  assert.equal(blockingRows(rows).length, 1);
-  assert.equal(blockingRows(rows)[0].note, "note three");
+  assert.equal(unappliedRows(rows).length, 1);
+  assert.equal(unappliedRows(rows)[0].note, "note three");
 });
 
-test("an empty tab (or a tab with only its instructions) blocks nothing", () => {
-  assert.equal(blockingRows(parseFeedback([]).rows).length, 0);
-  assert.equal(blockingRows(parseFeedback(SHEET.slice(0, 3)).rows).length, 0);
+test("an empty tab (or a tab with only its instructions) warns about nothing", () => {
+  assert.equal(unappliedRows(parseFeedback([]).rows).length, 0);
+  assert.equal(unappliedRows(parseFeedback(SHEET.slice(0, 3)).rows).length, 0);
+  assert.equal(formatWarning([], []), "", "no waiting rows means no warning at all");
 });
 
-test("the refusal names the rows, the command to run, and the reason", () => {
+test("the warning names the rows and the commands, and never says REFUSING", () => {
+  // v6: unapplied feedback warns loudly and the agent applies it inline. A
+  // note nobody applied must never brick a run.
   const { rows } = parseFeedback(SHEET);
-  const msg = formatRefusal(blockingRows(rows));
-  assert.match(msg, /REFUSING to source/);
+  const msg = formatWarning(unappliedRows(rows), needsDecisionRows(rows));
+  assert.match(msg, /WARNING/);
   assert.match(msg, /row 4/);
   assert.match(msg, /no leads outside the US/);
   assert.match(msg, /npm run feedback -- --apply/);
   assert.match(msg, /npm run feedback -- --needs-decision/);
-  assert.match(msg, /AGENTS\.md section 4b/);
+  assert.match(msg, /make the openers funnier/, "needs-decision rows are surfaced too");
+  assert.ok(!/REFUS/i.test(msg), "a warning is not a refusal");
 });
 
 test("the listing shows the agent's write-back next to the person's note", () => {
