@@ -259,7 +259,7 @@ that ends in four minutes with a zero.
 
 ```bash
 npm install                      # installs playwright + googleapis + js-yaml
-cp .env.example .env             # fill values; keep secrets OUTSIDE the repo
+npm run init-env                 # creates .env; fill values, keep secrets OUTSIDE the repo
 npx playwright install chrome    # or use your installed Chrome channel
 
 # Build a persona (or edit personas/example-generic.yaml into private/personas/)

@@ -57,8 +57,9 @@ async function main() {
     case "bind-sheet": return cmdBindSheet(flags);
     case "check-sheet": return cmdCheckSheet(flags);
     case "validate-outreach": return cmdValidateOutreach(flags);
+    case "init-env": return cmdInitEnv();
     default:
-      console.log("Unknown command. See: start | setup-login | check-login | feedback | source | follow-up | daily | pilot | dry-run | list-personas | select-persona | validate-persona | create-persona | bind-sheet | check-sheet | validate-outreach");
+      console.log("Unknown command. See: start | init-env | setup-login | check-login | feedback | source | follow-up | daily | pilot | dry-run | list-personas | select-persona | validate-persona | create-persona | bind-sheet | check-sheet | validate-outreach");
       process.exit(2);
   }
 }
@@ -129,6 +130,38 @@ function resolvePersonaSlug(flags) {
 async function cmdStart(flags = {}) {
   const { main: startMain } = await import("./start.mjs");
   return startMain(flags.json ? ["--json"] : []);
+}
+
+/**
+ * init-env — create .env from .env.example.
+ *
+ * This exists because the checklist used to name `cp .env.example .env`, and
+ * `cp` is a Unix command. PowerShell happens to define it as an alias, so it
+ * works there by luck; the older cmd.exe does not, and an agent driving that
+ * shell stalls on step three of a first install with an error about an
+ * unrecognised command. That is the worst possible place to stall, because the
+ * person watching has no way to tell a missing shell command from something
+ * they did wrong.
+ *
+ * Node runs identically on every machine this repo targets, so the copy happens
+ * in Node. One command, same spelling on Windows, macOS and Linux.
+ *
+ * Never overwrites: an existing .env holds the paths and possibly the li_at
+ * cookie somebody already filled in, and clobbering that would undo real setup
+ * work with no undo.
+ */
+function cmdInitEnv() {
+  const dest = path.join(REPO_ROOT, ".env");
+  const src = path.join(REPO_ROOT, ".env.example");
+  if (fs.existsSync(dest)) {
+    console.log(".env already exists — leaving it exactly as it is.");
+    console.log("Nothing was changed. Edit the values in it rather than recreating it.");
+    return;
+  }
+  if (!fs.existsSync(src)) fail("No .env.example in this repo, so there is nothing to copy from.");
+  fs.copyFileSync(src, dest);
+  console.log("Created .env from .env.example.");
+  console.log("It holds placeholders, not settings. Fill them in as `npm run start` asks for them.");
 }
 
 async function cmdSetupLogin(flags) {
