@@ -67,6 +67,34 @@ export function blockingRows(rows = []) {
   });
 }
 
+/** Rows the person wrote that nobody has handled yet. Status New (blank). */
+export function unappliedRows(rows = []) {
+  return blockingRows(rows);
+}
+
+/**
+ * The loud warning inspect and qualify print when feedback sits unapplied.
+ * A note nobody applied never bricks a run — but it is never silent either.
+ */
+export function formatWarning(unapplied = [], waiting = []) {
+  if (!unapplied.length && !waiting.length) return "";
+  const lines = [];
+  if (unapplied.length) {
+    lines.push(`WARNING: ${unapplied.length} feedback row(s) on the sheet's Feedback tab are not applied yet.`);
+    lines.push(formatFeedback(unapplied));
+    lines.push("The person wrote these to change the targeting. Apply each one now — edit the");
+    lines.push("persona to match, then stamp it:");
+    lines.push('  npm run feedback -- --apply <row> --changed "<what you changed>"');
+    lines.push("or, if it needs the person:");
+    lines.push('  npm run feedback -- --needs-decision <row> --reason "<why>"');
+  }
+  if (waiting.length) {
+    lines.push(`${waiting.length} feedback row(s) are waiting on the person's decision:`);
+    lines.push(formatFeedback(waiting));
+  }
+  return lines.join("\n");
+}
+
 /** Rows triaged as needing the person's decision — never silently forgotten. */
 export function needsDecisionRows(rows = []) {
   return rows.filter((r) => r.status.toLowerCase() === STATUS_NEEDS_DECISION.toLowerCase());

@@ -142,6 +142,9 @@ export function resolveConfig(flags = {}, env = { ...loadDotEnv(), ...process.en
     sheetId: flags.sheet || env.GOOGLE_SHEET_ID || "",
     credentialsPath: env.GOOGLE_APPLICATION_CREDENTIALS || "",
     dailyCap: intOr(flags["daily-cap"], intOr(env.AIDGENT_DAILY_CAP, 120)),
+    // v6 daily budgets, persisted across invocations (src/budget.mjs).
+    openBudget: intOr(env.AIDGENT_OPEN_BUDGET, 120),
+    inspectBudget: intOr(env.AIDGENT_INSPECT_BUDGET, 60),
     minDelayMs: intOr(env.AIDGENT_MIN_DELAY_MS, 3500),
     maxDelayMs: intOr(env.AIDGENT_MAX_DELAY_MS, 9000),
     outDir: flags.out || path.join(REPO_ROOT, "run-artifacts"),

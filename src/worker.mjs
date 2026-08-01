@@ -15,6 +15,7 @@ import { parseActivityDate } from "./recency.mjs";
 import { createPacer } from "./pacing.mjs";
 import { canonicalizeLinkedInUrl, canonicalKey } from "./url.mjs";
 import { buildSources, SENT_INVITES_URL, CONNECTIONS_URL, MESSAGING_URL } from "./searchTerms.mjs";
+import { disqualify } from "./disqualify.mjs";
 
 export const FORBIDDEN_ACTION_LABELS = [
   "Connect", "Message", "Follow", "Like", "Celebrate", "Support",
@@ -162,6 +163,202 @@ export async function savePageCopy({ config, url, label = "page" }) {
   } finally {
     await context.close().catch(() => {});
   }
+}
+
+// --- v6: the two commands a run touches LinkedIn with -----------------------
+
+/**
+ * May `npm run open` navigate to this URL at all?
+ *
+ * The agent crafts its own search URLs now, so the allowlist is the guard rail:
+ * linkedin.com only, https only, and never a surface whose purpose is an
+ * outward action. Opening a messaging or connect URL cannot "just look" — the
+ * page exists to send — and a checkpoint/login URL is a wall the person clears
+ * by hand, never a page this tool walks into on purpose.
+ *
+ * Pure, so the refusal is testable without a browser.
+ */
+export function checkOpenUrl(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return { ok: false, reason: "no URL given" };
+  let u;
+  try {
+    u = new URL(s);
+  } catch {
+    return { ok: false, reason: `not a valid URL: ${s}` };
+  }
+  if (u.protocol !== "https:") return { ok: false, reason: "only https:// URLs are opened" };
+  if (!/(^|\.)linkedin\.com$/i.test(u.hostname)) {
+    return { ok: false, reason: `only linkedin.com is opened — refusing ${u.hostname}` };
+  }
+  const path = u.pathname.toLowerCase();
+  const BLOCKED = [
+    [/^\/messaging\b|\/compose\b/, "a messaging/compose page exists to send, and this tool never sends"],
+    [/^\/checkpoint\b|^\/uas\b|^\/login\b|^\/signup\b/, "login and checkpoint pages are cleared by the person, never automated"],
+    [/invitation|invite/, "invitation pages exist to connect, and this tool never connects"],
+  ];
+  for (const [re, why] of BLOCKED) {
+    if (re.test(path)) return { ok: false, reason: `refusing ${u.pathname}: ${why}` };
+  }
+  if (/[?&]action=(connect|message|follow)/i.test(u.search)) {
+    return { ok: false, reason: "refusing an action URL (connect/message/follow) — nothing outward, ever" };
+  }
+  return { ok: true, reason: "" };
+}
+
+/**
+ * `npm run open` — open ONE allowed LinkedIn URL with the signed-in session,
+ * read-only, and save its rendered HTML + a screenshot to run-artifacts so the
+ * agent can read what was on it. This is how the agent explores: it crafts a
+ * search URL, opens it here, reads the artifact, and decides what to open next.
+ * Nothing is extracted, judged, or written to the sheet by this path.
+ *
+ * On a blocker the page copy is still saved — the artifact is the evidence of
+ * what blocked — and the verdict comes back named.
+ */
+export async function openPage({ config, url, label = "page", budget = null }) {
+  const v = checkOpenUrl(url);
+  if (!v.ok) return { ok: false, kind: "refused_url", reason: v.reason };
+  if (budget) {
+    const t = budget.takeOpen();
+    if (!t.ok) return { ok: false, kind: "budget_exhausted", reason: "the daily page-open budget is spent", budget: t };
+  }
+  const context = await launch({
+    profilePath: config.chromeProfile,
+    liAt: config.liAt,
+    channel: config.chromeChannel,
+    headless: true,
+  });
+  try {
+    const page = context.pages()[0] || (await context.newPage());
+    const resp = await page.goto(url, { waitUntil: "domcontentloaded" }).catch(() => null);
+    await page.waitForTimeout(4000); // let lazy content render
+    try {
+      await guard(page, resp ? resp.status() : 0);
+    } catch (err) {
+      if (err instanceof BlockerError) {
+        const shot = await saveSnapshot(page, config.outDir, `blocked-${err.kind}`);
+        return { ok: false, kind: err.kind, reason: err.message, snapshot: shot };
+      }
+      throw err;
+    }
+    const shot = await saveSnapshot(page, config.outDir, `open-${label}`);
+    return { ok: true, snapshot: shot };
+  } catch (err) {
+    return { ok: false, kind: "error", reason: err.message };
+  } finally {
+    await context.close().catch(() => {});
+  }
+}
+
+/**
+ * `npm run inspect` — verify-by-reopening, v6's anti-fabrication core.
+ *
+ * The agent nominated people; this opens EVERY nominated profile and its
+ * recent-activity page itself, with the signed-in session, and captures the
+ * evidence first-hand: headline, company, location, degree badge, the newest
+ * post verbatim with date and permalink, and a named verdict when the activity
+ * page could not be read. Agent-reported facts are never recorded as evidence.
+ *
+ * Hard disqualifiers (disqualify.mjs) are applied to what was captured — the
+ * result rides along in the evidence so the agent can see who was ruled out
+ * and why. Nothing is written to the sheet here.
+ *
+ * Budgets: one inspection + two page opens per nomination, persisted across
+ * invocations. An exhausted budget stops the run loudly with the reset time.
+ */
+export async function runInspect({ nominations = [], persona = {}, config, budget }) {
+  const pacer = createPacer({
+    minDelayMs: config.minDelayMs,
+    maxDelayMs: config.maxDelayMs,
+    dailyCap: Number.MAX_SAFE_INTEGER, // budgets, not the pacer, are the v6 cap
+  });
+  const context = await launch({
+    profilePath: config.chromeProfile,
+    liAt: config.liAt,
+    channel: config.chromeChannel,
+    headless: config.headless,
+  });
+  const page = context.pages()[0] || (await context.newPage());
+  const evidence = [];
+  let blocker = null;
+  let inspected = 0;
+
+  try {
+    for (const row of nominations) {
+      const ti = budget.takeInspection();
+      if (!ti.ok) {
+        blocker = { kind: "budget_exhausted", reason: `daily inspection budget spent (${ti.limit}/day); resets at ${ti.resetAt}`, budget: ti };
+        break;
+      }
+      const to = budget.takeOpen(2); // profile page + activity page
+      if (!to.ok) {
+        blocker = { kind: "budget_exhausted", reason: `daily page-open budget spent (${to.limit}/day); resets at ${to.resetAt}`, budget: to };
+        break;
+      }
+      let profile = null;
+      try {
+        profile = await inspectProfile(page, row.url, pacer);
+        inspected++;
+      } catch (err) {
+        if (err instanceof BlockerError) {
+          await saveSnapshot(page, config.outDir, `blocked-${err.kind}`);
+          throw err;
+        }
+        // One dead profile is not a dead run: record it and keep going.
+        evidence.push(evidenceEntry(row, null, persona, { unreachable: true, unreachableReason: err.message }));
+        continue;
+      }
+      evidence.push(evidenceEntry(row, profile, persona));
+    }
+  } catch (err) {
+    blocker = err instanceof BlockerError
+      ? { kind: err.kind, reason: err.message }
+      : { kind: "error", reason: err.message };
+  } finally {
+    await context.close().catch(() => {});
+  }
+
+  return { evidence, blocker, inspected };
+}
+
+/**
+ * One candidate's captured facts, shaped for evidence.json. Everything in it
+ * except why_nominated/source_url was observed by THIS browser; the agent's
+ * two fields are carried as provenance, never as facts.
+ */
+export function evidenceEntry(row, profile, persona, { unreachable = false, unreachableReason = "" } = {}) {
+  const p = profile || {};
+  const facts = {
+    name: row.name || "",
+    url: row.url,
+    headline: p.headline || "",
+    title: p.headline || "",
+    company: p.company || "",
+    location: p.location || "",
+    degree: p.degree || "",
+    unreachable,
+    unreachableReason,
+  };
+  const dq = disqualify(persona, facts);
+  return {
+    key: row.url,
+    name: facts.name,
+    url: row.url,
+    why_nominated: row.whyNominated || "",
+    source_url: row.sourceUrl || "",
+    headline: facts.headline,
+    title: facts.title,
+    company: facts.company,
+    location: facts.location,
+    degree: facts.degree,
+    post: p.activity
+      ? { summary: p.activity.summary || "", date: p.activity.date || "", url: p.activity.url || "", type: p.activity.type || "post" }
+      : null,
+    activity_status: unreachable ? "unreachable" : (p.activityStatus || "none"),
+    activity_verdict: p.activityVerdict || null,
+    disqualified: dq.disqualified ? { reason: dq.reason } : null,
+  };
 }
 
 /** Read the current page state and throw BlockerError if we must stop. */

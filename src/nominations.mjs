@@ -1,17 +1,18 @@
-// observed.mjs — accept rows an agent read off a LinkedIn page with its own
-// browser, and refuse anything it could have made up.
+// nominations.mjs — the gate between the agent's judgement and the worker's
+// browser.
 //
-// This is the seam that lets an AI do the looking without letting it do the
-// deciding. The agent is good at reading a page that changed shape overnight;
-// it is not allowed to judge fit, invent a person, or write a row. So the only
-// thing we take from it is a claim of the form "this profile URL was on the
-// page, and the visible name next to it was X" — and then the worker goes and
-// opens that URL itself.
+// v6 inverts v5's rule on purpose: the AGENT judges who is worth opening, and
+// the CODE verifies the evidence. So the agent hands over a nominations file —
+// "open these people, here is why" — and this module refuses anything the
+// worker could not verify by opening it: a row without a real /in/ URL, a
+// placeholder slug that means an example was filled in instead of a page read,
+// a person who is already in the sheet.
 //
-// A row without a real /in/ URL is not evidence of anything, so it is dropped
-// with a reason rather than passed along.
+// Nothing here writes a row. A nomination only earns the worker OPENING the
+// profile; every fact that reaches the sheet is captured first-hand by the
+// worker's own browser (see runInspect in worker.mjs).
 
-import { canonicalizeLinkedInUrl } from "./url.mjs";
+import { canonicalizeLinkedInUrl, canonicalKey } from "./url.mjs";
 
 const PROFILE_URL = /^https?:\/\/([a-z]{2,3}\.)?linkedin\.com\/in\/[^/?#\s]+/i;
 
@@ -19,13 +20,16 @@ const PROFILE_URL = /^https?:\/\/([a-z]{2,3}\.)?linkedin\.com\/in\/[^/?#\s]+/i;
 const PLACEHOLDER = /\b(example|sample|placeholder|your-name|firstname|lastname|john-doe|jane-doe|test-user)\b/i;
 
 /**
- * @param {unknown} raw  parsed JSON: an array, or { people: [...] }
+ * @param {unknown} raw  parsed JSON: an array, or { nominations: [...] }
+ * @param {{existingKeys?: Set<string>}} opts  canonical keys already in the sheet
  * @returns {{rows: Array, rejected: Array<{row: unknown, reason: string}>}}
  */
-export function parseObserved(raw) {
-  const list = Array.isArray(raw) ? raw : Array.isArray(raw?.people) ? raw.people : null;
+export function parseNominations(raw, { existingKeys = new Set() } = {}) {
+  const list = Array.isArray(raw) ? raw
+    : Array.isArray(raw?.nominations) ? raw.nominations
+      : Array.isArray(raw?.people) ? raw.people : null;
   if (!list) {
-    return { rows: [], rejected: [{ row: raw, reason: "not a JSON array of people (or { people: [...] })" }] };
+    return { rows: [], rejected: [{ row: raw, reason: "not a JSON array of nominations (or { nominations: [...] })" }] };
   }
 
   const rows = [];
@@ -64,16 +68,19 @@ export function parseObserved(raw) {
     }
     if (seen.has(canon)) continue; // the same person twice is not two people
     seen.add(canon);
+    // Already researched: their row exists, and inspecting them again spends
+    // budget on a person the sheet already carries.
+    const { key } = canonicalKey({ url: canon, name });
+    if (key && existingKeys.has(key)) {
+      rejected.push({ row: item, reason: "already in the sheet — nominate net-new people" });
+      continue;
+    }
 
-    // Everything below the URL and name is a hint the worker may overwrite with
-    // what it sees for itself. We keep it only so an unreadable profile page
-    // still leaves something honest in the row.
     rows.push({
       name,
       url: canon,
-      title: str(item.title || item.headline),
-      location: str(item.location),
-      observedBy: "agent",
+      whyNominated: str(item.why_nominated || item.whyNominated),
+      sourceUrl: str(item.source_url || item.sourceUrl),
     });
   }
 
@@ -81,8 +88,8 @@ export function parseObserved(raw) {
 }
 
 /** Human-readable summary for the console. Never silently drops anything. */
-export function describeObserved({ rows, rejected }) {
-  const lines = [`Agent-read: ${rows.length} row(s) accepted.`];
+export function describeNominations({ rows, rejected }) {
+  const lines = [`Nominations: ${rows.length} accepted for inspection.`];
   if (rejected.length) {
     lines.push(`${rejected.length} rejected:`);
     for (const r of rejected.slice(0, 10)) {
@@ -95,5 +102,5 @@ export function describeObserved({ rows, rejected }) {
 }
 
 function str(v) {
-  return String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, 300);
+  return String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, 500);
 }
