@@ -141,17 +141,22 @@ Runs happen on **your** computer — on and awake, agent app running. This does
 ## What it does each run
 
 1. Loads the active persona (titles, industries, geography, keywords, core topics, signals, exclusions).
-2. Builds searches from the persona (no hardcoded terms).
+2. Builds searches from the persona (no hardcoded terms), searching **LinkedIn content from the past week** on the persona's core topics first, and people by job title only as backfill.
 3. Researches candidates read-only: confirms title/company/geography/fit, captures the canonical profile URL, and inspects recent activity.
 4. **Prioritizes** prospects with a post or relevant comment about a core topic in the **last 7 days**, but still accepts strong ICP matches with older or no recent activity.
 5. For each lead it writes, never fabricating activity, dates, quotes, titles, geography, or URLs:
    - the **verbatim recent post** with its date, in column **D**, and its bare permalink in **E**;
    - the observed connection **Degree** (F) and the fit score at 1-10 scale (G);
-   - an evidence-based **Why Them** (H);
-   - a **Suggested Comment** — a specific reply to their recent post/comment (I);
-   - a short no-pitch **Suggested Intro DM** (J).
-6. Maintains the Google Sheet: dedupes by canonical URL (then name+company), appends new leads, refreshes existing ones, and **preserves your human tracking columns K–Q**.
-7. Appends a Run Log row. On any login / CAPTCHA / checkpoint / rate-limit / expiry page it stops safely and exits nonzero.
+   - a **Why Them** (H) that gives the scorer's own reasons, not a headline summary.
+6. Leaves the **Suggested Comment** (I) and **Suggested Intro DM** (J) blank for the agent to draft from the captured post. Those drafts go back through `npm run validate-outreach`, which checks each one in code — length, no pipes, no URLs, no half-cut words, the right first name, and at least four consecutive words quoted from column D — before a single cell is written. A draft that fails is left blank with the reason stated, never quietly repaired.
+7. Maintains the Google Sheet: dedupes by canonical URL (then name+company), appends new leads, refreshes existing ones, and **preserves your human tracking columns K–Q**.
+8. Appends a Run Log row, then prints the sheet's link, what landed, and the one next step. On any login / CAPTCHA / checkpoint / rate-limit / expiry page it stops safely and exits nonzero.
+
+The division of labour is one sentence: **a model may write the words, and never
+picks the people.** Who gets sourced, who scores what, and who clears the bar are
+all deterministic code reading a persona file. The two message columns are
+drafted by an agent and then checked by code against the evidence already in the
+row.
 
 ### Columns
 

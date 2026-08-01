@@ -39,10 +39,74 @@ const ARRAY_FIELDS = [
   "search_keywords",
 ];
 
-/** Validate a persona object. Returns { valid, errors: [] }. Pure. */
+/**
+ * Buyer titles so generic that, as a SUBSTRING needle, they match most of
+ * LinkedIn. This is the list the 2026-08-01 pilot was built out of: "Founder"
+ * and "CMO" went into buyer_titles, `anyMatch` is a normalized substring test,
+ * and ten marketing people cleared an ICP written for operations leaders.
+ *
+ * Nothing here is a bad title to SELL to. They are bad titles to MATCH ON,
+ * because "Founder" matches "Founder & Fractional CMO", "Co-Founder", "Founding
+ * Partner" and several thousand people who are none of those things.
+ */
+export const GENERIC_BUYER_TITLES = [
+  "founder", "co-founder", "cofounder", "owner", "ceo", "coo", "cfo", "cto", "cmo",
+  "cro", "president", "principal", "partner", "director", "manager", "lead",
+  "head", "chief", "vp", "executive", "consultant", "advisor", "operator",
+  "entrepreneur", "fractional",
+];
+
+/**
+ * Are any buyer titles too loose to match on? Returns one warning per offender.
+ *
+ * A WARNING and not an error, deliberately. A persona is the person's own
+ * description of who they sell to, and refusing to save one because a title is
+ * short would leave them unable to run at all; the shipped example persona uses
+ * "Founder" precisely because it is the shape people reach for first. So the
+ * system says what will happen, loudly, at the moment the persona is written and
+ * again on every checklist — and AGENTS.md makes the agent read the titles back
+ * and get an explicit yes before saving them.
+ */
+export function checkBuyerTitles(titles) {
+  const list = Array.isArray(titles) ? titles : titles ? [titles] : [];
+  const warnings = [];
+  for (const raw of list) {
+    const t = String(raw || "").trim();
+    if (!t) continue;
+    const norm = t.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-+|-+$/g, "");
+    const words = t.split(/\s+/).filter(Boolean).length;
+    if (words <= 1 && GENERIC_BUYER_TITLES.includes(norm)) {
+      warnings.push(
+        `buyer title "${t}" is matched as a substring, so it also matches ` +
+        `"${t} & Fractional CMO", "Co-${t}" and a large fraction of LinkedIn. ` +
+        "Use the exact multi-word titles the person actually named, or add " +
+        "exclusions for the adjacent roles they do not want.",
+      );
+    }
+  }
+  return warnings;
+}
+
+/**
+ * Validate a persona object. Returns { valid, errors: [], warnings: [] }. Pure.
+ *
+ * `valid` turns on errors only. Warnings never block a run — they are things
+ * that will quietly produce the wrong people, which is why they have to be said
+ * rather than enforced.
+ */
 export function validatePersona(p) {
   const errors = [];
-  if (!p || typeof p !== "object") return { valid: false, errors: ["persona is not an object"] };
+  if (!p || typeof p !== "object") return { valid: false, errors: ["persona is not an object"], warnings: [] };
+  const warnings = checkBuyerTitles(p.buyer_titles);
+  // Warm-first is an opt-in, and it has to be an explicit one. The pilot's
+  // persona acquired `include_connections` from an agent answering its own
+  // question, and half the leads came back 1st-degree.
+  if (p.include_connections !== undefined && p.include_connections !== true && p.include_connections !== false) {
+    warnings.push(
+      `include_connections is "${p.include_connections}" — only a literal true opts in, ` +
+      "so this run will be net-new only. Set it to true or false, in a sentence the person said.",
+    );
+  }
 
   for (const f of REQUIRED_FIELDS) {
     if (p[f] === undefined || p[f] === null || p[f] === "") errors.push(`missing required field: ${f}`);
@@ -65,7 +129,20 @@ export function validatePersona(p) {
     const ok = Array.isArray(g) || typeof g === "string" || (g && typeof g === "object");
     if (!ok) errors.push("geography must be a list, string, or { include, exclude }");
   }
-  return { valid: errors.length === 0, errors };
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+/** The block a command prints when a persona has warnings. Never silent. */
+export function formatPersonaWarnings(warnings = []) {
+  if (!warnings.length) return "";
+  return [
+    "",
+    "TARGETING WARNING — this persona will match more people than it should:",
+    ...warnings.map((w) => `  - ${w}`),
+    "",
+    "Read the buyer titles and exclusions back to the person and get an explicit",
+    "yes on the titles specifically before sourcing with this.",
+  ].join("\n");
 }
 
 /** Extract a spreadsheet ID from a raw id or a full Google Sheets URL. */
@@ -81,6 +158,20 @@ export function personaSheetId(p) {
   if (p && p.sheet_id) return extractSheetId(p.sheet_id);
   if (p && p.sheet_url) return extractSheetId(p.sheet_url);
   return "";
+}
+
+/**
+ * The person's sheet as a clickable link.
+ *
+ * The sheet IS the deliverable — not the run report, not the console, not the
+ * agent's summary of what it found. The pilot run that prompted v5 ended
+ * without one, so the person had ten researched leads and no way to reach them
+ * except to go looking. Every response that ends a step or a run now carries
+ * this, which is only possible if building it is one call.
+ */
+export function sheetUrlFor(id) {
+  const s = extractSheetId(id);
+  return s && !isPlaceholderSheetId(s) ? `https://docs.google.com/spreadsheets/d/${s}/edit` : "";
 }
 
 /** True when a sheet id is missing or still the shipped placeholder. */
@@ -198,6 +289,10 @@ export function personaTemplate(icp = {}, { nowIso = new Date().toISOString() } 
     core_topics: icp.coreTopics || icp.topics || [], // topics to prioritize recent activity about
     exclusions: icp.exclusions || [],
     opener_voice: icp.openerVoice || "",
+    // How to describe this audience in a message when there is no post to react
+    // to. Used INSTEAD of the person's own headline, which is where the pipe
+    // soup came from. Optional; falls back to "people in <first title> roles".
+    audience_phrase: icp.audiencePhrase || "",
     search_keywords: icp.keywords || [],
     research_sources: icp.researchSources || ["linkedin_profile", "linkedin_activity"],
     // Asked once during setup. true = also mine the people you are ALREADY

@@ -25,6 +25,7 @@ import {
   getPersona, validatePersona, listPersonaSlugs, personaSheetId,
   personaTemplate, PRIVATE_PERSONA_DIR, resolvePersonaPath, loadPersonaFile,
   extractSheetId, isPlaceholderSheetId, isSharedTemplateId, sheetSetupHelp,
+  sheetUrlFor, formatPersonaWarnings,
 } from "./persona.mjs";
 import { runPipeline } from "./pipeline.mjs";
 import { toCsv } from "./csv.mjs";
@@ -39,7 +40,7 @@ async function main() {
   const [, , command, ...rest] = process.argv;
   const flags = parseFlags(rest);
   switch (command) {
-    case "start": return cmdStart();
+    case "start": return cmdStart(flags);
     case "setup-login": return cmdSetupLogin(flags);
     case "check-login": return cmdCheckLogin(flags);
     case "snapshot": return cmdSnapshot(flags);
@@ -55,8 +56,9 @@ async function main() {
     case "create-persona": return cmdCreatePersona(flags);
     case "bind-sheet": return cmdBindSheet(flags);
     case "check-sheet": return cmdCheckSheet(flags);
+    case "validate-outreach": return cmdValidateOutreach(flags);
     default:
-      console.log("Unknown command. See: start | setup-login | check-login | feedback | source | follow-up | daily | pilot | dry-run | list-personas | select-persona | validate-persona | create-persona | bind-sheet | check-sheet");
+      console.log("Unknown command. See: start | setup-login | check-login | feedback | source | follow-up | daily | pilot | dry-run | list-personas | select-persona | validate-persona | create-persona | bind-sheet | check-sheet | validate-outreach");
       process.exit(2);
   }
 }
@@ -124,9 +126,9 @@ function resolvePersonaSlug(flags) {
  * `npm run start` — status only. Imported lazily so this command stays fast and
  * so nothing in the status engine can affect the other commands.
  */
-async function cmdStart() {
+async function cmdStart(flags = {}) {
   const { main: startMain } = await import("./start.mjs");
-  return startMain();
+  return startMain(flags.json ? ["--json"] : []);
 }
 
 async function cmdSetupLogin(flags) {
@@ -284,6 +286,14 @@ async function cmdValidatePersona(flags) {
   try {
     const { persona, path: p } = await getPersona(slug);
     console.log(`OK: ${slug} is valid (${p}). Sheet: ${personaSheetId(persona) || "(none)"}`);
+    console.log(`Buyer titles: ${(persona.buyer_titles || []).join(", ") || "(none)"}`);
+    console.log(`Exclusions:   ${(persona.exclusions || []).join(", ") || "(none)"}`);
+    console.log(`Warm-first:   ${persona.include_connections === true ? "yes — your existing connections are searched too" : "no — net-new people only"}`);
+    // Valid is not the same as well-aimed. A persona full of one-word titles
+    // passes every schema check and matches half of LinkedIn. Last, so it is
+    // the thing still on screen.
+    const warn = formatPersonaWarnings(validatePersona(persona).warnings);
+    if (warn) console.error(warn);
   } catch (e) {
     console.error(e.message);
     process.exit(1);
@@ -295,7 +305,7 @@ async function cmdCreatePersona(flags) {
   if (!from) fail("Usage: npm run create-persona -- --from approved-icp.json [--slug my-persona]");
   const icp = JSON.parse(fs.readFileSync(from, "utf8"));
   const persona = personaTemplate(icp);
-  const { valid, errors } = validatePersona(persona);
+  const { valid, errors, warnings } = validatePersona(persona);
   const slug = (flags.slug || slugify(persona.persona || "persona"));
   const { default: YAML } = await import("js-yaml");
   fs.mkdirSync(PRIVATE_PERSONA_DIR, { recursive: true });
@@ -303,6 +313,15 @@ async function cmdCreatePersona(flags) {
   fs.writeFileSync(dest, YAML.dump(persona, { lineWidth: 100 }));
   console.log(`Wrote private persona: ${dest}`);
   if (!valid) console.log(`Note: fill these before running:\n- ${errors.join("\n- ")}`);
+  // Say the targeting back at the moment it is written down, not after a run
+  // has spent seven minutes finding the wrong people.
+  console.log("");
+  console.log("Read these back to the person and get an explicit yes on the TITLES:");
+  console.log(`  Buyer titles: ${(persona.buyer_titles || []).join(", ") || "(none)"}`);
+  console.log(`  Exclusions:   ${(persona.exclusions || []).join(", ") || "(none)"}`);
+  console.log(`  Warm-first:   ${persona.include_connections === true ? "yes — existing connections are searched too" : "no — net-new people only"}`);
+  const warn = formatPersonaWarnings(warnings);
+  if (warn) console.error(warn);
 }
 
 async function cmdBindSheet(flags) {
@@ -362,6 +381,105 @@ async function cmdCheckSheet(flags) {
   console.log(`Tabs: ${tabs.join(", ")}`);
   if (!tabs.includes("Leads")) console.log('Note: no "Leads" tab yet. Run buildAidgentOsSheet inside THIS sheet (Extensions > Apps Script), or the worker will need a Leads tab to maintain.');
   console.log("This tool maintains THIS sheet in place and never creates a new spreadsheet.");
+}
+
+/**
+ * validate-outreach — the code gate on the one thing a model may now write.
+ *
+ * v5's boundary is: a model may write WORDS, never pick PEOPLE. Sourcing and
+ * scoring stay deterministic, and columns I and J become agent-drafted. This is
+ * what makes that safe. The agent reads the evidence already in each row — the
+ * post verbatim in D, its link in E, the scorer's reasons in H — drafts a
+ * comment and an intro DM, and hands them back in a JSON file. Every draft is
+ * then checked in code against that row's own evidence before a cell is written.
+ *
+ * The check that matters is grounding: the draft must quote four consecutive
+ * words that really appear in column D. Fluency cannot fake that. A draft that
+ * fails is left BLANK and the reason is printed here — never written into the
+ * person's Notes column, which the system does not write, and never silently
+ * reworded into something nobody composed.
+ *
+ *   npm run validate-outreach -- --persona <slug> --drafts drafts.json
+ *   npm run validate-outreach -- --persona <slug> --drafts drafts.json --update-sheet
+ *
+ * drafts.json: [{ "url": "https://www.linkedin.com/in/…", "comment": "…", "dm": "…" }]
+ */
+async function cmdValidateOutreach(flags) {
+  const config = resolveConfig(flags);
+  const slug = resolvePersonaSlug(flags);
+  const file = flags.drafts;
+  if (!file || file === true) {
+    fail([
+      'Usage: npm run validate-outreach -- --persona <slug> --drafts drafts.json [--update-sheet]',
+      "",
+      "drafts.json is a list of the messages YOU drafted for rows already in the sheet:",
+      '  [{ "url": "https://www.linkedin.com/in/someone", "comment": "…", "dm": "…" }]',
+      "",
+      "Each one is checked against that row's own column D before anything is written.",
+    ].join("\n"));
+  }
+  const persona = slug ? (await getPersona(slug)).persona : null;
+  const sheetId = config.sheetId || (persona && personaSheetId(persona)) || "";
+  if (isPlaceholderSheetId(sheetId)) {
+    fail("No real Google Sheet is bound, so there are no rows to write these onto." + sheetSetupHelp());
+  }
+
+  const raw = JSON.parse(fs.readFileSync(String(file), "utf8"));
+  const drafts = Array.isArray(raw) ? raw : (raw.drafts || []);
+  if (!drafts.length) fail(`No drafts in ${file}.`);
+
+  const { planOutreachWrites } = await import("./outreach.mjs");
+  const { canonicalKey } = await import("./url.mjs");
+  const { getSheets, readLeads, applyPlan } = await import("./sheet.mjs");
+  const sheets = await getSheets(config.credentialsPath);
+  const existingSheet = await readLeads(sheets, sheetId);
+
+  const { updates, failures, unmatched } = planOutreachWrites({
+    rows: existingSheet.rows, drafts, keyOf: canonicalKey,
+  });
+  const passed = updates.length;
+  console.log(`${drafts.length} draft(s) checked: ${passed} row(s) ready to write, ${failures.length} row(s) with a rejected message.`);
+  if (unmatched.length) {
+    console.error(`\n${unmatched.length} draft(s) matched no row in the sheet and were ignored:`);
+    for (const u of unmatched.slice(0, 10)) console.error(`  ${u}`);
+    console.error("A draft can only be written onto a row this system already researched.");
+  }
+  if (failures.length) {
+    console.error("");
+    for (const f of failures) {
+      for (const r of f.rejected) {
+        console.error(`  row ${f.rowNumber} ${f.name} — ${r.field} left blank: ${r.reasons.join("; ")}`);
+      }
+    }
+    console.error("");
+    console.error("Redraft these against the post in column D of that row. Quote it — four");
+    console.error("consecutive words is the bar, and it is the whole anti-fabrication check.");
+  }
+
+  // Writing requires the flag to be PRESENT, not merely un-negated.
+  // `resolveConfig` defaults updateSheet to true for the sourcing commands,
+  // where a run that researched a hundred people and wrote nothing is a waste.
+  // Here the default has to be the opposite way round: checking drafts is the
+  // thing you do first, and the usage text promises a look before a write.
+  const wantsWrite = flags["update-sheet"] === true || flags["update-sheet"] === "true";
+  if (!wantsWrite || config.dryRun) {
+    console.log("\nNothing was written. Re-run with --update-sheet to apply the ones that passed.");
+    if (failures.length) process.exitCode = 1;
+    return;
+  }
+  if (!updates.length) {
+    console.log("\nNothing passed, so nothing was written.");
+    process.exitCode = 1;
+    return;
+  }
+  const applied = await applyPlan(sheets, sheetId, { newRows: [], updates }, {
+    headerRow: existingSheet.headerRow || 3,
+    firstDataRow: existingSheet.firstDataRow || 4,
+    headers: existingSheet.rawHeaders,
+  });
+  console.log(`Sheet: updated ${applied.updated} cell range(s) across ${updates.length} row(s).`);
+  console.log(sheetLine(sheetId));
+  if (failures.length) process.exitCode = 1;
 }
 
 async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
@@ -482,16 +600,34 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
   // 2b) An unreadable activity page must be said out loud: those candidates are
   // being scored WITHOUT their recent posts, which silently costs them recency
   // points and blanks column D — the exact defect that once emptied a pilot.
-  const unreadable = (candidates || []).filter((c) => c.activityStatus === "unreadable").length;
+  // Each one now carries a NAMED verdict rather than a bare "unreadable", so
+  // "they do not post" and "we could not read the page" stop looking alike.
+  const unreadableRows = (candidates || []).filter((c) => c.activityStatus === "unreadable");
+  const unreadable = unreadableRows.length;
   if (unreadable > 0) {
-    console.error(`WARNING: recent-activity pages could not be parsed for ${unreadable} of ${candidates.length} candidate(s). ` +
-      "Their column D is blank and their recency points were lost. LinkedIn's activity markup " +
-      "likely changed — save one activity page into test/fixtures/ and fix extractActivityFromDom.");
+    const kinds = {};
+    for (const c of unreadableRows) {
+      const k = (c.activityVerdict && c.activityVerdict.kind) || "unreadable";
+      kinds[k] = (kinds[k] || 0) + 1;
+    }
+    console.error(`WARNING: recent-activity pages could not be read for ${unreadable} of ${candidates.length} candidate(s) ` +
+      `(${Object.entries(kinds).map(([k, n]) => `${n}× ${k}`).join(", ")}). ` +
+      "Their column D is blank and their recency points were lost — that is a fact about this " +
+      "parser, not about whether those people post. Save one activity page into test/fixtures/ " +
+      "and fix extractUpdatesFromDom.");
+    const first = unreadableRows.find((c) => c.activityVerdict);
+    if (first) console.error(`  ${first.activityVerdict.reason}`);
   }
 
   // 3) Score + plan (pure).
+  //
+  // composeOpeners is false on every LIVE path: the run writes the evidence and
+  // leaves columns I and J blank for the agent to draft against it, then
+  // `npm run validate-outreach` checks those drafts in code before they become
+  // cells. Offline paths keep the templates so a dry-run still shows a full row.
   const sourceType = "LinkedIn";
-  const { scored, plan, counts } = runPipeline({ persona, existingSheet, candidates, nowMs, nowIso, sourceType });
+  const composeOpeners = !!(flags.fixture || config.dryRun);
+  const { scored, plan, counts } = runPipeline({ persona, existingSheet, candidates, nowMs, nowIso, sourceType, composeOpeners });
 
   // 4) Always write a CSV artifact of accepted new/updated leads.
   const csvRows = [
@@ -534,7 +670,35 @@ async function cmdSource(flags, { pilot, exitOnBlocker = true } = {}) {
   if (shortfall) console.log(`  ${shortfall.text}`);
   console.log(`CSV: ${csvPath}`);
   if (config.dryRun || flags.fixture) console.log("(dry-run / fixture: no Sheet was modified)");
-  else if (applied) console.log(`Sheet: appended ${applied.appended}, updated ${applied.updated}`);
+  else if (applied) console.log(`Applied: appended ${applied.appended}, updated ${applied.updated}`);
+
+  // Drafts this run blanked, said out loud. Never written into Notes (column Q).
+  if (plan.outreachRejected && plan.outreachRejected.length) {
+    const { formatOutreachRejections } = await import("./outreach.mjs");
+    console.error("");
+    console.error(formatOutreachRejections(plan.outreachRejected));
+  }
+
+  // The handoff. Where the rows are, what landed, and the one next step —
+  // printed by the code so it cannot go missing when an agent paraphrases.
+  const topScore = plan.newRows.length || plan.updates.length
+    ? Math.max(0, ...scored.filter((s) => s.accepted).map((s) => Number(s.score) || 0))
+    : null;
+  const nextStep = blocker
+    ? "fix the blocker above, then run the pilot again"
+    : composeOpeners
+      ? "this was offline — bind a sheet and run a real pilot to get live rows"
+      : counts.newLeads
+        ? `draft columns I and J for the ${counts.newLeads} new row(s) from the post in column D, then npm run validate-outreach -- --persona ${slug} --drafts drafts.json --update-sheet`
+        : "review the rows with the person and adjust the persona before the next run";
+  console.log("");
+  console.log(formatHandoff({
+    sheetId: flags.fixture ? "" : sheetId,
+    added: counts.newLeads,
+    updated: counts.updatedLeads,
+    topScore,
+    nextStep,
+  }));
 
   if (blocker) {
     console.error(`BLOCKER: ${blocker.kind} — ${blocker.reason}. Stopped safely.`);
@@ -632,6 +796,32 @@ async function cmdDaily(flags) {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+/** The sheet, as a link, on its own line. Empty when nothing is bound. */
+function sheetLine(sheetId) {
+  const url = sheetUrlFor(sheetId);
+  return url ? `Sheet: ${url}` : "";
+}
+
+/**
+ * The last thing a run prints, and the thing the agent must relay.
+ *
+ * Three facts, always in this order: where the rows are, what landed, and the
+ * single next step. Printing it here rather than trusting a doc means it cannot
+ * go missing when an agent paraphrases — the pilot that prompted v5 ended its
+ * final message without the sheet link, so the person had ten researched leads
+ * and nowhere to go and look at them.
+ */
+export function formatHandoff({ sheetId, added = 0, updated = 0, topScore = null, nextStep = "" }) {
+  const lines = [];
+  const link = sheetLine(sheetId);
+  if (link) lines.push(link);
+  const top = topScore === null || topScore === undefined || topScore === "" ? "n/a" : topScore;
+  lines.push(`Rows: ${added} added, ${updated} updated this run. Top fit score: ${top}.`);
+  if (nextStep) lines.push(`Next: ${nextStep}`);
+  return lines.join("\n");
+}
+
 /** A fixture's pinned clock, if it has one. Fixtures only — never a live run. */
 function fixtureNowIso(flags) {
   if (!flags.fixture || flags.fixture === true) return "";

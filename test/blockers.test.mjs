@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { detectBlocker, diagnoseEmptyResults } from "../src/blockers.mjs";
+import { detectBlocker, diagnoseEmptyResults, diagnoseActivity } from "../src/blockers.mjs";
 
 test("detects login/checkpoint/captcha/rate-limit/expiry/access", () => {
   assert.equal(detectBlocker({ url: "https://www.linkedin.com/login" }).kind, "login");
@@ -62,6 +62,44 @@ test("text but no links and no 'no results' message is not the page we expected"
   const d = diagnoseEmptyResults({ bodyTextSample: "Feed\nJobs\nMy Network", profileLinkCount: 0 });
   assert.equal(d.kind, "no_results_visible");
   assert.equal(d.benign, false);
+});
+
+// --- v5: an empty column D now has to say WHICH kind of empty it is ---------
+
+test("an activity page we could read but that holds nothing is the benign case", () => {
+  const d = diagnoseActivity({ itemCount: 0, updateLinks: 0, bodyTextSample: "Rowan hasn't posted yet" });
+  assert.equal(d.kind, "activity_none");
+  assert.equal(d.benign, true);
+});
+
+test("update links with zero captured posts is a parser defect, not a quiet person", () => {
+  // This is the one that cost three of ten pilot rows their column D. Reporting
+  // it as "they do not post" is a claim about the person; it is a fact about us.
+  const d = diagnoseActivity({ itemCount: 0, updateLinks: 6, bodyTextSample: "All activity\nSomething" });
+  assert.equal(d.kind, "activity_parse_failed");
+  assert.equal(d.benign, false);
+  assert.match(d.reason, /markup has changed/i);
+});
+
+test("an activity page with no text never rendered, and one with neither is not that page", () => {
+  assert.equal(diagnoseActivity({ itemCount: 0, bodyTextSample: "  " }).kind, "activity_not_rendered");
+  assert.equal(diagnoseActivity({ itemCount: 0, bodyTextSample: "Jobs\nMy Network" }).kind, "activity_not_visible");
+  assert.equal(diagnoseActivity({ itemCount: 0, bodyTextSample: "Jobs" }).benign, false);
+});
+
+test("captured posts short-circuit the diagnosis", () => {
+  const d = diagnoseActivity({ itemCount: 2, updateLinks: 0, bodyTextSample: "" });
+  assert.equal(d.kind, "captured");
+  assert.equal(d.benign, true);
+});
+
+test("no activity diagnosis is ever silent either", () => {
+  for (const state of [{}, { updateLinks: 3, bodyTextSample: "x" }, { bodyTextSample: "hasn't posted" }]) {
+    const d = diagnoseActivity(state);
+    assert.ok(d.kind, "every diagnosis must name a kind");
+    assert.ok(d.reason && d.reason.length > 20, "every diagnosis must explain itself in plain English");
+    assert.equal(typeof d.benign, "boolean");
+  }
 });
 
 test("no empty-page diagnosis is ever silent", () => {

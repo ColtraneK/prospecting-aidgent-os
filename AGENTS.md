@@ -67,6 +67,15 @@ the sheet from your own eyes. Those come from the repo's code, from pages the
 repo opened itself. Your judgement is not reproducible, not paced, not logged,
 and not checkable by the person paying for it.
 
+**The line, stated once so you can hold it under pressure: you may write words,
+you may never pick people.** Columns I and J — the suggested comment and the
+suggested intro DM — are yours to draft, because a template that quotes a
+fragment of someone's post back at them reads exactly like the automation it is.
+Everything about *who* is in the sheet stays deterministic: the searches, the
+scoring, the accept threshold, the "why them". Section 6b is how you draft those
+two columns and how the code checks them before they become cells. Nothing in
+that section is permission to add, remove, reorder or re-rank a person.
+
 **You must not create a Google Sheet.** Not through the API, not through a
 connector, not with sheets.new. The person owns the sheet; the system binds to
 it. If they do not have one yet, give them this link and let them click it
@@ -200,6 +209,50 @@ Two last things before I write this up.
    Send me the URL of your copy, not the template.
 ```
 
+**Move 3b — read the titles back, and get a yes on the titles specifically.**
+Before you save the persona, and again after, say the `buyer_titles` and
+`exclusions` out loud as a list and ask them to confirm *those*. Not the ICP in
+general — the titles.
+
+**You must not treat "you suggest and proceed" as consent to buyer titles.** It
+is consent to you drafting a proposal. It is not agreement to a list they have
+not seen, and this is not a technicality: it is how the 2026-08-01 pilot
+happened. The agent proposed "Founder, Owner, Principal, Managing Partner, and
+fractional CMO/COO/CRO/CTO", asked four good questions, got "you suggest and
+proceed", and saved that list. Every title in it is matched as a **substring**,
+so "Founder" matches "Founder & Fractional CMO" and several thousand people who
+are neither. Ten marketing leaders came back for an ICP written for operations
+leaders, and the person had no way to know why until someone read the file.
+
+So say it plainly, in this shape:
+
+```
+Before I save this, these are the exact job titles I'll match on — and they
+match as substrings, so a short one like "Founder" will also pull in
+"Founder & Fractional CMO":
+
+  Fractional COO, Fractional Operations Director, Fractional Integrator
+
+And these are the exclusions, which are hard rejects:
+
+  CMO, marketing, brand, growth, creative
+
+Are those the right titles? Anything to add or cut?
+```
+
+`npm run create-persona` and `npm run validate-persona` both print the titles,
+the exclusions and the warm-first setting back at you, and both print a
+**TARGETING WARNING** for any one-word generic title (Founder, Owner, CEO, CMO,
+Principal, Partner, Director, Head, Fractional…). A warning is not a refusal —
+short titles are sometimes genuinely right — but you must relay it and get an
+answer, never save past it in silence.
+
+**Warm-first is off unless they say yes.** `include_connections` defaults to
+false, and only a literal `true` turns it on. Do not set it because mining
+existing connections sounds helpful, and do not set it as part of "you suggest
+and proceed" — that is the same failure as the titles, and it is why five of ten
+pilot leads were 1st-degree marketers.
+
 Then, and only then, write it:
 
 ```bash
@@ -214,7 +267,16 @@ npm run check-sheet      -- --persona their-slug
 they confirmed. Its keys: `persona`, `businessName`, `website`, `offer`,
 `outcome`, `industries`, `companySizes`, `titles`, `geography` (as
 `{include, exclude}`), `signals`, `coreTopics`, `exclusions`, `openerVoice`,
-`keywords`, `includeConnections` (true/false), `sheetId`.
+`keywords`, `audiencePhrase`, `includeConnections` (true/false), `sheetId`.
+
+Two of those do more work than they look like they do. **`coreTopics`** is what
+a run searches for: sourcing now walks LinkedIn *content* searches on those
+topics, filtered to the past week, before it walks any people search — so a
+topic that is missing here is a topic nobody gets found by. Make them the words
+a good prospect would actually write, not category labels. **`audiencePhrase`**
+is how a message describes their audience when there is no post to react to
+("fractional operators", "independent advisory principals"); leave it out and
+the fallback says "people in <first title> roles".
 
 Show them the finished persona in plain language and let them correct it. It is
 a file, not a decision — editing it later is normal and cheap.
@@ -282,6 +344,24 @@ they are supposed to diverge:
 target: 25 added   added: 25   inspected: 68
 ```
 
+A run walks LinkedIn **content** searches first — the persona's `core_topics`,
+filtered to posts from the past week — and only then falls back to people
+searches on the buyer titles. That ordering is deliberate: someone found by a
+post they wrote last Tuesday arrives with the post already captured, which is
+what column D is for. Someone found by their headline may not have posted in two
+years, and half of one pilot's rows were exactly that.
+
+Two things about content search that look like omissions and are not. It does
+**not** add the geography to the search terms — a content search matches the text
+of a post, not a profile field, so asking for posts containing the words "United
+States" returns almost nothing; geography is checked by the scorer against the
+profile the worker opens. And it **skips reposts**, because the words in a repost
+belong to somebody else and quoting them back as "your post" credits a stranger's
+writing to the person you are messaging.
+
+After the pilot, draft columns I and J for the new rows and submit them through
+`npm run validate-outreach` (section 6b). The run leaves them blank on purpose.
+
 Stop after the pilot and walk them through what landed. Ask whether the
 suggested comments sound like them, whether the people are right, and whether
 the fit scores match their gut. Adjust the persona and pilot again if not. A
@@ -320,6 +400,8 @@ Other commands, for when they are needed:
 
 ```bash
 npm run start                                     # where am I, what is next
+npm run start        -- --json                    # the same, as data, for you
+npm run validate-outreach -- --persona their-slug --drafts drafts.json --update-sheet
 npm run setup-login  -- --persona their-slug      # human signs in, once
 npm run check-login                               # 15s: is the LinkedIn session alive
 npm run feedback     -- --list                    # what the Feedback tab is waiting on
@@ -443,6 +525,105 @@ deleted.
 
 ---
 
+## 6b. Drafting columns I and J — the one place you write
+
+A live run now leaves **I (Suggested Comment)** and **J (Suggested Intro DM)**
+blank. The row lands carrying evidence and nothing else: the post verbatim in D,
+its permalink in E, the scorer's own reasons in H. Drafting those two columns is
+your job, and it is the only writing this system asks you for.
+
+Do it after the run, from the sheet, one row at a time:
+
+1. Read that row's **column D**. That is the post, exactly as it was captured.
+2. Write a comment and a DM that react to *that* post.
+3. Put them in a file, `drafts.json` in the repo root:
+
+```json
+[
+  { "url": "https://www.linkedin.com/in/someone-real/",
+    "comment": "…",
+    "dm": "…" }
+]
+```
+
+4. Hand it to the repo, which checks every draft before anything is written:
+
+```bash
+npm run validate-outreach -- --persona their-slug --drafts drafts.json
+npm run validate-outreach -- --persona their-slug --drafts drafts.json --update-sheet
+```
+
+**How to write them.** Use the persona's `opener_voice` — warm, concise,
+curious, no pitch. React to the specific thing they said, not the topic in
+general. One light question at the end. Never mention AI, automation, this tool,
+or "I came across your profile". Never imply you know anything about them beyond
+the post you just read: you have not met them, you do not follow them, you did
+not read their newsletter.
+
+The first command checks and writes nothing. The second one writes the drafts
+that passed. Run the first one first.
+
+**What the code enforces, and will not negotiate.** A draft must be under 280
+characters (250 for a comment); must contain at least **four consecutive words
+that really appear in column D** (or the whole post, when the post is shorter
+than four words); must not contain a `|`, a URL, or an ellipsis that cuts a word
+in half; and must greet the person column A actually names. The date stamp this
+system wraps around the post does not count as the post — quoting "older than 7
+days" back at someone proves nothing.
+
+**With no post captured, a draft may claim nothing about them at all.** Not a
+post, not a piece, not a thread, not a newsletter, not "I saw you have been
+rebuilding the ops function". You may say who you work with, and you may ask for
+their view — their take, their perspective, their read — and that is the whole
+of it. A comment cannot exist at all in that state, because there is nothing to
+comment on. This is stricter than it sounds and it is meant to be: a blank
+column D is the normal live output for someone who has not posted, and a fluent
+invented biography is the one failure nobody reading their own sheet would catch.
+
+The four-word rule is the one that matters. It is not a style check, it is the
+anti-fabrication check: a message about a post nobody wrote is fluent, plausible,
+and invisible to the person reading their own sheet. You cannot pass it by
+writing well. You can only pass it by having read the post.
+
+**A draft that fails is left blank.** It is not repaired, not reworded, not
+"close enough". The command prints the row and the reason; redraft it against
+column D and run the command again. **You must not work around a rejected draft**
+by editing the sheet by hand, by loosening the check, or by copying the post
+into the message to satisfy the matcher without meaning it.
+
+The reason a draft was rejected is printed to you, and it is never written into
+Notes. Column Q is theirs; the system does not write K–Q for any reason,
+including a helpful one.
+
+If there is no model available — an offline demo, a dry run, a fixture — the
+repo falls back to composed templates in `src/evidence.mjs`, which are written to
+pass exactly the same validator. That is the floor, not the goal.
+
+---
+
+## 6c. Every run ends by pointing at the sheet
+
+**You must end any response that finishes a step or a run with these three
+things, in this order:**
+
+1. **The sheet, as a link** — `https://docs.google.com/spreadsheets/d/<id>/edit`.
+   Not "your sheet", not "the sheet has been updated". The link.
+2. **What landed** — rows added and rows updated this run, and the top fit score.
+3. **The single next step**, as one line, taken from `npm run start`.
+
+The sheet is the deliverable. Your summary of it is not. The pilot this rule
+exists because of finished with ten researched leads in a sheet and a final
+message that never linked to it, so the person had to go and find their own
+results — and every question they asked afterwards was answerable only by
+someone reading the file.
+
+The commands print all three for you: a run ends with a `Sheet:` line, a `Rows:`
+line and a `Next:` line, and you relay them. For the checklist, `npm run start
+-- --json` returns the same facts as data — `ready`, `sheetUrl`, `nextStep`,
+`personaWarnings` — so you never have to scrape the prose meant for the person.
+
+---
+
 ## 7. When something blocks
 
 The worker stops on any login wall, CAPTCHA, checkpoint, rate-limit page, or
@@ -486,6 +667,27 @@ in the Run Log's Blocker column, and you must repeat it to the person:
 The worker stops after two unreadable pages in a row rather than walking all
 twenty-odd searches. A run that ends in twenty seconds with a reason is worth
 more than one that ends in four minutes with a zero.
+
+### An empty column D also has to say which kind of empty it is
+
+The same rule one level down. When a profile's recent-activity page yields no
+post, the run names why, and you repeat it:
+
+- **`activity_none`** — the page itself says this person has not posted. Benign,
+  and the only benign one. They are a lead with no post to comment on: column D
+  and column I are both correctly empty.
+- **`activity_parse_failed`** — the page links to updates and the extractor read
+  none of them. This is a defect in this repo, not a fact about the person, and
+  saying "they do not post much" is a claim you have no evidence for. Take a
+  snapshot (`npm run snapshot -- --url <their activity page>`), save it into
+  `test/fixtures/`, and fix `extractUpdatesFromDom` against it.
+- **`activity_not_rendered`** — the page returned no text at all.
+- **`activity_not_visible`** — it rendered, but it was not the activity page.
+  Usually a signed-out or redirected profile; re-check the session.
+
+A run prints a count of these with the kinds broken out. Three of the ten rows
+in the 2026-08-01 pilot had a blank column D and no explanation, which read as
+"these people are quiet" and actually meant "we could not read their page".
 
 ### A run that never had a session refuses before it opens anything
 
@@ -631,6 +833,8 @@ finding out in three weeks that the leads were made up.
 - `src/schema.mjs` — the single source of truth for the sheet's columns
 - `src/evidence.mjs` — composes A–J from verified facts only, never invention
 - `src/followup.mjs` — turns follow-up observations into Y–AB updates
+- `src/outreach.mjs` — the guardrails on the drafted comment and DM (section 6b)
+- `src/searchTerms.mjs` — builds the content searches a run walks first
 - `src/persona.mjs` — load, validate, and scaffold personas
 - `src/sheet.mjs`, `src/sheetPlan.mjs` — Google Sheets read/write and write guards
 - `sheet/BuildLeadSheet.gs` — Apps Script that builds the sheet from scratch

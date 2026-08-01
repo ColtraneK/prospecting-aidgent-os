@@ -53,17 +53,47 @@ Stop after the pilot and actually read the rows. Do the suggested comments sound
 like you? Are these the right people? Fix the persona and pilot again if not — a
 second pilot is far cheaper than fifty rows you will not use.
 
+A run looks for **recent posts first**. It searches LinkedIn content on your
+persona's core topics, filtered to the past week, and only then falls back to
+searching people by job title. Someone found because of a post they wrote on
+Tuesday arrives with that post already captured; someone found by their headline
+may not have posted in two years.
+
 Each candidate is confirmed against the persona (title, company, geography, fit),
 its canonical profile URL is captured, and recent activity is inspected. A post
 or relevant comment about a core topic in the **last 7 days** is **prioritized**
 as a ranking boost, but a strong ICP match with older or no recent activity is
-still allowed. Why Them, the verbatim recent post (column D) with its link in
-column E, the Suggested Comment (I), and the Suggested Intro DM (J) are built
-only from verified evidence. Degree (F) is copied from the badge on the page when
-one is shown, and left blank when it is not.
+still allowed. Why Them (H) is the scorer's own reasons, not a summary of their
+headline. Degree (F) is copied from the badge on the page when one is shown, and
+left blank when it is not — it ranks warmer people higher and does not, on its
+own, qualify anybody.
 If the newest post found is older than seven days it is still written to column D
 and marked `(date — older than 7 days)`, so a suggested comment never refers to a
 post that is missing from your sheet.
+
+## The two message columns
+
+A run leaves **Suggested Comment (I)** and **Suggested Intro DM (J)** blank and
+writes the evidence instead. Your agent then drafts those two from the post in
+column D and submits them:
+
+```bash
+npm run validate-outreach -- --persona my-persona --drafts drafts.json --update-sheet
+```
+
+Without `--update-sheet` it checks the drafts and writes nothing, so you can look
+first.
+
+Every draft is checked before it reaches a cell: length, no pipes, no URLs, no
+word cut in half, the right first name, and — the one that matters — at least
+four consecutive words quoted from the post in column D. A message about a post
+nobody wrote reads perfectly well, and quoting four words of one does not. A
+draft that fails is left blank with the reason printed, rather than tidied up
+into something nobody actually wrote. Where no post was captured at all, a
+message may ask for their view and may claim nothing about them.
+
+Re-running a search never overwrites columns I and J, so a scheduled daily run
+cannot erase messages you have already written or edited.
 
 The worker appends new leads and refreshes existing ones in the Sheet, preserves
 your human columns K–Q, and writes a Run Log row. On any login / CAPTCHA /

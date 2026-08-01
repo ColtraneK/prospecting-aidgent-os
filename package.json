@@ -25,7 +25,8 @@
     "validate-persona": "node src/cli.mjs validate-persona",
     "create-persona": "node src/cli.mjs create-persona",
     "bind-sheet": "node src/cli.mjs bind-sheet",
-    "check-sheet": "node src/cli.mjs check-sheet"
+    "check-sheet": "node src/cli.mjs check-sheet",
+    "validate-outreach": "node src/cli.mjs validate-outreach"
   },
   "dependencies": {
     "googleapis": "^144.0.0",

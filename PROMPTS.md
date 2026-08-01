@@ -19,7 +19,7 @@ you want to drive a single step by hand.
 
 ## 3. Source (run the skill)
 
-> Use the research-outreach-prospects skill with persona {{SLUG}}. Pilot 10 first, let me review, then run headless with --update-sheet. Read-only research only: prioritize people with a post or relevant comment about my core topics in the last 7 days but allow strong ICP matches without recent activity. For each lead put the verbatim recent post and its date in column D, the bare post link in E, a Suggested Comment in I, and a Suggested Intro DM in J. Never send/connect/react/comment, never touch my human columns K–Q, and stop on any login / CAPTCHA / checkpoint / rate-limit page.
+> Use the research-outreach-prospects skill with persona {{SLUG}}. Pilot 10 first, let me review, then run headless with --update-sheet. Read-only research only: prioritize people with a post or relevant comment about my core topics in the last 7 days but allow strong ICP matches without recent activity. For each lead put the verbatim recent post and its date in column D, the bare post link in E, and the scorer's own reasons in H. Leave I and J blank during the run, then draft them from the post in column D and submit them with `npm run validate-outreach` so the code can check them before anything is written. Never send/connect/react/comment, never touch my human columns K–Q, stop on any login / CAPTCHA / checkpoint / rate-limit page, and end with the sheet's link, what landed, and the one next step.
 
 ## 4. Check back (read-only follow-up)
 

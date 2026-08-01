@@ -1,0 +1,120 @@
+<!doctype html>
+<!--
+  A LinkedIn CONTENT search results page — the surface v5 sources from first.
+  URL shape: /search/results/content/?keywords=...&datePosted="past-week"
+
+  Same rules as every other fixture here: obfuscated class names, nothing the
+  extractor may key on except structure. A content result cannot stop doing
+  three things — naming who posted (a /in/ link), showing the post text, and
+  stamping it — and those three are all extractUpdatesFromDom is allowed to use.
+
+  The third card deliberately has NO author link, because a promoted/company
+  post looks exactly like this. It must be dropped rather than guessed at.
+-->
+<html>
+  <body>
+    <nav>
+      <a href="https://www.linkedin.com/in/my-own-account/">Me</a>
+      <a href="https://www.linkedin.com/feed/">Home</a>
+    </nav>
+    <main>
+      <div class="zQmXvTrLpO">
+        <h2>Posts</h2>
+        <ul role="list">
+          <li class="kRtYnBvCxZ">
+            <div class="hJuIkOlPmN"><a href="https://www.linkedin.com/in/dara-okonjo/"><span aria-hidden="true">Dara Okonjo</span><span class="visually-hidden">View Dara Okonjo&rsquo;s profile</span></a><span class="wErTyUiOpA">&bull; 2nd</span><span class="sDfGhJkLzX">Fractional COO helping founder-led firms hold their delivery quality while they grow</span> <span class="qAzWsXeDcR">3d &bull; Visible to anyone on or off LinkedIn</span></div>
+            <div class="mNbVcXzLkJ">
+              Capacity is the constraint nobody budgets for. We stopped hiring
+              against the backlog and mapped the handoffs instead, and two of the
+              four bottlenecks turned out to be one missing approval step.
+            </div>
+            <a class="pOiUyTrEwQ" href="https://www.linkedin.com/feed/update/urn:li:activity:7360001111222233334/">3 days ago</a>
+            <div class="lKjHgFdSaP">
+              <span>142</span>
+              <span>31 comments</span>
+              <button>Like</button>
+              <button>Comment</button>
+              <button>Repost</button>
+              <button>Send</button>
+            </div>
+          </li>
+
+          <li class="kRtYnBvCxZ">
+            <div class="hJuIkOlPmN"><a href="https://www.linkedin.com/in/marisol-vega-ops/"><span aria-hidden="true">Marisol Vega</span><span class="visually-hidden">View Marisol Vega&rsquo;s profile</span></a><span class="wErTyUiOpA">&bull; 3rd+</span><span class="sDfGhJkLzX">Operations Consultant | ex-Head of Ops | writing about the boring middle of scaling</span> <span class="qAzWsXeDcR">6d &bull; Visible to anyone on or off LinkedIn</span></div>
+            <div class="mNbVcXzLkJ">
+              Every ops audit I run finds the same thing first: the team knows
+              exactly where the work stalls and nobody has ever been asked.
+            </div>
+            <a class="pOiUyTrEwQ" href="https://www.linkedin.com/feed/update/urn:li:activity:7360005555666677778/">6 days ago</a>
+            <div class="lKjHgFdSaP">
+              <span>58</span>
+              <button>Like</button>
+              <button>Comment</button>
+            </div>
+          </li>
+
+          <!--
+            A social-context header. LinkedIn puts "X reposted this" or "Y and 2
+            others liked this" ABOVE the actor, so the first /in/ link in the
+            card belongs to somebody who merely touched the post. Taking it
+            attributes the post to the wrong person AND leaves the real actor
+            header in the body. Note the actor's headline sits on its own line
+            here, with no "visible to anyone" and no degree badge, so nothing but
+            the header subtraction keeps it out of the post text.
+          -->
+          <li class="kRtYnBvCxZ">
+            <div class="tHiSiScOnTeXt">
+              <a href="https://www.linkedin.com/in/priya-raman-boost/"><span aria-hidden="true">Priya Raman</span></a>
+              <span>and 2 others liked this</span>
+            </div>
+            <div class="hJuIkOlPmN">
+              <a href="https://www.linkedin.com/in/tomas-lindgren-ops/"><span aria-hidden="true">Tomas Lindgren</span><span class="visually-hidden">View Tomas Lindgren&rsquo;s profile</span></a>
+              <div class="sDfGhJkLzX">Fractional Integrator for professional services firms scaling past their first twenty people</div>
+              <div class="qAzWsXeDcR">5d</div>
+            </div>
+            <div class="mNbVcXzLkJ">
+              Nobody owns the handoff. That is the whole bug.
+            </div>
+            <a class="pOiUyTrEwQ" href="https://www.linkedin.com/feed/update/urn:li:activity:7360007777888899990/">5 days ago</a>
+            <div class="lKjHgFdSaP">
+              <span>73</span>
+              <button>Like</button>
+              <button>Comment</button>
+            </div>
+          </li>
+
+          <!-- A repost: the words belong to someone else entirely. -->
+          <li class="kRtYnBvCxZ">
+            <div class="tHiSiScOnTeXt">
+              <a href="https://www.linkedin.com/in/wes-abbott-share/"><span aria-hidden="true">Wes Abbott</span></a>
+              <span>reposted this</span>
+            </div>
+            <div class="hJuIkOlPmN">
+              <a href="https://www.linkedin.com/in/original-author-here/"><span aria-hidden="true">Original Author</span></a>
+              <div class="qAzWsXeDcR">2d</div>
+            </div>
+            <div class="mNbVcXzLkJ">
+              The single biggest lever in professional services is deciding what you will not do.
+            </div>
+            <a class="pOiUyTrEwQ" href="https://www.linkedin.com/feed/update/urn:li:activity:7360003333444455556/">2 days ago</a>
+          </li>
+
+          <li class="kRtYnBvCxZ">
+            <div class="hJuIkOlPmN">
+              <span class="sDfGhJkLzX">Northwind Advisory</span>
+              <span class="qAzWsXeDcR">Promoted</span>
+            </div>
+            <div class="mNbVcXzLkJ">
+              Download our 2026 operations benchmark report and see how your
+              delivery times compare against three hundred advisory firms.
+            </div>
+            <a class="pOiUyTrEwQ" href="https://www.linkedin.com/feed/update/urn:li:activity:7360009999000011112/">1w</a>
+            <div class="lKjHgFdSaP">
+              <button>Like</button>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </main>
+  </body>
+</html>

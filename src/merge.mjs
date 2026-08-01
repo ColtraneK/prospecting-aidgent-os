@@ -5,6 +5,7 @@ import { HUMAN_FIELDS, LEADS_HEADERS } from "./schema.mjs";
 import { scoreOutOf10 } from "./evidence.mjs";
 import { canonicalKey, canonicalizeLinkedInUrl } from "./url.mjs";
 import { dedupeCandidates } from "./dedupe.mjs";
+import { enforceOutreach } from "./outreach.mjs";
 
 // Agent fields the system refreshes on an EXISTING lead (never A/C, never K-Q).
 const REFRESHABLE_AGENT_FIELDS = [
@@ -17,6 +18,29 @@ const REFRESHABLE_AGENT_FIELDS = [
   "Suggested Comment",
   "Suggested Intro DM",
 ];
+
+/**
+ * The last gate before columns I and J become cells.
+ *
+ * Every write path funnels through toLeadRow/toRefreshSet, so putting the
+ * validator here means no drafted message reaches the sheet unchecked by any
+ * route — not the pipeline's own templates, not an agent's drafts submitted
+ * through validate-outreach, not a fixture. A draft that fails is blanked and
+ * the reason is attached to the row for the report. It is never repaired: a
+ * message this code rewrote is a message nobody wrote.
+ *
+ * Note what is NOT done here. The reason does not go into Notes (column Q).
+ * K–Q are the person's own columns and the system does not write them, no
+ * matter how useful the note would be.
+ */
+function checkedOpeners(candidate) {
+  return enforceOutreach({
+    name: candidate.name || "",
+    postText: candidate.recentPost || "",
+    comment: candidate.comment || "",
+    dm: candidate.introDM || "",
+  });
+}
 
 /** Build the {header: value} map for a brand-new lead row (A:AB). */
 export function toLeadRow(candidate, opts = {}) {
@@ -34,8 +58,9 @@ export function toLeadRow(candidate, opts = {}) {
   cells["Degree"] = candidate.degree || "";
   cells["Score (1-10)"] = scoreOutOf10(candidate.score);
   cells["Why Them"] = candidate.whyThem || "";
-  cells["Suggested Comment"] = candidate.comment || "";
-  cells["Suggested Intro DM"] = candidate.introDM || "";
+  const openers = checkedOpeners(candidate);
+  cells["Suggested Comment"] = openers.comment;
+  cells["Suggested Intro DM"] = openers.dm;
   // Human K-Q — seed only Date Added + Source Type on insert; the rest is yours.
   // A person found among your existing connections is labelled "Connection" so
   // you can tell warm rows from cold ones at a glance.
@@ -66,8 +91,18 @@ export function toRefreshSet(candidate, opts = {}) {
   if (candidate.degree) set["Degree"] = candidate.degree;
   set["Score (1-10)"] = scoreOutOf10(candidate.score);
   set["Why Them"] = candidate.whyThem || "";
-  set["Suggested Comment"] = candidate.comment || "";
-  set["Suggested Intro DM"] = candidate.introDM || "";
+  // I and J are the ONE pair of agent columns a refresh may not blank.
+  //
+  // Every other agent column is re-derived from this run's own observations, so
+  // overwriting is correct. These two are not: on a live run the pipeline leaves
+  // them empty by design and the agent fills them in afterwards through
+  // validate-outreach. Assigning "" here would mean the next `npm run source`
+  // silently erased the drafted comment and DM of every person it re-inspected —
+  // deleting, on a weekly schedule, the only cells the person was told to act on.
+  // So a blank leaves them alone, exactly as Degree does above.
+  const openers = checkedOpeners(candidate);
+  if (openers.comment) set["Suggested Comment"] = openers.comment;
+  if (openers.dm) set["Suggested Intro DM"] = openers.dm;
   set["Activity Date"] = activity.date || "";
   set["Activity Type"] = activity.type || "";
   set["Fit Score"] = numOrBlank(candidate.score);
@@ -111,10 +146,17 @@ export function planSheetUpdate(existingSheet, scored, opts = {}) {
   const index = buildExistingIndex(existingSheet);
   const newRows = [];
   const updates = [];
+  // Drafted messages that were blanked, so the run can say so out loud. This is
+  // reported to the agent, not written into the person's Notes column.
+  const outreachRejected = [];
 
   for (const cand of kept) {
     const key = canonicalKey({ url: cand.url, name: cand.name, company: cand.company }).key;
     const match = key ? index.get(key) : null;
+    const check = checkedOpeners(cand);
+    if (check.rejected.length) {
+      outreachRejected.push({ name: cand.name || "", canonicalKey: key, rejected: check.rejected });
+    }
     if (match) {
       updates.push({ rowNumber: match.rowNumber, canonicalKey: key, set: toRefreshSet({ ...cand, canonicalKey: key }, opts) });
     } else {
@@ -123,13 +165,14 @@ export function planSheetUpdate(existingSheet, scored, opts = {}) {
   }
 
   return {
-    newRows, updates, duplicatesSkipped, rejected,
+    newRows, updates, duplicatesSkipped, rejected, outreachRejected,
     counts: {
       inspected: scored.length,
       newLeads: newRows.length,
       updatedLeads: updates.length,
       duplicatesSkipped: duplicatesSkipped.length,
       rejected: rejected.length,
+      outreachRejected: outreachRejected.length,
     },
   };
 }

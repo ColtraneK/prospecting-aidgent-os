@@ -84,3 +84,62 @@ export function diagnoseEmptyResults(state = {}) {
       "this is not the search page we expected.",
   };
 }
+
+// LinkedIn's own wording when someone genuinely has nothing on their activity
+// feed. The only empty activity page that is not a defect.
+const NO_ACTIVITY_TEXT =
+  /hasn.?t posted|has not posted|no (recent )?activity|nothing to see|no posts (yet|to show)|doesn.?t have any/i;
+
+/**
+ * Why did a profile's recent-activity page produce no post?
+ *
+ * "" in column D used to mean four different things — they never post, the page
+ * never rendered, the markup changed, or we opened something that was not the
+ * activity page — and only the first is acceptable. All four scored identically
+ * (no recency points, blank D, a suggested comment with no post to comment on),
+ * so the defect was invisible. This gives each one a name, on the same
+ * evidence-first pattern as diagnoseEmptyResults: believe "nothing here" only
+ * when the page itself says so.
+ *
+ * @param {{updateLinks?:number, bodyTextSample?:string, itemCount?:number}} state
+ * @returns {{kind:string, reason:string, benign:boolean}}
+ */
+export function diagnoseActivity(state = {}) {
+  const text = String(state.bodyTextSample || "");
+  const links = Number(state.updateLinks || 0);
+  const items = Number(state.itemCount || 0);
+
+  if (items > 0) {
+    return { kind: "captured", benign: true, reason: `captured ${items} recent update(s).` };
+  }
+  if (NO_ACTIVITY_TEXT.test(text)) {
+    return {
+      kind: "activity_none",
+      benign: true,
+      reason: "the page says this person has not posted — there is nothing to capture.",
+    };
+  }
+  if (links > 0) {
+    return {
+      kind: "activity_parse_failed",
+      benign: false,
+      reason:
+        `the page links to ${links} update(s) but the extractor read none of them — ` +
+        "LinkedIn's activity markup has changed and extractUpdatesFromDom needs a new fixture.",
+    };
+  }
+  if (!text.trim()) {
+    return {
+      kind: "activity_not_rendered",
+      benign: false,
+      reason: "the activity page returned no readable text at all — it never finished rendering.",
+    };
+  }
+  return {
+    kind: "activity_not_visible",
+    benign: false,
+    reason:
+      "the page rendered, but it showed neither updates nor a 'has not posted' message — " +
+      "this was probably not the activity page (a signed-out or redirected profile).",
+  };
+}

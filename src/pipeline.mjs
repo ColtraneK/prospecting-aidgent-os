@@ -6,7 +6,23 @@ import { scoreCandidate } from "./scoring.mjs";
 import { recentPostCell, postLinkCell, composeWhyThem, composeComment, composeIntroDM } from "./evidence.mjs";
 import { planSheetUpdate } from "./merge.mjs";
 
-export function runPipeline({ persona, existingSheet, candidates, nowMs = Date.now(), nowIso = new Date().toISOString(), sourceType = "LinkedIn", threshold } = {}) {
+/**
+ * @param {object} o
+ * @param {boolean} [o.composeOpeners=true]
+ *   Whether to fill columns I and J from the templates in evidence.mjs.
+ *
+ *   v5 splits this. On a LIVE run cli.mjs passes false: the row lands carrying
+ *   only evidence — the post verbatim in D, its link in E, the scorer's reasons
+ *   in H — and the driving agent then drafts I and J against that evidence and
+ *   submits them through `npm run validate-outreach`, which checks them in code
+ *   before a cell is written. A model writes the words; nothing about who
+ *   qualifies moved.
+ *
+ *   Offline paths keep the templates, because a dry-run on a laptop with no
+ *   model has to show what the output looks like, and a demo of two empty
+ *   columns demonstrates nothing.
+ */
+export function runPipeline({ persona, existingSheet, candidates, nowMs = Date.now(), nowIso = new Date().toISOString(), sourceType = "LinkedIn", threshold, composeOpeners = true } = {}) {
   const scored = candidates.map((c) => {
     const s = scoreCandidate(persona, c, { nowMs, ...(threshold ? { threshold } : {}) });
     const out = {
@@ -21,9 +37,14 @@ export function runPipeline({ persona, existingSheet, candidates, nowMs = Date.n
     if (s.accepted) {
       out.recentPost = c.recentPost || recentPostCell(c, s.recent);
       out.postLink = c.postLink || postLinkCell(c);
-      out.whyThem = c.whyThem || composeWhyThem(c);
-      out.comment = c.comment || composeComment(c);
-      out.introDM = c.introDM || composeIntroDM(c, persona);
+      out.whyThem = c.whyThem || composeWhyThem(c, s.factors);
+      if (composeOpeners) {
+        out.comment = c.comment || composeComment(c);
+        out.introDM = c.introDM || composeIntroDM(c, persona);
+      } else {
+        out.comment = c.comment || "";
+        out.introDM = c.introDM || "";
+      }
     }
     return out;
   });

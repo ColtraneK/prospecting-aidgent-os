@@ -1,0 +1,57 @@
+<!doctype html>
+<!--
+  THE WRONG-NODE BUG, pinned.
+
+  This is the page shape behind the Leah Cone row in the 2026-08-01 pilot: a
+  celebration post that tags a long list of people. The tag strip is far longer
+  than the post itself, so "the longest line in the card" picked the list of
+  names — and column D, the suggested comment and the suggested DM all ended up
+  quoting forty strangers' names back at the person. Same class of defect as the
+  earlier Lisa McCurdy case.
+
+  Two structural signatures make it decidable without any class name:
+    - the ACTOR HEADER wraps the author link, so its lines (including a long
+      headline) are not the post body, and
+    - a line built out of the card's own linked NAMES is a tag strip, not prose.
+
+  The real post body here is deliberately SHORTER than both, so a fix that
+  merely prefers length would still fail this fixture.
+-->
+<html>
+  <body>
+    <main>
+      <ul>
+        <li class="aQwZsXeDcR">
+          <div class="tGbYhNuJmI"><a href="https://www.linkedin.com/in/leah-cone-example/"><span aria-hidden="true">Leah Cone</span><span class="visually-hidden">View Leah Cone&rsquo;s profile</span></a><span class="kOlPmNbVcX">&bull; 1st</span><span class="zXcVbNmAsD">Founder and Managing Partner building the largest peer network for independent fractional operators in North America</span> <span class="qWeRtYuIoP">4d &bull; Visible to anyone on or off LinkedIn</span></div>
+
+          <div class="pAsDfGhJkL">
+            So proud of this cohort. Twelve weeks, one room, no slides.
+          </div>
+
+          <div class="mKlOpQwErT">
+            <a href="https://www.linkedin.com/in/amara-diallo-x1/">Amara Diallo</a>,
+            <a href="https://www.linkedin.com/in/benedikt-hoff-x2/">Benedikt Hoff</a>,
+            <a href="https://www.linkedin.com/in/carla-mendes-x3/">Carla Mendes</a>,
+            <a href="https://www.linkedin.com/in/dmitri-volkov-x4/">Dmitri Volkov</a>,
+            <a href="https://www.linkedin.com/in/elena-fischer-x5/">Elena Fischer</a>,
+            <a href="https://www.linkedin.com/in/farid-haddad-x6/">Farid Haddad</a>,
+            <a href="https://www.linkedin.com/in/gwen-abara-x7/">Gwen Abara</a>,
+            <a href="https://www.linkedin.com/in/hugo-lindqvist-x8/">Hugo Lindqvist</a>,
+            <a href="https://www.linkedin.com/in/ines-carvalho-x9/">Ines Carvalho</a>,
+            <a href="https://www.linkedin.com/in/jonah-brightwater-x10/">Jonah Brightwater</a>
+          </div>
+
+          <a class="vBnMqWeRtY" href="https://www.linkedin.com/feed/update/urn:li:activity:7359912345678901234/">4 days ago</a>
+          <div class="cXzAsQwErT">
+            <span>318</span>
+            <span>64 comments</span>
+            <button>Like</button>
+            <button>Comment</button>
+            <button>Repost</button>
+            <button>Send</button>
+          </div>
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>
