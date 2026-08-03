@@ -16,6 +16,7 @@ import {
 } from "./persona.mjs";
 import { buildRunReport, formatRunReport } from "./runlog.mjs";
 import { createBudget, formatBudgetRefusal, BUDGET_STATE_PATH } from "./budget.mjs";
+import { loadSheetMap, saveSheetMap } from "./sheetMap.mjs";
 
 const SELECTED_FILE = path.join(REPO_ROOT, "private", "selected-persona.txt");
 
@@ -30,13 +31,14 @@ async function main() {
     case "save-persona": return cmdSavePersona(flags);
     case "bind-sheet": return cmdBindSheet(flags);
     case "check-sheet": return cmdCheckSheet(flags);
+    case "map-sheet": return cmdMapSheet(flags);
     case "source": return cmdSource(flags);
     case "enrich": return cmdEnrich(flags);
     case "browser-verify": return cmdBrowserVerify(flags);
     case "status": return cmdStatus(flags);
     case "next-actions": return cmdNextActions(flags);
     default:
-      console.log("Unknown command. See: start | init-env | source | enrich | browser-verify | qualify | status | next-actions | feedback | save-persona | bind-sheet | check-sheet");
+      console.log("Unknown command. See: start | init-env | source | enrich | browser-verify | qualify | status | next-actions | feedback | save-persona | bind-sheet | check-sheet | map-sheet");
       process.exit(2);
   }
 }
@@ -227,7 +229,7 @@ async function cmdInspect(flags) {
   // at the gate rather than re-inspected on budget.
   const { getSheets, readLeads } = await import("./sheet.mjs");
   const sheets = await getSheets(config.credentialsPath);
-  const existingSheet = await readLeads(sheets, sheetId);
+  const existingSheet = await readLeads(sheets, sheetId, { overrides: loadSheetMap(config.sheetMapPath) });
   const { buildExistingIndex } = await import("./merge.mjs");
   const existingKeys = new Set(buildExistingIndex(existingSheet).keys());
 
@@ -321,7 +323,7 @@ async function cmdQualify(flags) {
 
   const { getSheets, readLeads, applyPlan, appendRunLog } = await import("./sheet.mjs");
   const sheets = await getSheets(config.credentialsPath);
-  const existingSheet = await readLeads(sheets, sheetId);
+  const existingSheet = await readLeads(sheets, sheetId, { overrides: loadSheetMap(config.sheetMapPath) });
 
   const nowIso = new Date().toISOString();
   const startedMs = Date.now();
@@ -351,9 +353,9 @@ async function cmdQualify(flags) {
   }
 
   const applied = await applyPlan(sheets, sheetId, plan, {
-    headerRow: existingSheet.headerRow || 3,
-    firstDataRow: existingSheet.firstDataRow || 4,
-    headers: existingSheet.rawHeaders,
+    headerRow: existingSheet.headerRow,
+    firstDataRow: existingSheet.firstDataRow,
+    layout: existingSheet.layout,
   });
   const runId = durableRunId;
   const concernCount = refused.length + plan.outreachRejected.length;
@@ -536,20 +538,37 @@ async function cmdCheckSheet(flags) {
   const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
   const tabs = (meta.data.sheets || []).map((s) => s.properties.title);
   if (!tabs.includes("Leads")) {
-    fail('Google access works, but this Sheet has no "Leads" tab. Run buildLeadSheet in Extensions > Apps Script, then check again.');
+    fail('Google access works, but this Sheet has no "Leads" tab. Copy the official template, then bind that copy.');
   }
-  await readLeads(sheets, sheetId);
+  const leadSheet = await readLeads(sheets, sheetId, { overrides: loadSheetMap(config.sheetMapPath) });
   // Getting here means the service account opened the sheet as itself, which
   // is the only evidence the share step was actually done. Record it.
   recordSheetProof({ sheetId });
   console.log(`OK: will USE existing sheet "${meta.data.properties.title}" (${sheetId}).`);
   console.log(`Tabs: ${tabs.join(", ")}`);
+  console.log(`Leads mapping: ${Object.entries(leadSheet.layout.byCanonical).map(([field, value]) => `${field} → ${value.header}`).join("; ")}`);
+  if (leadSheet.layout.unmappedHeaders.length) console.log(`Unmapped attendee columns (left untouched): ${leadSheet.layout.unmappedHeaders.map((x) => x.header).join(", ")}`);
   console.log("This tool maintains THIS sheet in place and never creates a new spreadsheet.");
+}
+
+function cmdMapSheet(flags) {
+  const file = flags.file || flags.map;
+  if (!file || file === true) fail("Provide --file <mapping.json>. Example: { \"Why Them\": \"Why this contact matters\" }.");
+  let map;
+  try { map = JSON.parse(fs.readFileSync(String(file), "utf8")); }
+  catch (err) { fail(`Could not read mapping file: ${err.message}`); }
+  if (!map || typeof map !== "object" || Array.isArray(map) || Object.values(map).some((v) => typeof v !== "string" || !v.trim())) {
+    fail("The mapping must be an object of internal field names to non-empty Sheet header names.");
+  }
+  const config = resolveConfig(flags);
+  const saved = saveSheetMap(map, config.sheetMapPath);
+  console.log(`Saved ${Object.keys(map).length} local Sheet mapping(s) to ${saved}. Re-run npm run check-sheet.`);
 }
 
 /**
  * source — accept candidates Codex found through public web search and start a
- * durable run. Search snippets are provenance, not verified profile facts.
+ * durable run. With --update-sheet, append transparent candidate rows now;
+ * search snippets remain nominations, not verified profile facts.
  */
 async function cmdSource(flags) {
   const file = flags.file || flags.candidates;
@@ -561,17 +580,17 @@ async function cmdSource(flags) {
   const sheetId = config.sheetId || personaSheetId(persona);
   if (isPlaceholderSheetId(sheetId)) fail("No Google Sheet is bound." + sheetSetupHelp());
 
-  const { getSheets, readLeads } = await import("./sheet.mjs");
-  const { buildExistingIndex } = await import("./merge.mjs");
+  const { getSheets, readLeads, applyPlan } = await import("./sheet.mjs");
+  const { buildExistingIndex, planCandidateSheetUpdate } = await import("./merge.mjs");
   const sheets = await getSheets(config.credentialsPath);
-  const existingSheet = await readLeads(sheets, sheetId);
+  const existingSheet = await readLeads(sheets, sheetId, { overrides: loadSheetMap(config.sheetMapPath) });
   const existingKeys = new Set(buildExistingIndex(existingSheet).keys());
   const { parseSourceCandidates } = await import("./source.mjs");
   const parsed = parseSourceCandidates(JSON.parse(fs.readFileSync(String(file), "utf8")), { existingKeys });
   for (const r of parsed.rejected.slice(0, 10)) console.error(`candidate rejected: ${r.reason}`);
   if (!parsed.rows.length) fail("No usable public-web candidates were found in the file.");
 
-  const { createRun, writeArtifact } = await import("./runs.mjs");
+  const { createRun, writeArtifact, updateManifest } = await import("./runs.mjs");
   const target = Math.max(1, Math.min(50, Number(flags.target) || parsed.rows.length));
   const selected = parsed.rows.slice(0, target);
   const { manifest } = createRun({ persona: slug, target });
@@ -581,6 +600,19 @@ async function cmdSource(flags) {
   console.log(`Run: ${manifest.runId}`);
   console.log(`Sourced: ${selected.length} candidate(s); ${parsed.rejected.length} rejected; ${parsed.rows.length - selected.length} held for a later run.`);
   console.log(`Saved: ${artifact}`);
+  if (flags["update-sheet"] === true || flags["update-sheet"] === "true") {
+    const plan = planCandidateSheetUpdate(existingSheet, selected, { nowIso: new Date().toISOString() });
+    const applied = await applyPlan(sheets, sheetId, plan, {
+      headerRow: existingSheet.headerRow, firstDataRow: existingSheet.firstDataRow, layout: existingSheet.layout,
+    });
+    updateManifest(manifest.runId, {
+      counts: { written: applied.appended + applied.updated },
+    });
+    console.log(`Candidate queue updated: appended ${applied.appended}, refreshed ${applied.updated}.`);
+    console.log("These rows are nominations only: evidence and LinkedIn verification remain visibly due. Nothing was sent.");
+  } else {
+    console.log("Nothing was written yet. Add --update-sheet to append transparent candidate rows now.");
+  }
   console.log(`Next: npm run enrich -- --run ${manifest.runId}`);
 }
 
@@ -678,7 +710,7 @@ async function cmdNextActions(flags) {
   const { getSheets, readLeads, applyPlan } = await import("./sheet.mjs");
   const { planNextActions } = await import("./followup.mjs");
   const sheets = await getSheets(config.credentialsPath);
-  const existingSheet = await readLeads(sheets, sheetId);
+  const existingSheet = await readLeads(sheets, sheetId, { overrides: loadSheetMap(config.sheetMapPath) });
   const plan = planNextActions(existingSheet, {
     followUpDays: Number(flags["follow-up-days"]) || Number(persona?.follow_up_days) || 5,
     recheckDays: Number(flags["recheck-days"]) || 2,
@@ -689,7 +721,7 @@ async function cmdNextActions(flags) {
   for (const q of due.slice(0, 20)) console.log(`  ${q.name}: ${q.action} (${q.url})`);
   if (flags["update-sheet"] === true || flags["update-sheet"] === "true") {
     await applyPlan(sheets, sheetId, { newRows: [], updates: plan.updates }, {
-      headerRow: existingSheet.headerRow, firstDataRow: existingSheet.firstDataRow, headers: existingSheet.rawHeaders,
+      headerRow: existingSheet.headerRow, firstDataRow: existingSheet.firstDataRow, layout: existingSheet.layout,
     });
     console.log("Updated Next Action and Next Action Due in the Sheet. Nothing was sent.");
   } else console.log("Nothing was written. Add --update-sheet to refresh the action columns.");

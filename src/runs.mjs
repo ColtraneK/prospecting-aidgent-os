@@ -30,6 +30,9 @@ export function runPath(runId, root = RUNS_DIR) {
 
 export function createRun({ persona = "", target = 10, now = new Date(), root = RUNS_DIR } = {}) {
   const runId = makeRunId(now);
+  // A fresh clone has no ignored private/runs directory. Creating it here is
+  // part of starting a durable run, not a setup chore for the person.
+  fs.mkdirSync(root, { recursive: true });
   const dir = runPath(runId, root);
   fs.mkdirSync(dir, { recursive: false });
   const manifest = {

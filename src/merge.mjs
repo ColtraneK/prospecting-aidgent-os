@@ -69,7 +69,9 @@ export function toLeadRow(candidate, opts = {}) {
   cells["Activity Date"] = activity.date || "";
   cells["Activity Type"] = activity.type || "";
   cells["Fit Score"] = numOrBlank(candidate.score);
-  cells["Last Verified"] = dateOnly(nowIso);
+  // Candidate rows are deliberately visible before Browser verification. Do
+  // not stamp a nomination as verified; a later qualified refresh supplies it.
+  cells["Last Verified"] = candidate.lastVerified === undefined ? dateOnly(nowIso) : candidate.lastVerified;
   cells["Canonical Key"] = key;
   cells["Research Source"] = candidate.researchSource || (activity.url ? "linkedin_activity" : "linkedin_profile");
   cells["Research Status"] = researchStatus;
@@ -180,6 +182,37 @@ export function planSheetUpdate(existingSheet, scored, opts = {}) {
       outreachRejected: outreachRejected.length,
     },
   };
+}
+
+/**
+ * Put public-web nominations into the Sheet immediately, without pretending
+ * they are verified leads. This gives the person a visible, deduped queue
+ * while later evidence enriches the same rows.
+ */
+export function planCandidateSheetUpdate(existingSheet, nominations, opts = {}) {
+  const candidates = (nominations || []).map((n) => ({
+    name: n.name,
+    url: n.url,
+    accepted: true,
+    whyThem: n.why_nominated ? `Public-web nomination: ${n.why_nominated}` : "Public-web nomination; needs evidence review.",
+    // The template calls this Evidence Link. It is deliberately the public
+    // nomination source, not a claimed LinkedIn post.
+    postLink: n.source_url || "",
+    researchSource: [
+      n.source_url ? `Public source: ${n.source_url}` : "Public source not captured",
+      n.source_query ? `Search query: ${n.source_query}` : "",
+    ].filter(Boolean).join("\n"),
+    sourceType: "Public Web",
+    lastVerified: "",
+    browserConnectionStatus: "Unknown",
+    nextAction: "Add evidence / verify LinkedIn profile",
+    nextActionDue: dateOnly(opts.nowIso || new Date().toISOString()),
+  }));
+  return planSheetUpdate(existingSheet, candidates, {
+    ...opts,
+    sourceType: "Public Web",
+    researchStatus: "Candidate — needs evidence and LinkedIn verification",
+  });
 }
 
 function joinTitleCompany(c) {

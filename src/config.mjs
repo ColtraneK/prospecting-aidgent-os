@@ -132,6 +132,7 @@ export function resolveConfig(flags = {}, env = { ...loadDotEnv(), ...process.en
     // session; with the cookie alone, runs are headless from the very first one.
     liAt: str(flags["li-at"]) || env.AIDGENT_LI_AT || "",
     sheetId: flags.sheet || env.GOOGLE_SHEET_ID || "",
+    sheetMapPath: env.AIDGENT_SHEET_MAP || path.join(REPO_ROOT, "private", "sheet-map.json"),
     credentialsPath: env.GOOGLE_APPLICATION_CREDENTIALS || "",
     apifyToken: env.APIFY_API_TOKEN || "",
     apifyActor: env.AIDGENT_APIFY_ACTOR || "harvestapi~linkedin-profile-posts",

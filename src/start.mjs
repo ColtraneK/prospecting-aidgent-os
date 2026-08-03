@@ -13,7 +13,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { REPO_ROOT, loadDotEnv } from "./config.mjs";
 import { listPersonaSlugs, resolvePersonaPath, loadPersonaFile, validatePersona, personaSheetId, isPlaceholderSheetId, sheetUrlFor, SHEET_TEMPLATE_ID, SHEET_TEMPLATE_COPY_URL } from "./persona.mjs";
-import { profileState, sessionProofState } from "./session.mjs";
 import { sheetProofState } from "./verified.mjs";
 
 const SELECTED_FILE = path.join(REPO_ROOT, "private", "selected-persona.txt");
@@ -58,13 +57,6 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
   const credsPath = e.GOOGLE_APPLICATION_CREDENTIALS || "";
   const credsExist = !!credsPath && fs.existsSync(credsPath);
 
-  const chromeProfile = e.AIDGENT_CHROME_PROFILE || ""; // legacy v6 fallback only
-  const liAt = String(e.AIDGENT_LI_AT || "").trim();
-  const profile = profileState(chromeProfile);
-  const sessionVerified = sessionProofState({
-    chromeProfile, liAt,
-    proofPath: path.join(repoRoot, "private", "session-verified.json"),
-  });
 
   let selected = "";
   try { selected = fs.readFileSync(path.join(repoRoot, "private", "selected-persona.txt"), "utf8").trim(); } catch { /* none */ }
@@ -108,13 +100,6 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
     depsInstalled,
     envFileExists,
     credsPath, credsExist,
-    chromeProfile, liAt,
-    profilePlaceholder: profile.placeholder,
-    sessionConfigured: !!liAt || (profile.set && !profile.placeholder),
-    sessionVerified: sessionVerified.ok,
-    sessionVerifiedReason: sessionVerified.reason,
-    sessionVerifiedFix: sessionVerified.fix,
-    sessionVerifiedAt: sessionVerified.verifiedAt,
     activeSlug,
     privatePersonaCount: personas.length,
     persona, personaValid, personaErrors,

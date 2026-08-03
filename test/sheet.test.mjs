@@ -19,6 +19,6 @@ test("detectHeaderRow handles the builder's row 3 layout", () => {
   assert.equal(detectHeaderRow(values), 3);
 });
 
-test("detectHeaderRow defaults to 3 when not found", () => {
-  assert.equal(detectHeaderRow([["x"], ["y"]]), 3);
+test("detectHeaderRow defaults to the first row when not found", () => {
+  assert.equal(detectHeaderRow([["x"], ["y"]]), 1);
 });

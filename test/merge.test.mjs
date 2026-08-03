@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { planSheetUpdate, toLeadRow, toRefreshSet, buildExistingIndex } from "../src/merge.mjs";
+import { planSheetUpdate, planCandidateSheetUpdate, toLeadRow, toRefreshSet, buildExistingIndex } from "../src/merge.mjs";
 import { HUMAN_FIELDS } from "../src/schema.mjs";
 
 const existingSheet = {
@@ -99,4 +99,25 @@ test("new follow-up system columns are explicit and refreshable", () => {
   const set = toRefreshSet({ name: "Ada Nkem", browserConnectionStatus: "2nd", connectionCheckedOn: "2026-07-23" }, {});
   assert.equal(set["Browser Connection Status"], "2nd");
   assert.equal(set["Connection Checked On"], "2026-07-23");
+});
+
+test("candidate-stage writes are visibly unverified and leave human fields blank", () => {
+  const plan = planCandidateSheetUpdate({ rows: [] }, [{
+    name: "Morgan Lee",
+    url: "https://www.linkedin.com/in/morgan-lee-fake",
+    source_url: "https://example.com/signal",
+    source_query: "founder fractional operations",
+    why_nominated: "Published a relevant hiring signal.",
+  }], { nowIso: "2026-08-03T12:00:00Z" });
+  const cells = plan.newRows[0].cells;
+  assert.equal(plan.counts.newLeads, 1);
+  assert.match(cells["Why Them"], /^Public-web nomination:/);
+  assert.equal(cells["Post Link"], "https://example.com/signal");
+  assert.equal(cells["Last Verified"], "");
+  assert.equal(cells["Research Status"], "Candidate — needs evidence and LinkedIn verification");
+  assert.equal(cells["Next Action"], "Add evidence / verify LinkedIn profile");
+  for (const h of HUMAN_FIELDS) {
+    if (h === "Date Added" || h === "Source Type") continue;
+    assert.equal(cells[h], "", `candidate write must leave human field ${h} blank`);
+  }
 });

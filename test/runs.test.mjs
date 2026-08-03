@@ -18,3 +18,11 @@ test("durable runs preserve artifacts, counts, and resume instructions", (t) => 
   assert.equal(blocked.blocker.kind, "apify");
   assert.match(blocked.blocker.resume, /npm run enrich/);
 });
+
+test("createRun creates its ignored runs directory in a fresh clone", (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), "aidgent-fresh-"));
+  const root = path.join(base, "private", "runs");
+  t.after(() => fs.rmSync(base, { recursive: true, force: true }));
+  const { manifest } = createRun({ persona: "acme", now: new Date("2026-08-03T12:00:00Z"), root });
+  assert.ok(fs.existsSync(path.join(root, manifest.runId, "manifest.json")));
+});

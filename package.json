@@ -22,6 +22,7 @@
     "save-persona": "node src/cli.mjs save-persona",
     "bind-sheet": "node src/cli.mjs bind-sheet",
     "check-sheet": "node src/cli.mjs check-sheet"
+    ,"map-sheet": "node src/cli.mjs map-sheet"
   },
   "dependencies": {
     "googleapis": "^144.0.0",

@@ -15,13 +15,13 @@ const DOCS = [
   "references/outreach-rules.md",
 ];
 
-test("AGENTS.md stays lean and carries the v7 refusal core", () => {
+test("AGENTS.md stays lean and carries the combined-workflow refusal core", () => {
   const a = read("AGENTS.md");
   assert.ok(a.split("\n").length <= 250);
   assert.match(a, /^## Refusal core$/m);
-  assert.match(a, /never invent a lead/i);
-  assert.match(a, /public search snippets nominate/i);
-  assert.match(a, /K:R|K-R/);
+  assert.match(a, /never invent a person/i);
+  assert.match(a, /public sources/i);
+  assert.match(a, /human fields/i);
 });
 
 test("every documented npm command exists", () => {
