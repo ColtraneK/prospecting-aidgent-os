@@ -60,6 +60,18 @@ test("readLeads returns canonical values from reordered headers", async () => {
   assert.equal(result.rows[0].cells.Notes, "human note");
 });
 
+test("readLeads finds the next logical lead row despite checkbox placeholders", async () => {
+  const headers = ["Name", "Profile URL", "Connection Status", "Replied"];
+  const sheets = stubSheets(headers, [
+    ["Dana", "https://linkedin.com/in/dana", "", ""],
+    ["", "", false, false],
+    ["", "", false, false],
+  ]);
+  const result = await readLeads(sheets, "sheet-id");
+  assert.equal(result.lastLeadRow, 2);
+  assert.equal(result.nextAppendRow, 3);
+});
+
 test("applyPlan writes an agent field to its actual moved column and never writes Notes", async () => {
   const headers = ["Notes", "Profile URL", "Name", "Why this person"];
   const sheets = stubSheets(headers);
@@ -70,6 +82,23 @@ test("applyPlan writes an agent field to its actual moved column and never write
   assert.equal(sheets.writes.length, 1);
   assert.equal(sheets.writes[0].requestBody.data[0].range, "Leads!D2");
   assert.equal(sheets.writes[0].requestBody.data[0].values[0][0], "Relevant launch");
+});
+
+test("new rows use sparse updates at the logical row and do not touch checkbox placeholders", async () => {
+  const headers = ["Name", "Profile URL", "Connection Status", "Replied", "Date Added", "Source"];
+  const sheets = stubSheets(headers);
+  const layout = resolveLeadsLayout(headers);
+  await applyPlan(sheets, "sheet-id", {
+    newRows: [{ cells: {
+      Name: "Dana", "LinkedIn (or profile URL)": "https://linkedin.com/in/dana",
+      "Date Added": "2026-08-03", "Source Type": "Public Web",
+      "Connected/Req Sent": "", Replied: "",
+    } }], updates: [],
+  }, { layout, appendRow: 3 });
+  const ranges = sheets.writes[0].requestBody.data.map((entry) => entry.range);
+  assert.deepEqual(ranges, ["Leads!A3", "Leads!B3", "Leads!E3", "Leads!F3"]);
+  assert.ok(!ranges.includes("Leads!C3"));
+  assert.ok(!ranges.includes("Leads!D3"));
 });
 
 test("applyPlan still refuses when the live headers cannot identify a person", async () => {

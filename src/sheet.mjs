@@ -2,7 +2,7 @@
 // attendee's actual header row before any read or write.
 
 import { checkLeadsLayout, resolveLeadsLayout, normalizeHeader, colLetter } from "./schema.mjs";
-import { buildValueUpdates, LEADS_TAB } from "./sheetPlan.mjs";
+import { buildAppendCellUpdates, buildValueUpdates, LEADS_TAB } from "./sheetPlan.mjs";
 import { toRunLogRow, RUN_LOG_HEADERS } from "./runlog.mjs";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
@@ -54,30 +54,31 @@ export async function readLeads(sheets, spreadsheetId, { overrides = {} } = {}) 
     if (!cells.Name && !cells["LinkedIn (or profile URL)"]) continue;
     rows.push({ rowNumber: i + 1, cells });
   }
-  return { headers: layout.headers, rawHeaders: layout.headers, layout, headerRow, firstDataRow: headerRow + 1, rows };
+  const firstDataRow = headerRow + 1;
+  const lastLeadRow = rows.reduce((last, row) => Math.max(last, row.rowNumber), firstDataRow - 1);
+  return {
+    headers: layout.headers, rawHeaders: layout.headers, layout, headerRow, firstDataRow,
+    lastLeadRow, nextAppendRow: lastLeadRow + 1, rows,
+  };
 }
 
 /** Apply only recognized agent/system fields; no position-based writes. */
-export async function applyPlan(sheets, spreadsheetId, plan, { headerRow = 1, firstDataRow = 2, headers = null, layout = null, overrides = {} } = {}) {
+export async function applyPlan(sheets, spreadsheetId, plan, { headerRow = 1, firstDataRow = 2, appendRow = firstDataRow, headers = null, layout = null, overrides = {} } = {}) {
   const liveLayout = layout || (headers ? checkLeadsLayout(headers, overrides).layout : null);
   if (!liveLayout?.ok) {
     const checked = checkLeadsLayout(headers || [], overrides);
     throw new LeadsLayoutError(checked.message, checked.mismatch);
   }
-  const { appends, cellUpdates } = buildValueUpdates(plan, liveLayout);
-  if (appends.length) {
-    await sheets.spreadsheets.values.append({
-      spreadsheetId, range: `${LEADS_TAB}!A${firstDataRow}`,
-      valueInputOption: "RAW", insertDataOption: "INSERT_ROWS", requestBody: { values: appends },
-    });
-  }
-  if (cellUpdates.length) {
+  const { cellUpdates } = buildValueUpdates(plan, liveLayout);
+  const appendUpdates = buildAppendCellUpdates(plan.newRows || [], liveLayout, appendRow);
+  const writes = [...appendUpdates, ...cellUpdates];
+  if (writes.length) {
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId,
-      requestBody: { valueInputOption: "RAW", data: cellUpdates.map((u) => ({ range: u.range, values: u.values })) },
+      requestBody: { valueInputOption: "RAW", data: writes.map((u) => ({ range: u.range, values: u.values })) },
     });
   }
-  return { appended: appends.length, updated: cellUpdates.length };
+  return { appended: (plan.newRows || []).length, updated: cellUpdates.length };
 }
 
 export async function appendRunLog(sheets, spreadsheetId, report) {

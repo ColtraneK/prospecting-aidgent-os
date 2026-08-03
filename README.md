@@ -50,3 +50,6 @@ personas, browser state, and `private/` out of Git.
 `source --update-sheet` is intentionally the first write: it adds only deduped
 **Candidate** rows, labels them as public-web nominations, and leaves all human
 tracking blank. It never claims that a profile, post, or connection was verified.
+Unchecked checkbox placeholders below a table do not affect where the next
+candidate lands: Codex writes sparse cells at the next real lead row and leaves
+those placeholders and every unmapped column alone.

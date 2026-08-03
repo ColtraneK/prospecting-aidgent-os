@@ -355,6 +355,7 @@ async function cmdQualify(flags) {
   const applied = await applyPlan(sheets, sheetId, plan, {
     headerRow: existingSheet.headerRow,
     firstDataRow: existingSheet.firstDataRow,
+    appendRow: existingSheet.nextAppendRow,
     layout: existingSheet.layout,
   });
   const runId = durableRunId;
@@ -603,7 +604,8 @@ async function cmdSource(flags) {
   if (flags["update-sheet"] === true || flags["update-sheet"] === "true") {
     const plan = planCandidateSheetUpdate(existingSheet, selected, { nowIso: new Date().toISOString() });
     const applied = await applyPlan(sheets, sheetId, plan, {
-      headerRow: existingSheet.headerRow, firstDataRow: existingSheet.firstDataRow, layout: existingSheet.layout,
+      headerRow: existingSheet.headerRow, firstDataRow: existingSheet.firstDataRow,
+      appendRow: existingSheet.nextAppendRow, layout: existingSheet.layout,
     });
     updateManifest(manifest.runId, {
       counts: { written: applied.appended + applied.updated },

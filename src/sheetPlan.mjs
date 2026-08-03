@@ -30,6 +30,38 @@ function assertNoHumanFields(fields) {
   }
 }
 
+const NEW_ROW_HUMAN_FIELDS = new Set(["Date Added", "Source Type"]);
+
+/**
+ * New leads are written as sparse cell updates at a chosen logical row instead
+ * of using values.append.  Sheets often pre-fill checkbox columns far below
+ * the visible table; values.append treats those unchecked values as a table
+ * and can place a lead hundreds of rows away.  Sparse updates leave those
+ * placeholders and every unmapped column untouched.
+ */
+export function buildAppendCellUpdates(newRows, layout, startRow) {
+  const firstRow = Number(startRow);
+  if (!Number.isInteger(firstRow) || firstRow < 1) throw new Error("append row must be a positive integer");
+  const cellUpdates = [];
+  for (let offset = 0; offset < (newRows || []).length; offset++) {
+    const row = newRows[offset] || {};
+    const cells = row.cells || {};
+    for (const [field, value] of Object.entries(cells)) {
+      if (value === undefined || value === "") continue;
+      if (HUMAN_FIELDS.includes(field) && !NEW_ROW_HUMAN_FIELDS.has(field)) {
+        throw new Error(`refusing to write human column / field ${field} on a new row`);
+      }
+      const index0 = fieldIndex(field, layout);
+      if (index0 === undefined) continue;
+      cellUpdates.push({
+        range: `${TAB}!${colLetter(index0)}${firstRow + offset}`,
+        values: [[value]],
+      });
+    }
+  }
+  return cellUpdates;
+}
+
 /** Full row in the live header order. Extra attendee columns remain blank. */
 export function rowArray(cells, layout = null) {
   const headers = layout?.headers || LEADS_HEADERS;
