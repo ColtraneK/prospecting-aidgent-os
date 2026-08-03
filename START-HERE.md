@@ -2,19 +2,20 @@
 
 This template turns Codex into a read-only B2B prospecting assistant. It discovers people from the public web, uses Apify to retrieve recent LinkedIn posts, asks you to confirm profile and connection details in Codex Browser, and maintains a Google Sheet. You remain responsible for every connection request and message.
 
-## Paste this into Codex
+## Paste this into a fresh Codex task
 
 ```text
 Set up this prospecting system with me. I am nontechnical, so lead me one step at a time and explain only the action I need to take now.
 
-1. Read AGENTS.md and follow it exactly.
-2. Run npm install, npm run init-env, and npm run start.
-3. Help me copy or build the Google Sheet, create a Google Cloud service account, share my Sheet with its client_email as Editor, bind it, and prove access with npm run check-sheet.
-4. Help me add my Apify API token locally. Never print it back or commit it.
-5. Open Codex Browser. Let me sign in to LinkedIn myself, then perform the read-only Browser verification step. Never send, connect, react, comment, or post.
-6. Review my website and interview me briefly about my offer, ideal customer, buyer roles, exclusions, geography, timely trigger signals, and voice. Propose the ICP for my approval and save it.
-7. Run a small demo: find candidates through public web search, source them, enrich recent posts with Apify, let me verify the profiles in Browser, qualify only evidence-backed leads, and update my Sheet.
-8. Show me the due follow-up queue. Then help me create a recurring Codex scheduled task using the prompt in references/scheduled-task-prompt.md. Use this local project and do not auto-send anything.
+1. If this repository is not already open, create a local folder, clone https://github.com/ColtraneK/prospecting-aidgent-os.git into it, and work inside the cloned repository. If it is already open, do not clone another copy.
+2. Read AGENTS.md and follow it exactly.
+3. Run npm install, npm run init-env, and npm run start.
+4. Help me copy or build the Google Sheet, create a Google Cloud service account, share my Sheet with its client_email as Editor, bind it, and prove access with npm run check-sheet.
+5. Help me add my Apify API token locally. Never print it back or commit it.
+6. Open Codex Browser. Let me sign in to LinkedIn myself, then perform the read-only Browser verification step. Never send, connect, react, comment, or post.
+7. Review my website and interview me briefly about my offer, ideal customer, buyer roles, exclusions, geography, timely trigger signals, and voice. Propose the ICP for my approval and save it.
+8. Run a small demo: find candidates through public web search, source them, enrich recent posts with Apify, let me verify the profiles in Browser, qualify only evidence-backed leads, and update my Sheet.
+9. Show me the due follow-up queue. Then help me create a recurring Codex scheduled task using the prompt in references/scheduled-task-prompt.md. Use this local project and do not auto-send anything.
 ```
 
 ## You will need
