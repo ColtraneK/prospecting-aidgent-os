@@ -1,49 +1,30 @@
 ---
 name: research-outreach-prospects
-description: Research LinkedIn prospects for the saved ICP persona using the local Playwright worker, then maintain the person's Google Sheet. The agent explores and judges; the code verifies evidence, paces, and writes. Read-only research, never sends or connects, human-approved outreach. Use when the user wants to source prospects or run the research loop.
+description: Find timely B2B prospects with public web search, enrich recent LinkedIn posts through Apify, verify profiles and connection state read-only in Codex Browser, maintain the user's Google Sheet, and plan human-only next actions. Use for setup, prospect pulls, progress checks, and recurring prospect workflows.
 ---
 
-# Research Outreach Prospects
+# Research outreach prospects
 
-The v6 loop: you explore and judge; the code verifies, paces, and writes.
-AGENTS.md is the full manual and outranks this summary.
+Read `AGENTS.md` first. It is the complete operating manual and outranks this summary.
 
-## Golden rules
+## Non-negotiables
 
-- Read-only. Never Connect, Message, Follow, Like, React, Comment, Share,
-  Repost, or Post. The drafted comment and DM are for the human to send.
-- Never automate login, passwords, MFA, or CAPTCHA. Never bypass detection.
-- Never invent a lead, post, fact, or URL. `qualify` refuses any decision
-  without evidence `inspect` captured first-hand — do not fight the gate.
-- Never write the sheet's human columns K–Q. A refresh never blanks I/J.
-- Never raise the daily budgets (120 opens / 60 inspections, persisted) or
-  shorten the pacing. Exhausted budgets refuse with the reset time — stop.
-- Never assume whose business this is; the persona's `icp` prose is the
-  ground truth, and the person confirmed it once.
-- End any finishing response with: the sheet URL as a link, rows
-  added/updated + top score, and the single next step.
+- Research only. Never send a message, connection request, reaction, comment, or post.
+- Public search discovers candidates. Apify provides recent-post evidence. Codex Browser confirms identity, current profile details, and connection state.
+- Never invent a person, URL, post, fact, or relationship status. Leave unknowns blank.
+- Browser verification is required before a fit decision can reach the Sheet.
+- Preserve the human-owned Sheet columns K-R. The system may seed Date Added and Source Type on a new row, but never overwrites human progress.
+- Treat `Connected/Req Sent` as workflow state: `Request sent` means wait and recheck; `Connected` means the first message can be drafted for the human.
+- Nothing is auto-sent.
 
-## The loop
+## Normal workflow
 
-1. Craft search URLs from the persona's `topics` — quoted phrases, OR,
-   `datePosted="past-week"` — per `references/linkedin-search-urls.md`.
-   Hunt the triggers in `references/trigger-signals.md`.
-2. `npm run open -- --url "<url>"` and read the saved HTML in
-   `run-artifacts/`. A few opens per loop is plenty.
-3. Write `nominations.json`: `[{ name, url, why_nominated, source_url }]` —
-   whoever you judge worth opening, with the trigger named.
-4. `npm run inspect -- --nominations nominations.json`. Apply any Feedback
-   warnings to the persona now and stamp them (`npm run feedback -- --apply`).
-5. Read `run-artifacts/evidence.json`. Judge each candidate against the
-   `icp`; draft per `references/outreach-rules.md`, quoting the captured
-   post. Write `decisions.json`:
-   `{ key, fit, score: 0-100, why_them, suggested_comment, suggested_intro }`.
-6. `npm run qualify -- --decisions decisions.json` to check, then again with
-   `--update-sheet` to write. Redraft anything reported, never work around it.
+1. Run `npm run status` and `npm run next-actions` before sourcing more people.
+2. Search the public web using the saved ICP and trigger signals. Save candidates with real LinkedIn `/in/` URLs plus the public source URL and snippet.
+3. Run `npm run source -- --file <file>` and `npm run enrich -- --run <run-id>`.
+4. In Codex Browser, inspect only the run's candidates. Record current title/company/location, connection state, and material evidence.
+5. Run `npm run browser-verify -- --run <run-id> --file <file>`.
+6. Judge fit, write decisions, validate, then use `--update-sheet` only after the check passes.
+7. Run `npm run next-actions -- --update-sheet` and hand the user the due queue.
 
-## Blockers
-
-Login/checkpoint/CAPTCHA/rate-limit stop the run safely with artifacts saved.
-Relay the named verdict and the fix from AGENTS.md's blocker table; never
-retry in a loop. A missing session refuses before any browser opens —
-`npm run check-login` proves it, `npm run setup-login` lets the person fix it.
+If an API, Browser, Sheet, or evidence check fails, preserve the run and report one concrete recovery step. Never weaken a gate to make the demo pass.
