@@ -4,15 +4,15 @@
 // their tests do not require it to be installed.
 //
 // This layer maintains an EXISTING Sheet in place. It detects the Leads header
-// row (it need not be row 3), preserves human columns K:Q, and ensures the
-// system columns R:AB exist before writing. It never deletes rows.
+// row (it need not be row 3), preserves human columns K:R, and ensures the
+// system columns S:AC exist before writing. It never deletes rows.
 
 import { LEADS_HEADERS, SYSTEM_FIELDS, colLetter, COLS, checkLeadsLayout } from "./schema.mjs";
 import { buildValueUpdates, LEADS_TAB } from "./sheetPlan.mjs";
 import { toRunLogRow, RUN_LOG_HEADERS } from "./runlog.mjs";
 
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
-const LAST_COL = colLetter(LEADS_HEADERS.length - 1); // "AB" (derived, so it follows schema.mjs)
+const LAST_COL = colLetter(LEADS_HEADERS.length - 1); // derived from schema.mjs
 
 /** Thrown when a sheet's header row is from an older column layout. */
 export class LeadsLayoutError extends Error {
@@ -75,8 +75,8 @@ export async function readLeads(sheets, spreadsheetId) {
 }
 
 /**
- * Ensure the system columns R:AB exist in the header row. Non-destructive: only
- * writes headers that are missing, into their canonical R:AB positions.
+ * Ensure the system columns S:AC exist in the header row. Non-destructive: only
+ * writes headers that are missing, into their canonical positions.
  * The range is derived from SYSTEM_FIELDS, so adding a system column here is
  * enough — an older sheet gets the new headers on its next run.
  *
@@ -86,8 +86,8 @@ export async function readLeads(sheets, spreadsheetId) {
  * every existing row.
  */
 export async function ensureLeadsSchema(sheets, spreadsheetId, headerRow) {
-  const startCol = COLS[SYSTEM_FIELDS[0]].letter; // R
-  const endCol = COLS[SYSTEM_FIELDS[SYSTEM_FIELDS.length - 1]].letter; // AB
+  const startCol = COLS[SYSTEM_FIELDS[0]].letter;
+  const endCol = COLS[SYSTEM_FIELDS[SYSTEM_FIELDS.length - 1]].letter;
   const range = `${LEADS_TAB}!${startCol}${headerRow}:${endCol}${headerRow}`;
   const cur = await sheets.spreadsheets.values.get({ spreadsheetId, range }).catch(() => ({ data: {} }));
   const existing = (cur.data.values && cur.data.values[0]) || [];
@@ -104,7 +104,7 @@ export async function ensureLeadsSchema(sheets, spreadsheetId, headerRow) {
 
 /**
  * Apply a merge plan: append new leads, then update ONLY the agent/system
- * columns of existing leads. Never writes K:Q. Never deletes rows.
+ * columns of existing leads. Never writes K:R. Never deletes rows.
  */
 export async function applyPlan(sheets, spreadsheetId, plan, { headerRow = 3, firstDataRow = 4, headers = null } = {}) {
   // Second guard, at the last moment before any write. readLeads already
@@ -204,8 +204,8 @@ export function explainSheetsError(err, { sheetId = "", credentialsPath = "" } =
     return [
       `That sheet's Leads tab is too narrow for the lead layout${where}.`,
       "",
-      "The Leads tab needs 28 columns (A to AB) and a hand-made tab only has 26.",
-      "Open the sheet, then Extensions > Apps Script, and run buildAidgentOsSheet.",
+      `The Leads tab needs ${LEADS_HEADERS.length} columns (A to ${LAST_COL}) and a hand-made tab is too narrow.`,
+      "Open the sheet, then Extensions > Apps Script, and run buildLeadSheet.",
       "It widens the tab and builds the headers, dropdowns and formatting in one go.",
       "",
       "If you would rather not paste a script: open the shared template, click",

@@ -36,7 +36,7 @@ test("a v3 sheet is refused, and the refusal names the column and the fix", () =
   assert.equal(r.mismatch.found, "Recent Post (verbatim + link)");
   assert.equal(r.mismatch.expected, "Recent Post (verbatim + date)");
   assert.match(r.message, /old column layout/i);
-  assert.match(r.message, /buildAidgentOsSheet/);
+  assert.match(r.message, /buildLeadSheet/);
   assert.match(r.message, /Extensions > Apps Script/);
 });
 

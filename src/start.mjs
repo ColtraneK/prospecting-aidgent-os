@@ -4,8 +4,8 @@
 // and NEVER blocks. It reads the current setup, prints a plain-English
 // checklist of ~5 steps, and names exactly ONE next step. Run it, do the one
 // thing, run it again; READY means every step was PROVED, not merely
-// configured — the sheet and session steps read the proof files check-sheet
-// and check-login wrote when they actually reached Google and LinkedIn.
+// configured — the Sheet and Browser steps read local proof records created
+// only after those checks actually succeeded.
 //
 // It is read-only and offline: no browser, no Sheet, no network.
 
@@ -51,14 +51,14 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
   const e = env || { ...file, ...shell };
 
   const nodeMajor = Number(String(process.versions.node).split(".")[0]) || 0;
-  const depsInstalled = fs.existsSync(path.join(repoRoot, "node_modules", "playwright")) &&
-    fs.existsSync(path.join(repoRoot, "node_modules", "googleapis"));
+  const depsInstalled = fs.existsSync(path.join(repoRoot, "node_modules", "googleapis")) &&
+    fs.existsSync(path.join(repoRoot, "node_modules", "js-yaml"));
   const envFileExists = fs.existsSync(path.join(repoRoot, ".env"));
 
   const credsPath = e.GOOGLE_APPLICATION_CREDENTIALS || "";
   const credsExist = !!credsPath && fs.existsSync(credsPath);
 
-  const chromeProfile = e.AIDGENT_CHROME_PROFILE || "";
+  const chromeProfile = e.AIDGENT_CHROME_PROFILE || ""; // legacy v6 fallback only
   const liAt = String(e.AIDGENT_LI_AT || "").trim();
   const profile = profileState(chromeProfile);
   const sessionVerified = sessionProofState({
@@ -95,6 +95,12 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
     proofFile: path.join(repoRoot, "private", "sheet-verified.json"),
   });
 
+  let browserVerifiedAt = "";
+  try {
+    const proof = JSON.parse(fs.readFileSync(path.join(repoRoot, "private", "browser-verified.json"), "utf8"));
+    browserVerifiedAt = String(proof.verifiedAt || "");
+  } catch { /* not verified yet */ }
+
   return {
     repoRoot,
     nodeMajor,
@@ -118,6 +124,9 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
     sheetReachable: sheetReachable.ok,
     sheetReachableReason: sheetReachable.reason,
     sheetReachableFix: sheetReachable.fix,
+    apifyConfigured: !!String(e.APIFY_API_TOKEN || "").trim(),
+    browserVerified: !!browserVerifiedAt,
+    browserVerifiedAt,
   };
 }
 
@@ -128,7 +137,7 @@ export async function inspectSetup({ repoRoot = REPO_ROOT, env, fileEnv, shellEn
 export function buildChecklist(s) {
   const basicsMissing = [];
   if (!s.nodeOk) basicsMissing.push(`Node 20 or newer (you have Node ${s.nodeMajor || "?"}). Install it from nodejs.org — the installer is the whole job.`);
-  if (!s.depsInstalled) basicsMissing.push("Dependencies are not installed. Nothing for you to do: your agent runs `npm install`. It goes quiet for a few minutes while it downloads a browser engine, which looks frozen and is not.");
+  if (!s.depsInstalled) basicsMissing.push("Dependencies are not installed. Nothing for you to do: your agent runs `npm install`. It may go quiet for a minute while packages download.");
   if (!s.envFileExists) basicsMissing.push("There is no .env yet. Your agent creates it with `npm run init-env`, and the two of you fill it in over the next steps.");
   if (!s.credsExist) {
     basicsMissing.push(s.credsPath
@@ -159,16 +168,16 @@ export function buildChecklist(s) {
       agentRuns: s.sheetBound ? "npm run check-sheet" : "npm run bind-sheet -- --sheet <their-sheet-url>  (then: npm run check-sheet)",
     },
     {
-      label: "The LinkedIn session is proven to work (check-login reached your feed)",
-      done: s.sessionVerified,
-      next: [
-        `Right now ${s.sessionVerifiedReason}`,
-        "",
-        s.sessionVerifiedFix,
-        "",
-        "If you would rather not have a window open at all, paste your LinkedIn li_at cookie into .env instead — .env.example says exactly where to copy it from. Either way is enough. check-login writes the proven value into .env itself, so the next command finds it too.",
-      ].join("\n"),
-      agentRuns: s.sessionConfigured ? "npm run check-login" : "npm run setup-login   (then: npm run check-login)",
+      label: "An Apify API token is configured for recent-post evidence",
+      done: s.apifyConfigured,
+      next: "Create an Apify account, open Settings > Integrations, copy an API token, and give it to your agent to place in APIFY_API_TOKEN in .env. Treat it like a password.",
+      agentRuns: "npm run start",
+    },
+    {
+      label: "Codex Browser has opened LinkedIn successfully in read-only mode",
+      done: s.browserVerified,
+      next: "Open Codex Browser, sign into LinkedIn yourself, and ask the agent to open your feed and one profile without clicking Connect, Message, Follow, Like, or any other outward action. After it succeeds, the agent records the check.",
+      agentRuns: "npm run browser-verify -- --setup   (only after the browser check actually succeeded)",
     },
     {
       label: "An ICP persona is saved and selected",
@@ -197,16 +206,17 @@ export function formatStatus(s, checklist = buildChecklist(s)) {
     lines.push("");
     lines.push(`  Persona:  ${s.activeSlug}`);
     lines.push(`  Sheet:    ${s.sheetUrl || s.sheetId}`);
-    lines.push(`  Session:  ${s.liAt ? "li_at cookie" : s.chromeProfile || "none"}`);
-    lines.push(`  Verified: ${s.sessionVerifiedAt || "unknown"} — proved against LinkedIn, not inferred`);
+    lines.push(`  Browser:  verified ${s.browserVerifiedAt || "unknown"}`);
     lines.push("");
-    lines.push("The run loop: craft a search URL, open it, read the artifact, nominate,");
-    lines.push("inspect, judge the evidence, qualify. See AGENTS.md.");
+    lines.push("The run loop: public web source, Apify enrich, Browser verify, qualify,");
+    lines.push("write, then refresh the next-action queue. See AGENTS.md.");
     lines.push("");
     lines.push("FOR THE AGENT, not for the person to type:");
-    lines.push('  npm run open    -- --url "<linkedin search url>"');
-    lines.push("  npm run inspect -- --nominations nominations.json");
-    lines.push("  npm run qualify -- --decisions decisions.json --update-sheet");
+    lines.push("  npm run source         -- --file candidates.json");
+    lines.push("  npm run enrich         -- --run <run-id>");
+    lines.push("  npm run browser-verify -- --run <run-id> --file browser-verification.json");
+    lines.push("  npm run qualify        -- --run <run-id> --decisions decisions.json --update-sheet");
+    lines.push("  npm run next-actions   -- --update-sheet");
   } else {
     const stepNo = checklist.indexOf(pending) + 1;
     lines.push(`NEXT STEP (${stepNo} of ${checklist.length}):`);
@@ -256,8 +266,9 @@ export function toJson(s, checklist = buildChecklist(s)) {
     personaValid: s.personaValid,
     sheetId: s.sheetId || null,
     sheetUrl: s.sheetUrl || null,
-    sessionVerified: s.sessionVerified,
-    sessionVerifiedAt: s.sessionVerifiedAt || null,
+    apifyConfigured: s.apifyConfigured,
+    browserVerified: s.browserVerified,
+    browserVerifiedAt: s.browserVerifiedAt || null,
     checklist: checklist.map((i) => ({ label: i.label, done: !!i.done })),
     nextStep: pending
       ? { number: checklist.indexOf(pending) + 1, of: checklist.length, label: pending.label, hint: pending.next, agentRuns: pending.agentRuns || null }

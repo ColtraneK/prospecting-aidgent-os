@@ -1,7 +1,7 @@
 // qualify.mjs — turn the agent's judgements into checked sheet writes. Pure.
 //
-// This is v6's write path, and the only one. The agent read evidence.json —
-// facts the worker's own browser captured — and judged each candidate:
+// This is v7's write path, and the only one. The agent read evidence.json —
+// public discovery + Apify posts + Browser observations — and judged each candidate:
 // fit or not, a 0-100 score, a written rationale, and drafted messages. This
 // module is what stands between that judgement and the sheet:
 //
@@ -14,7 +14,7 @@
 //  - every draft goes through the grounding validator on the merge path
 //    (merge.mjs -> outreach.mjs): a failing draft is blanked and reported,
 //    never repaired, never written;
-//  - human columns K-Q are never touched, and a refresh never blanks I/J
+//  - human columns K-R are never touched, and a refresh never blanks I/J
 //    (merge.mjs holds both guarantees).
 
 import { canonicalizeLinkedInUrl } from "./url.mjs";
@@ -100,7 +100,11 @@ export function planQualify({ persona = {}, evidence = [], decisions = [], exist
     if (!d.fit) { skipped++; continue; }
     const ev = byKey.get(d.key);
     if (!ev) {
-      refused.push({ key: d.key, name: "", reason: "no captured evidence for this key — only people `inspect` opened can be qualified" });
+      refused.push({ key: d.key, name: "", reason: "no captured evidence for this key — only candidates in this durable run can be qualified" });
+      continue;
+    }
+    if (ev.browser_verified !== true) {
+      refused.push({ key: d.key, name: ev.name || "", reason: "profile was not verified in Codex Browser for this run" });
       continue;
     }
     // The agent cannot overrule a hard disqualifier the person set.
@@ -127,14 +131,21 @@ export function planQualify({ persona = {}, evidence = [], decisions = [], exist
       whyThem: d.whyThem,
       comment: d.comment,
       introDM: d.dm,
-      researchSource: activity && activity.url ? "linkedin_activity" : "linkedin_profile",
+      researchSource: [
+        ev.source_url ? `Public web: ${ev.source_url}` : "Public web",
+        activity ? "Apify profile posts" : "",
+        "Codex Browser",
+      ].filter(Boolean).join("\n"),
+      sourceType: "Public Web + Apify",
+      browserConnectionStatus: ev.browser_connection_status || "Unknown",
+      connectionCheckedOn: ev.connection_checked_on || "",
     };
     candidate.recentPost = recentPostCell(candidate, activity ? isRecent(activity.date, nowMs) : false);
     candidate.postLink = postLinkCell(candidate);
     candidates.push(candidate);
   }
 
-  const plan = planSheetUpdate(existingSheet, candidates, { nowIso, sourceType: "LinkedIn" });
+  const plan = planSheetUpdate(existingSheet, candidates, { nowIso, sourceType: "Public Web + Apify" });
   return { plan, counts: plan.counts, refused, skipped };
 }
 

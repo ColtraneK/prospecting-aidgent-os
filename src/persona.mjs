@@ -39,6 +39,19 @@ export function validatePersona(p) {
   if (typeof p.voice !== "string" || !p.voice.trim()) {
     errors.push("voice must describe how an opener should sound");
   }
+  for (const field of ["buyer_roles", "trigger_signals"]) {
+    if (p[field] !== undefined && (!Array.isArray(p[field]) || p[field].some((v) => !String(v).trim()))) {
+      errors.push(`${field} must be a list of non-empty phrases`);
+    }
+  }
+  for (const field of ["company_profile", "offer"]) {
+    if (p[field] !== undefined && (typeof p[field] !== "string" || !p[field].trim())) {
+      errors.push(`${field} must be plain-language prose`);
+    }
+  }
+  if (p.follow_up_days !== undefined && (!Number.isInteger(p.follow_up_days) || p.follow_up_days < 1 || p.follow_up_days > 30)) {
+    errors.push("follow_up_days must be a whole number from 1 to 30");
+  }
   if (p.geography !== undefined && p.geography !== null) {
     const g = p.geography;
     const ok = Array.isArray(g) || typeof g === "string" || (g && typeof g === "object");

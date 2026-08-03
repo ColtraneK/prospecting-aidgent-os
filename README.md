@@ -1,118 +1,98 @@
-# Aidgent OS
+# Prospecting Aidgent OS
 
-A local prospect-research system, v6. It runs on your machine through an AI
-coding agent and a Playwright worker, researches LinkedIn **read-only**, and
-maintains a Google Sheet you own. It never sends, connects, reacts, comments,
-or posts. Every outward action is yours.
+A reusable, local B2B prospecting template for Codex workshops. It finds timely prospects from public web results, enriches recent LinkedIn activity through Apify, confirms profile and connection details in Codex Browser, and maintains a Google Sheet owned by the user.
 
-> **New here?** Read [START-HERE.md](START-HERE.md) — one paste block. If you
-> are an AI agent working in this repo, read [AGENTS.md](AGENTS.md) and follow
-> it exactly.
+It is deliberately read-only: it never sends connection requests, messages, reactions, comments, or posts.
 
-## The v6 shape
+> New user? Start with [START-HERE.md](START-HERE.md). Codex should read [AGENTS.md](AGENTS.md) before doing any setup or research.
 
-**The agent explores and judges; the code verifies, paces, and writes.**
+## How the evidence flows
 
-The agent crafts LinkedIn search URLs itself, reads the pages, and decides who
-is worth a look — no brittle search parser, no point-scoring formula. The
-fabrication protection moved into verified evidence: nothing reaches the sheet
-unless this repo's own browser opened the profile and captured the facts
-verbatim, and every drafted message must quote 4+ consecutive words of the
-captured post.
-
-A run touches LinkedIn with exactly two commands, then writes with a third:
-
-```bash
-npm run open    -- --url "<a LinkedIn search URL you crafted>"   # saves HTML+screenshot
-npm run inspect -- --nominations nominations.json                # verifies every nominee first-hand
-npm run qualify -- --decisions decisions.json --update-sheet     # checked writes, fit rows only
+```text
+Saved ICP + trigger signals
+          ↓
+Public web search → candidate URL + source snippet
+          ↓
+Apify → recent LinkedIn post evidence
+          ↓
+Codex Browser → identity, current profile, connection state
+          ↓
+Qualification gates → Google Sheet → human outreach
 ```
 
-- `open` — linkedin.com only, refuses message/connect/compose/checkpoint
-  URLs, paced, budgeted. The agent reads the artifact in `run-artifacts/`.
-- `inspect` — gates the nominations (`/in/` URLs only, no placeholder slugs,
-  dedupe vs the sheet), then opens every profile + activity page itself and
-  writes `run-artifacts/evidence.json`: headline, company, location, degree
-  badge, the newest post verbatim with date and permalink. Hard disqualifiers
-  only (exclusion substrings, geography when set) — that is ALL code decides.
-- `qualify` — the only live-run sheet writer. Validates every draft with the
-  grounding rules, re-checks disqualifiers, writes only fit=true rows
-  (columns A–J + R–X in one pass). Failing drafts are reported for redraft,
-  never written. Without `--update-sheet` it validates and reports only.
-
-Safety, all in code: 3.5–9s pacing between navigations; daily budgets
-persisted across invocations (120 page opens, 60 inspections — exhausted
-budgets refuse loudly with the reset time); blocker stops (login, CAPTCHA,
-checkpoint, rate-limit → stop, save artifacts); human columns K–Q never
-written; refresh never blanks I/J; no login automation, no CAPTCHA
-workarounds, nothing ever auto-sent.
+No single source is treated as truth. Search results nominate; Apify enriches; Browser verifies; the human decides whether to act.
 
 ## Setup
 
 ```bash
 npm install
-npm run start        # a ~5-step checklist; do the one thing it names, repeat
+npm run init-env
+npm run start
 ```
 
-In order: the Google Sheet (you copy the template, share it with the service
-account's `client_email` as Editor, `npm run check-sheet` proves it), the
-LinkedIn session (`npm run setup-login` or an `li_at` cookie,
-`npm run check-login` proves it and writes the value into `.env` itself), and
-one ICP conversation that ends in `npm run save-persona -- --file <yaml>`.
+`npm run start` reports the single next setup step until the system is ready. Setup covers:
 
-The sheet template (copy it; this tool never creates a spreadsheet):
+1. A copy of the Google Sheet and service-account access.
+2. An Apify token stored only in local `.env`.
+3. A read-only Codex Browser verification with the user signing in manually.
+4. A confirmed, saved ICP persona.
 
+Copy the starter Sheet here, then share your copy with the service account:
 <https://docs.google.com/spreadsheets/d/1n9pMSXwSHe4Uh8tG65z2ZwWTWi3kuhGb43rXdXDrw9g/copy>
 
-READY means proved, not configured: the checklist reads the records
-`check-sheet` and `check-login` wrote when they actually reached Google and
-LinkedIn. Forging those records is forbidden.
+If the hosted Sheet template has not yet been upgraded, run the Apps Script in [sheet/BuildLeadSheet.gs](sheet/BuildLeadSheet.gs) in a blank copy. The exact contract is in [sheet/SHEET.md](sheet/SHEET.md).
 
-## The columns
+## A prospect run
 
-- **A–J — agent output:** Name, Title/Company, URL, Recent Post (verbatim +
-  date), Post Link, Degree (observed badge, never inferred), Score 1–10 (the
-  agent's 0–100 score at reading scale), Why Them (the agent's rationale),
-  Suggested Comment, Suggested Intro DM.
-- **K–Q — yours alone; never written:** Reached Out, Replied, Outcome, Date
-  Added, Source Type, Batch, Notes (Date Added and Source Type are seeded
-  once on insert).
-- **R–AB — system:** activity date/type, the raw 0–100 score, verification
-  stamps, canonical key, research source/status. Y–AB are reserved and
-  unwritten in v6.
+Codex performs the search itself and writes a small candidate file with provenance. The commands then make every later stage resumable and auditable:
 
-Details: [sheet/SHEET.md](sheet/SHEET.md). Steering: write plain English on
-the sheet's **Feedback** tab; the agent applies each note to the persona and
-stamps what changed (`npm run feedback`). An unapplied note warns loudly at
-the start of every run — it never bricks one.
+```bash
+npm run source -- --candidates candidates.json
+npm run enrich -- --run <run-id>
+npm run browser-verify -- --run <run-id> --file browser-verifications.json
+npm run qualify -- --run <run-id> --decisions decisions.json
+npm run qualify -- --run <run-id> --decisions decisions.json --update-sheet
+```
 
-## References
+Operational commands:
 
-- `references/linkedin-search-urls.md` — the search URL grammar the agent uses
-- `references/trigger-signals.md` — what makes someone worth opening this week
-- `references/outreach-rules.md` — value-first first touches, and what the
-  grounding validator enforces
+```bash
+npm run status
+npm run next-actions
+npm run next-actions -- --update-sheet
+npm run feedback -- --apply
+```
+
+Each run is stored under `private/runs/<run-id>/`. Interrupted Apify batches can resume without losing completed work. Nothing in `private/` or `.env` is tracked by Git.
+
+## Follow-up behavior
+
+The Sheet separates connection state from reply state:
+
+- `Request sent`, not replied → wait, then recheck the connection.
+- `Connected`, not reached out → prepare a first message for human review.
+- Reached out, not replied → wait five days, then surface a follow-up.
+- Replied → review the response and update the outcome.
+- 2nd/3rd+ degree → prepare a connection request for the human.
+
+The system writes suggested next actions into system columns; it never changes the human's progress fields or sends the action.
+
+## Scheduled task
+
+After a successful small manual run, create a recurring Codex task using [references/scheduled-task-prompt.md](references/scheduled-task-prompt.md). Run it against this local project, keep the computer awake, and keep the task read-only. The scheduled run checks progress and due follow-ups before sourcing new prospects.
+
+## Reference material
+
+- [references/public-web-sourcing.md](references/public-web-sourcing.md) — search patterns and provenance rules.
+- [references/trigger-signals.md](references/trigger-signals.md) — timely reasons to care now.
+- [references/outreach-rules.md](references/outreach-rules.md) — grounded, human-reviewed drafting.
+- [references/browser-verification.md](references/browser-verification.md) — exact read-only Browser checklist.
+- [SECURITY.md](SECURITY.md) — credentials and operating boundaries.
 
 ## Tests
 
 ```bash
-npm test           # offline, no network, never launches a browser
-npm run test:dom   # the DOM extractor against saved LinkedIn pages (browser)
+npm test
 ```
 
-## Layout
-
-```
-START-HERE.md                     the paste block for a new user
-AGENTS.md                         the manual your AI agent follows
-references/                       search grammar, trigger signals, outreach rules
-personas/example-generic.yaml     public FAKE example persona
-private/                          your real persona, proofs, budget state (git-ignored)
-src/                              worker + pure logic + CLI
-sheet/SHEET.md                    the sheet contract
-test/                             offline tests + DOM fixtures
-```
-
-Nothing in `.env`, `private/` or `run-artifacts/` is tracked by git. Requires
-Node 20+, a Chrome/Edge install, a LinkedIn account, a Google account. MIT
-licensed; see [SECURITY.md](SECURITY.md) for the honest trust posture.
+The tests are offline and do not call Google, Apify, or LinkedIn.

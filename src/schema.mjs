@@ -3,7 +3,7 @@
 // all must agree with this. If you change columns, change them here and mirror
 // them in the builder and docs.
 //
-// v4 layout (A-AB): the agent writes A-J and R-AB; you own K-Q.
+// v7 layout (A-AC): the agent writes A-J and S-AC; the person owns K-R.
 
 export const AGENT_FIELDS = [
   "Name", // A
@@ -19,37 +19,36 @@ export const AGENT_FIELDS = [
 ];
 
 export const HUMAN_FIELDS = [
-  "Reached Out", // K
-  "Replied", // L
-  "Outcome", // M
-  "Date Added", // N
-  "Source Type", // O
-  "Batch", // P
-  "Notes", // Q
+  "Reached Out On", // K  date; blank means no first message yet
+  "Connected/Req Sent", // L  blank | Request sent | Connected
+  "Replied", // M  checkbox; separate from connection progress
+  "Outcome", // N
+  "Date Added", // O
+  "Source Type", // P
+  "Batch", // Q
+  "Notes", // R
 ];
 
 export const SYSTEM_FIELDS = [
-  "Activity Date", // R
-  "Activity Type", // S
-  "Fit Score", // T  the raw 0-100 score; column G is its 1-10 display
-  "Last Verified", // U
-  "Canonical Key", // V
-  "Research Source", // W
-  "Research Status", // X
-  // Y-AB: reserved for the follow-up loop. UNWRITTEN in v6 — the headers stay
-  // so existing sheets keep their layout, and nothing here writes them.
-  "Connection Status", // Y  reserved
-  "Reply Status", // Z  reserved
-  "Last Reply", // AA reserved
-  "Follow-up Checked", // AB reserved
+  "Activity Date", // S
+  "Activity Type", // T
+  "Fit Score", // U  raw 0-100 score; column G is its 1-10 display
+  "Last Verified", // V
+  "Canonical Key", // W
+  "Research Source", // X
+  "Research Status", // Y
+  "Browser Connection Status", // Z  1st | 2nd | 3rd+ | Pending | Unknown
+  "Connection Checked On", // AA
+  "Next Action", // AB
+  "Next Action Due", // AC
 ];
 
-/** The reserved Y-AB subset. Nothing in v6 writes these. */
+/** Fields maintained by browser verification and the next-action planner. */
 export const FOLLOWUP_FIELDS = [
-  "Connection Status",
-  "Reply Status",
-  "Last Reply",
-  "Follow-up Checked",
+  "Browser Connection Status",
+  "Connection Checked On",
+  "Next Action",
+  "Next Action Due",
 ];
 
 export const LEADS_HEADERS = [...AGENT_FIELDS, ...HUMAN_FIELDS, ...SYSTEM_FIELDS];
@@ -103,11 +102,9 @@ export function checkLeadsLayout(headers = []) {
         "would shift every value into the wrong column, including your own tracking, " +
         "so this run stopped instead and changed nothing.\n\n" +
         "If the Leads tab has NO rows yet: open it, then Extensions > Apps Script, and " +
-        "run buildAidgentOsSheet. That rebuilds the headers in place.\n" +
-        "If it already has leads: rebuilding would rename the columns without moving the " +
-        "rows, so save a copy of them first, use \"Clear the Leads list…\" from the " +
-        "⚡ Aidgent OS menu, then run buildAidgentOsSheet and let the next run re-source " +
-        "those people. Taking a fresh copy of the template works too.",
+        "run buildLeadSheet. That rebuilds the headers in place.\n" +
+        "If it already has leads: do not rebuild it in place. Make a backup, create " +
+        "a fresh v7 Sheet, and migrate the rows deliberately so human tracking stays aligned.",
     };
   }
   return { ok: true, mismatch: null, message: "" };

@@ -1,17 +1,6 @@
 #!/usr/bin/env node
-// cli.mjs — command dispatcher for the local prospect-research worker.
-//
-// The v6 run loop — the agent explores and judges; the code verifies, paces,
-// and writes:
-//
-//   open      open ONE allowed LinkedIn URL, save HTML + screenshot for the agent
-//   inspect   open every nominated profile, capture evidence first-hand
-//   qualify   validate the agent's decisions + drafts, write fit rows to the sheet
-//
-// Setup and upkeep:
-//   start | init-env | setup-login | check-login | save-persona | bind-sheet |
-//   check-sheet | feedback
-//
+// v7 command dispatcher: public sourcing, Apify evidence, read-only Codex
+// Browser verification, qualification, Sheet updates, and action planning.
 // Nothing outward is ever sent. See SECURITY.md.
 
 import fs from "node:fs";
@@ -25,7 +14,7 @@ import {
   extractSheetId, isPlaceholderSheetId, isSharedTemplateId, sheetSetupHelp,
   sheetUrlFor,
 } from "./persona.mjs";
-import { makeRunId, buildRunReport, formatRunReport } from "./runlog.mjs";
+import { buildRunReport, formatRunReport } from "./runlog.mjs";
 import { createBudget, formatBudgetRefusal, BUDGET_STATE_PATH } from "./budget.mjs";
 
 const SELECTED_FILE = path.join(REPO_ROOT, "private", "selected-persona.txt");
@@ -36,17 +25,18 @@ async function main() {
   switch (command) {
     case "start": return cmdStart(flags);
     case "init-env": return cmdInitEnv();
-    case "setup-login": return cmdSetupLogin(flags);
-    case "check-login": return cmdCheckLogin(flags);
-    case "open": return cmdOpen(flags);
-    case "inspect": return cmdInspect(flags);
     case "qualify": return cmdQualify(flags);
     case "feedback": return cmdFeedback(flags);
     case "save-persona": return cmdSavePersona(flags);
     case "bind-sheet": return cmdBindSheet(flags);
     case "check-sheet": return cmdCheckSheet(flags);
+    case "source": return cmdSource(flags);
+    case "enrich": return cmdEnrich(flags);
+    case "browser-verify": return cmdBrowserVerify(flags);
+    case "status": return cmdStatus(flags);
+    case "next-actions": return cmdNextActions(flags);
     default:
-      console.log("Unknown command. See: start | init-env | setup-login | check-login | open | inspect | qualify | feedback | save-persona | bind-sheet | check-sheet");
+      console.log("Unknown command. See: start | init-env | source | enrich | browser-verify | qualify | status | next-actions | feedback | save-persona | bind-sheet | check-sheet");
       process.exit(2);
   }
 }
@@ -283,7 +273,7 @@ async function cmdInspect(flags) {
  *
  * Every draft is validated against the captured post (grounding: four
  * consecutive words), hard disqualifiers are re-checked, and only fit=true
- * rows are written — columns A-J + R-X in one pass, drafts included. Failures
+ * rows are written — columns A-J + S-AC in one pass, drafts included. Failures
  * are reported for redraft, never written.
  */
 async function cmdQualify(flags) {
@@ -293,7 +283,7 @@ async function cmdQualify(flags) {
   const file = flags.decisions;
   if (!file || file === true) {
     fail([
-      "Usage: npm run qualify -- --decisions decisions.json [--update-sheet]",
+      "Usage: npm run qualify -- --run <run-id> --decisions decisions.json [--update-sheet]",
       "",
       "decisions.json is your judgement on every candidate in evidence.json:",
       '  [{ "key": "https://www.linkedin.com/in/ada...", "fit": true, "score": 82,',
@@ -310,13 +300,16 @@ async function cmdQualify(flags) {
 
   await warnUnappliedFeedback(config, sheetId);
 
-  const evidenceFile = flags.evidence && flags.evidence !== true
-    ? String(flags.evidence)
-    : path.join(config.outDir, "evidence.json");
+  const durableRunId = flags.run && flags.run !== true ? String(flags.run) : "";
+  if (!durableRunId) fail("A durable run id is required. Pass the id printed by source and enrich as --run <run-id>.");
+  const { runPath } = await import("./runs.mjs");
+  const evidenceFile = path.join(runPath(durableRunId), "evidence.json");
   if (!fs.existsSync(evidenceFile)) {
-    fail(`No evidence at ${evidenceFile}. Run \`npm run inspect\` first — qualify only writes people the worker actually opened.`);
+    fail(`No Browser-verified evidence exists for run ${durableRunId}. Finish enrich and browser-verify first.`);
   }
   const evidence = JSON.parse(fs.readFileSync(evidenceFile, "utf8"));
+  const { writeArtifact } = await import("./runs.mjs");
+  writeArtifact(durableRunId, "decisions.json", JSON.parse(fs.readFileSync(String(file), "utf8")), { stage: "qualifying" });
 
   const { parseDecisions, planQualify, formatRefused } = await import("./qualify.mjs");
   const parsedD = parseDecisions(JSON.parse(fs.readFileSync(String(file), "utf8")));
@@ -362,19 +355,23 @@ async function cmdQualify(flags) {
     firstDataRow: existingSheet.firstDataRow || 4,
     headers: existingSheet.rawHeaders,
   });
-  const runId = makeRunId(nowIso, "qualify");
+  const runId = durableRunId;
+  const concernCount = refused.length + plan.outreachRejected.length;
   const report = buildRunReport({
     runId, persona: slug, requestedTarget: parsedD.decisions.length, counts,
-    blocker: refused.length ? `${refused.length} decision(s) refused` : "",
+    blocker: concernCount ? `${refused.length} decision(s) refused; ${plan.outreachRejected.length} draft set(s) need revision` : "",
     startedMs, endedMs: Date.now(), nowIso,
   });
   await appendRunLog(sheets, sheetId, report);
   console.log(formatRunReport(report));
   console.log(`Applied: appended ${applied.appended}, updated ${applied.updated}`);
 
-  const accepted = plan.newRows.length + plan.updates.length;
-  const topScore = accepted
-    ? Math.max(0, ...parsedD.decisions.filter((d) => d.fit).map((d) => Number(d.score) || 0))
+  const landedScores = [
+    ...plan.newRows.map((row) => Number(row.cells["Fit Score"])),
+    ...plan.updates.map((row) => Number(row.set["Fit Score"])),
+  ].filter(Number.isFinite);
+  const topScore = landedScores.length
+    ? Math.max(...landedScores)
     : null;
   console.log("");
   console.log(formatHandoff({
@@ -386,6 +383,14 @@ async function cmdQualify(flags) {
       ? "redraft the rejected message(s) against column D and re-run qualify"
       : "review the rows with the person; nominate more people for the next loop",
   }));
+  if (durableRunId) {
+    const { updateManifest } = await import("./runs.mjs");
+    updateManifest(durableRunId, {
+      stage: "complete",
+      blocker: concernCount ? { kind: "qualification", reason: report.blocker } : null,
+      counts: { qualified: counts.newLeads + counts.updatedLeads, written: applied.appended + applied.updated },
+    });
+  }
   if (plan.outreachRejected.length || refused.length) process.exitCode = 1;
 }
 
@@ -405,7 +410,7 @@ async function cmdFeedback(flags) {
   }
   const { readFeedback, writeFeedbackStatus, formatFeedback, unappliedRows, needsDecisionRows,
     STATUS_APPLIED, STATUS_NEEDS_DECISION } = await import("./feedback.mjs");
-  const { getSheets } = await import("./sheet.mjs");
+  const { getSheets, readLeads } = await import("./sheet.mjs");
   const sheets = await getSheets(config.credentialsPath);
 
   const applyRow = flags.apply;
@@ -483,16 +488,8 @@ async function cmdSavePersona(flags) {
 
 async function cmdBindSheet(flags) {
   const slug = resolvePersonaSlug(flags);
-  if (!slug) fail("Usage: npm run bind-sheet -- --persona <slug> --sheet <id-or-url>");
   const arg = flags.sheet || flags.url;
   if (!arg || arg === true) fail("Provide --sheet <google-sheet-id-or-url> (your EXISTING sheet)." + sheetSetupHelp());
-  const p = resolvePersonaPath(slug);
-  if (!p) fail(`persona not found: ${slug}. Save it first with save-persona.`);
-  if (!p.includes(path.join("private", "personas"))) {
-    console.warn(`Note: ${slug} is a PUBLIC persona (${p}). Binding a real sheet id here would be committed. Prefer a private persona under private/personas/.`);
-  }
-  const { default: YAML } = await import("js-yaml");
-  const persona = await loadPersonaFile(p);
   const id = extractSheetId(arg);
   if (isSharedTemplateId(id)) {
     fail([
@@ -504,11 +501,23 @@ async function cmdBindSheet(flags) {
       sheetSetupHelp(),
     ].join("\n"));
   }
-  persona.sheet_id = id;
-  delete persona.sheet_url;
-  fs.writeFileSync(p, YAML.dump(persona, { lineWidth: 100 }));
-  console.log(`Bound persona "${slug}" to existing sheet ${id}.`);
-  console.log("Verify access with: npm run check-sheet -- --persona " + slug);
+  if (slug) {
+    const p = resolvePersonaPath(slug);
+    if (!p) fail(`persona not found: ${slug}. Omit --persona to bind the sheet globally before ICP setup.`);
+    if (!p.includes(path.join("private", "personas"))) {
+      console.warn(`Note: ${slug} is a PUBLIC persona (${p}). Binding a real sheet id here would be committed. Prefer a private persona under private/personas/.`);
+    }
+    const { default: YAML } = await import("js-yaml");
+    const persona = await loadPersonaFile(p);
+    persona.sheet_id = id;
+    delete persona.sheet_url;
+    fs.writeFileSync(p, YAML.dump(persona, { lineWidth: 100 }));
+    console.log(`Bound persona "${slug}" to existing sheet ${id}.`);
+  } else {
+    upsertDotEnv("GOOGLE_SHEET_ID", id);
+    console.log(`Bound the existing sheet globally in .env (${id}). The ICP persona can be created afterward.`);
+  }
+  console.log("Verify access with: npm run check-sheet");
 }
 
 async function cmdCheckSheet(flags) {
@@ -522,20 +531,177 @@ async function cmdCheckSheet(flags) {
   if (isSharedTemplateId(sheetId)) {
     fail("The bound sheet is the shared TEMPLATE, which you can only view. Bind your own copy instead." + sheetSetupHelp());
   }
-  const { getSheets } = await import("./sheet.mjs");
+  const { getSheets, readLeads } = await import("./sheet.mjs");
   const sheets = await getSheets(config.credentialsPath);
   const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId });
   const tabs = (meta.data.sheets || []).map((s) => s.properties.title);
+  if (!tabs.includes("Leads")) {
+    fail('Google access works, but this Sheet has no "Leads" tab. Run buildLeadSheet in Extensions > Apps Script, then check again.');
+  }
+  await readLeads(sheets, sheetId);
   // Getting here means the service account opened the sheet as itself, which
   // is the only evidence the share step was actually done. Record it.
   recordSheetProof({ sheetId });
   console.log(`OK: will USE existing sheet "${meta.data.properties.title}" (${sheetId}).`);
   console.log(`Tabs: ${tabs.join(", ")}`);
-  if (!tabs.includes("Leads")) console.log('Note: no "Leads" tab yet. Take a fresh copy of the template, or the worker will need a Leads tab to maintain.');
   console.log("This tool maintains THIS sheet in place and never creates a new spreadsheet.");
 }
 
+/**
+ * source — accept candidates Codex found through public web search and start a
+ * durable run. Search snippets are provenance, not verified profile facts.
+ */
+async function cmdSource(flags) {
+  const file = flags.file || flags.candidates;
+  if (!file || file === true) fail("Usage: npm run source -- --file candidates.json [--target 10]");
+  const config = resolveConfig(flags);
+  const slug = resolvePersonaSlug(flags);
+  if (!slug) fail("No persona is selected. Finish the ICP setup first.");
+  const { persona } = await getPersona(slug);
+  const sheetId = config.sheetId || personaSheetId(persona);
+  if (isPlaceholderSheetId(sheetId)) fail("No Google Sheet is bound." + sheetSetupHelp());
+
+  const { getSheets, readLeads } = await import("./sheet.mjs");
+  const { buildExistingIndex } = await import("./merge.mjs");
+  const sheets = await getSheets(config.credentialsPath);
+  const existingSheet = await readLeads(sheets, sheetId);
+  const existingKeys = new Set(buildExistingIndex(existingSheet).keys());
+  const { parseSourceCandidates } = await import("./source.mjs");
+  const parsed = parseSourceCandidates(JSON.parse(fs.readFileSync(String(file), "utf8")), { existingKeys });
+  for (const r of parsed.rejected.slice(0, 10)) console.error(`candidate rejected: ${r.reason}`);
+  if (!parsed.rows.length) fail("No usable public-web candidates were found in the file.");
+
+  const { createRun, writeArtifact } = await import("./runs.mjs");
+  const target = Math.max(1, Math.min(50, Number(flags.target) || parsed.rows.length));
+  const selected = parsed.rows.slice(0, target);
+  const { manifest } = createRun({ persona: slug, target });
+  const artifact = writeArtifact(manifest.runId, "source.json", selected, {
+    stage: "enriching", counts: { sourced: selected.length },
+  });
+  console.log(`Run: ${manifest.runId}`);
+  console.log(`Sourced: ${selected.length} candidate(s); ${parsed.rejected.length} rejected; ${parsed.rows.length - selected.length} held for a later run.`);
+  console.log(`Saved: ${artifact}`);
+  console.log(`Next: npm run enrich -- --run ${manifest.runId}`);
+}
+
+/** Fetch recent public posts from Apify in resumable chunks. */
+async function cmdEnrich(flags) {
+  const config = resolveConfig(flags);
+  const { latestRun, readArtifact, readManifest, writeArtifact, blockRun } = await import("./runs.mjs");
+  const runId = resolveRunId(flags, latestRun());
+  const manifest = readManifest(runId);
+  const candidates = readArtifact(runId, "source.json");
+  const { actorInput, callProfilePosts, normalizeApify } = await import("./apify.mjs");
+  const batchSize = Math.max(1, Math.min(50, config.apifyBatchSize));
+  let raw = [];
+  try { raw = readArtifact(runId, "apify-raw.json"); } catch { raw = []; }
+  const completed = new Set(raw.map((x) => x.batch));
+  const batches = [];
+  for (let i = 0; i < candidates.length; i += batchSize) batches.push(candidates.slice(i, i + batchSize));
+  try {
+    for (let i = 0; i < batches.length; i++) {
+      if (completed.has(i)) continue;
+      const input = actorInput(batches[i], { maxPosts: config.apifyMaxPosts, lookback: config.apifyLookback });
+      const items = await callProfilePosts({ token: config.apifyToken, actorId: config.apifyActor, input });
+      raw.push({ batch: i, candidate_urls: batches[i].map((c) => c.url), items });
+      writeArtifact(runId, "apify-raw.json", raw, { stage: "enriching" });
+      console.log(`Apify batch ${i + 1}/${batches.length}: ${items.length} dataset item(s).`);
+    }
+  } catch (err) {
+    blockRun(runId, { kind: "apify", reason: err.message, resume: `npm run enrich -- --run ${runId}` });
+    fail(`BLOCKED (Apify): ${err.message}\nCompleted batches were preserved. Re-run the same command to resume.`);
+  }
+  const allItems = raw.flatMap((x) => x.items || []);
+  const enriched = normalizeApify(candidates, allItems);
+  const withPosts = enriched.filter((c) => c.post).length;
+  writeArtifact(runId, "enriched.json", enriched, {
+    stage: "browser_verification", counts: { enriched: enriched.length, withPosts },
+  });
+  console.log(`Enriched ${enriched.length} candidate(s); ${withPosts} have a captured recent post.`);
+  console.log(`Next: use Codex Browser to verify the best profiles, then save browser-verification.json and run:`);
+  console.log(`  npm run browser-verify -- --run ${runId} --file browser-verification.json`);
+}
+
+/** Validate read-only Codex Browser observations and merge them with Apify evidence. */
+async function cmdBrowserVerify(flags) {
+  if (flags.setup === true || flags.setup === "true") {
+    const file = path.join(REPO_ROOT, "private", "browser-verified.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ verifiedAt: new Date().toISOString(), method: "Codex Browser", readOnly: true }, null, 2) + "\n");
+    console.log("Recorded that Codex Browser opened LinkedIn successfully in read-only mode.");
+    return;
+  }
+  const file = flags.file || flags.verifications;
+  if (!file || file === true) fail("Usage: npm run browser-verify -- --run <id> --file browser-verification.json");
+  const { latestRun, readArtifact, writeArtifact } = await import("./runs.mjs");
+  const runId = resolveRunId(flags, latestRun());
+  const enriched = readArtifact(runId, "enriched.json");
+  const { parseBrowserVerifications, mergeBrowserEvidence } = await import("./browserVerification.mjs");
+  const parsed = parseBrowserVerifications(JSON.parse(fs.readFileSync(String(file), "utf8")), { candidates: enriched });
+  for (const r of parsed.rejected.slice(0, 10)) console.error(`verification rejected: ${r.reason}`);
+  if (!parsed.rows.length) fail("No usable browser verifications were found.");
+  const evidence = mergeBrowserEvidence(enriched, parsed.rows);
+  writeArtifact(runId, "browser-verification.json", parsed.rows, { stage: "browser_verification" });
+  writeArtifact(runId, "evidence.json", evidence, {
+    stage: "qualifying", counts: { browserVerified: parsed.rows.length },
+  });
+  console.log(`Browser-verified ${parsed.rows.length} candidate(s); ${parsed.rejected.length} rejected.`);
+  console.log(`Next: write decisions.json, then npm run qualify -- --run ${runId} --decisions decisions.json`);
+}
+
+/** Setup plus latest durable run status; no network and no browser. */
+async function cmdStatus(flags) {
+  const { inspectSetup, buildChecklist, toJson } = await import("./start.mjs");
+  const { latestRun } = await import("./runs.mjs");
+  const setup = await inspectSetup();
+  const status = { setup: toJson(setup, buildChecklist(setup)), latestRun: latestRun() };
+  if (flags.json === true || flags.json === "true") console.log(JSON.stringify(status, null, 2));
+  else {
+    console.log(`Setup: ${status.setup.ready ? "READY" : `needs step ${status.setup.nextStep?.number || "?"}`}`);
+    if (!status.latestRun) console.log("Run: none yet.");
+    else {
+      const r = status.latestRun;
+      console.log(`Run: ${r.runId} — ${r.stage}`);
+      console.log(`Counts: sourced ${r.counts?.sourced || 0}, enriched ${r.counts?.enriched || 0}, browser-verified ${r.counts?.browserVerified || 0}, written ${r.counts?.written || 0}`);
+      if (r.blocker) console.log(`BLOCKER: ${r.blocker.kind} — ${r.blocker.reason}`);
+    }
+  }
+}
+
+/** Calculate the Sheet's action queue and optionally write system columns AB/AC. */
+async function cmdNextActions(flags) {
+  const config = resolveConfig(flags);
+  const slug = resolvePersonaSlug(flags);
+  const persona = slug ? (await getPersona(slug)).persona : null;
+  const sheetId = config.sheetId || (persona && personaSheetId(persona)) || "";
+  if (isPlaceholderSheetId(sheetId)) fail("No Google Sheet is bound." + sheetSetupHelp());
+  const { getSheets, readLeads, applyPlan } = await import("./sheet.mjs");
+  const { planNextActions } = await import("./followup.mjs");
+  const sheets = await getSheets(config.credentialsPath);
+  const existingSheet = await readLeads(sheets, sheetId);
+  const plan = planNextActions(existingSheet, {
+    followUpDays: Number(flags["follow-up-days"]) || Number(persona?.follow_up_days) || 5,
+    recheckDays: Number(flags["recheck-days"]) || 2,
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  const due = plan.queue.filter((q) => q.due && q.due <= today && !/^(Waiting|No action)/.test(q.action));
+  console.log(`Action queue: ${plan.queue.length} total; ${due.length} due now.`);
+  for (const q of due.slice(0, 20)) console.log(`  ${q.name}: ${q.action} (${q.url})`);
+  if (flags["update-sheet"] === true || flags["update-sheet"] === "true") {
+    await applyPlan(sheets, sheetId, { newRows: [], updates: plan.updates }, {
+      headerRow: existingSheet.headerRow, firstDataRow: existingSheet.firstDataRow, headers: existingSheet.rawHeaders,
+    });
+    console.log("Updated Next Action and Next Action Due in the Sheet. Nothing was sent.");
+  } else console.log("Nothing was written. Add --update-sheet to refresh the action columns.");
+}
+
 // --- helpers ---------------------------------------------------------------
+
+function resolveRunId(flags, latest) {
+  const id = flags.run && flags.run !== true ? String(flags.run) : latest?.runId;
+  if (!id) fail("No run exists yet. Start one with npm run source -- --file candidates.json");
+  return id;
+}
 
 /** The daily budget, persisted in private/budget-state.json. */
 function openBudgetFor(config) {

@@ -11,7 +11,7 @@ const existingSheet = {
         "Name": "Dana Lopez",
         "Title / Company": "Owner @ Lopez Studio",
         "LinkedIn (or profile URL)": "https://www.linkedin.com/in/dana-lopez-fake",
-        "Reached Out": "TRUE", "Replied": "TRUE", "Outcome": "Positive",
+        "Reached Out On": "2026-06-02", "Connected/Req Sent": "Connected", "Replied": "TRUE", "Outcome": "Positive",
         "Date Added": "2026-06-01", "Source Type": "LinkedIn", "Batch": "B1",
         "Notes": "Met at conference.", "Canonical Key": "https://www.linkedin.com/in/dana-lopez-fake",
       },
@@ -46,11 +46,12 @@ test("existing-lead update touches NO human field", () => {
   assert.ok(keys.includes("Last Verified"));
 });
 
-test("toLeadRow seeds Date Added + Source Type but leaves G/H/I/L/M blank", () => {
+test("toLeadRow seeds Date Added + Source Type but leaves human progress blank", () => {
   const cells = toLeadRow({ name: "Sam", title: "Founder", company: "Bright Ops", url: "https://linkedin.com/in/sam-rivera-fake", score: 64 }, { nowIso: "2026-07-23T00:00:00Z" });
   assert.equal(cells["Date Added"], "2026-07-23");
-  assert.equal(cells["Source Type"], "LinkedIn");
-  assert.equal(cells["Reached Out"], "");
+  assert.equal(cells["Source Type"], "Public Web + Apify");
+  assert.equal(cells["Reached Out On"], "");
+  assert.equal(cells["Connected/Req Sent"], "");
   assert.equal(cells["Replied"], "");
   assert.equal(cells["Outcome"], "");
   assert.equal(cells["Batch"], "");
@@ -89,10 +90,13 @@ test('a lead found among your existing connections is labelled "Connection"', ()
   assert.ok(!("Source Type" in set));
 });
 
-test("follow-up columns are never written by the sourcing merge", () => {
+test("new follow-up system columns are explicit and refreshable", () => {
   const cells = toLeadRow({ name: "Ada Nkem", url: "https://www.linkedin.com/in/ada-nkem-fake" }, { nowIso: "2026-07-23T12:00:00Z" });
-  for (const f of ["Connection Status", "Reply Status", "Last Reply", "Follow-up Checked"]) {
-    assert.equal(cells[f], "", `${f} must start blank on a new row`);
-    assert.ok(!(f in toRefreshSet({ name: "Ada Nkem" }, {})), `${f} must not be in a refresh set`);
-  }
+  assert.equal(cells["Browser Connection Status"], "Unknown");
+  assert.equal(cells["Connection Checked On"], "");
+  assert.equal(cells["Next Action"], "");
+  assert.equal(cells["Next Action Due"], "");
+  const set = toRefreshSet({ name: "Ada Nkem", browserConnectionStatus: "2nd", connectionCheckedOn: "2026-07-23" }, {});
+  assert.equal(set["Browser Connection Status"], "2nd");
+  assert.equal(set["Connection Checked On"], "2026-07-23");
 });

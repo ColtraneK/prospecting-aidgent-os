@@ -7,6 +7,20 @@
 
 persona: Example Generic Persona
 
+offer: >
+  Practical workflow automation for small service businesses that need fewer
+  manual handoffs without buying a large enterprise platform.
+
+buyer_roles:
+  - Owner
+  - Founder
+  - Head of Operations
+  - Operations Director
+
+company_profile: >
+  Independent B2B service businesses with roughly 5-50 people and a visible
+  client-delivery workflow.
+
 # Prose, not fields. The agent reads this to judge fit, so write it the way
 # you would brief a sharp colleague: who buys, what they look like on
 # LinkedIn, and what makes someone worth reaching THIS WEEK.
@@ -35,12 +49,20 @@ geography:
     - India   # example exclusion only
 
 # Search STARTING POINTS, not query strings. The agent turns these into real
-# content searches (quoted phrases, OR) using references/linkedin-search-urls.md.
+# public web searches using references/public-web-sourcing.md.
 topics:
   - drowning in ops busywork
   - hiring an operations manager
   - automating client onboarding
   - scaling a small team
+
+trigger_signals:
+  - hiring an operations role
+  - launching a new service
+  - complaining about manual onboarding
+  - growing faster than the current process can handle
+
+follow_up_days: 5
 
 # How an opener should sound. The agent drafts; the grounding validator checks.
 voice: >

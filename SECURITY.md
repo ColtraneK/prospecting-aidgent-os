@@ -1,52 +1,41 @@
-# Security — the trust posture
+# Security and trust posture
 
-Read this before running anything, and say it out loud in any demo.
+## What this project does
 
-## What the worker does and does not do
+- Uses public web results to nominate possible prospects.
+- Sends explicit LinkedIn profile URLs to the configured Apify actor for recent-post evidence.
+- Uses Codex Browser read-only to verify identity, current profile facts, and visible connection state.
+- Writes research and suggested next actions to a Google Sheet.
 
-- **Read-only research.** It navigates and extracts. It NEVER clicks Connect, Message, Follow, Like, Celebrate, Support, React, Comment, Share, Repost, or Post. `npm run open` refuses messaging/connect/compose URLs outright.
-- **Never automates login.** It does not type your username, password, or MFA, and never completes a login for you. You sign in manually once, in a headed window.
-- **Never bypasses controls.** It does not defeat CAPTCHAs, checkpoints, bot detection, or access controls. On any such page it stops and exits nonzero.
-- **No fabrication.** Nothing reaches the sheet unless this repo's own browser opened the profile and captured the facts verbatim, and every drafted message must quote the captured post (checked in code). Unverified fields are left blank.
-- **Human-approved outreach.** It drafts a comment and an intro; you decide and send.
+## What it never does
 
-## Credentials and the Chrome profile — the honest version
+- It never sends a connection request or message.
+- It never likes, reacts, comments, shares, reposts, or posts.
+- It never types a LinkedIn password, handles MFA, bypasses CAPTCHA, or evades an access control.
+- It never treats a search snippet, scraped record, or model guess as confirmed truth.
 
-This system uses a **dedicated persistent Chrome profile** that you sign into
-manually. That profile directory **contains authentication cookies and a live
-LinkedIn session**. Treat it like a credential:
+## Credentials
 
-- Keep the profile path **outside this repo** (`AIDGENT_CHROME_PROFILE`). It is git-ignored by pattern as a backstop, but it should never live in the working tree.
-- Anyone with that folder can act as you on LinkedIn. Protect it like a password.
-- We do **not** claim "no credentials are stored." A signed-in profile is stored, by design, on your machine only.
+Keep these outside Git:
 
-## Google Sheets credentials
+- `APIFY_API_TOKEN` in local `.env`.
+- The Google service-account JSON file referenced by `GOOGLE_APPLICATION_CREDENTIALS`.
+- Any browser session data in the separate Codex Browser profile.
 
-- Use a **service-account JSON key** referenced by `GOOGLE_APPLICATION_CREDENTIALS`, kept **outside the repo**.
-- Share the target Sheet with the service account's `client_email` (Editor).
-- `.env`, credentials, tokens, and the key file are git-ignored. The public repo contains only `.env.example` (variable names only).
+`.env`, `private/`, service-account keys, evidence, and run artifacts are git-ignored. Do not paste tokens into prompts, workshop chats, issues, screenshots, or commits. If a credential is exposed, revoke it and create a replacement immediately.
 
-## Rate and volume discipline
+The Google Sheet should be shared only with the service account's `client_email`, as Editor. The key does not grant access to every file in the user's Drive.
 
-Conservative randomized pacing between navigations (3.5–9s) and hard **daily
-budgets persisted across invocations** (`AIDGENT_OPEN_BUDGET` 120 page opens,
-`AIDGENT_INSPECT_BUDGET` 60 profile inspections). Exhausted budgets refuse
-until the next day. Keep volumes low: if you would not do it by hand at a
-human pace, do not script it. Respect LinkedIn's and every platform's terms.
+## Browser boundary
 
-The practical limit on the human side is connection requests: LinkedIn objects
-to accounts sending much more than about **30 a day**. A short researched list
-is the point — it keeps the outreach you do by hand inside a range LinkedIn is
-comfortable with, and more rows do not mean more conversations.
+The user signs in manually in Codex Browser. Browser activity is inspection only. If LinkedIn shows a checkpoint, CAPTCHA, warning, or unexpected write action, stop and let the user handle it. Do not repeatedly retry.
 
-## Data hygiene
+## Data quality and privacy
 
-- Real personas, prospect exports, run artifacts, screenshots, traces, and the Chrome profile are all git-ignored. The public repo may contain **only fake examples**.
-- The worker preserves your human columns (K–Q) and never deletes leads.
+- Keep the public source URL and capture timestamp for each candidate.
+- Require Browser verification before writing a qualified lead.
+- Leave uncertain facts blank and record the uncertainty.
+- Store only information appropriate for a professional B2B research workflow.
+- Respect applicable site terms, privacy rules, and the user's organizational policy.
 
-## Operating requirements (not a security feature, but be honest)
-
-Runs require the **computer on and awake** and the **agent app running**. It
-does **not** run with the computer off. A pasted `li_at` cookie is a real
-credential exactly like the signed-in Chrome profile: anyone holding it can act
-as you on LinkedIn. It lives only in your local `.env`, which is git-ignored.
+The computer must be on and awake for a local scheduled task. Scheduling increases consistency, not authority: scheduled runs remain read-only and never auto-send outreach.
