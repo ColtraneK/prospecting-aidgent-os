@@ -1,4 +1,4 @@
-// merge.mjs — plan Google Sheet updates without touching human columns (K-Q).
+// merge.mjs — plan Google Sheet updates without touching human columns (K-R).
 // Pure and fully testable.
 
 import { HUMAN_FIELDS, LEADS_HEADERS } from "./schema.mjs";
@@ -7,7 +7,7 @@ import { canonicalKey, canonicalizeLinkedInUrl } from "./url.mjs";
 import { dedupeCandidates } from "./dedupe.mjs";
 import { enforceOutreach } from "./outreach.mjs";
 
-// Agent fields the system refreshes on an EXISTING lead (never A/C, never K-Q).
+// Agent fields the system refreshes on an EXISTING lead (never A/C, never K-R).
 const REFRESHABLE_AGENT_FIELDS = [
   "Title / Company",
   "Recent Post (verbatim + date)",
@@ -29,7 +29,7 @@ const REFRESHABLE_AGENT_FIELDS = [
  * is never repaired: a message this code rewrote is a message nobody wrote.
  *
  * Note what is NOT done here. The reason does not go into Notes (column Q).
- * K–Q are the person's own columns and the system does not write them, no
+ * K-R are the person's own columns and the system does not write them, no
  * matter how useful the note would be.
  */
 function checkedOpeners(candidate) {
@@ -43,7 +43,7 @@ function checkedOpeners(candidate) {
 
 /** Build the {header: value} map for a brand-new lead row (A:AB). */
 export function toLeadRow(candidate, opts = {}) {
-  const { nowIso = new Date().toISOString(), sourceType = "LinkedIn", researchStatus = "New" } = opts;
+  const { nowIso = new Date().toISOString(), sourceType = "Public Web + Apify", researchStatus = "New" } = opts;
   const activity = candidate.activity || {};
   const key = candidate.canonicalKey || canonicalKey({ url: candidate.url, name: candidate.name, company: candidate.company }).key;
   const cells = {};
@@ -60,12 +60,12 @@ export function toLeadRow(candidate, opts = {}) {
   const openers = checkedOpeners(candidate);
   cells["Suggested Comment"] = openers.comment;
   cells["Suggested Intro DM"] = openers.dm;
-  // Human K-Q — seed only Date Added + Source Type on insert; the rest is yours.
+  // Human K-R — seed only Date Added + Source Type on insert; the rest is yours.
   // A person found among your existing connections is labelled "Connection" so
   // you can tell warm rows from cold ones at a glance.
   cells["Date Added"] = dateOnly(nowIso);
   cells["Source Type"] = candidate.sourceType || (candidate.fromConnection ? "Connection" : sourceType);
-  // System R-AB
+  // System S-AC
   cells["Activity Date"] = activity.date || "";
   cells["Activity Type"] = activity.type || "";
   cells["Fit Score"] = numOrBlank(candidate.score);
@@ -73,10 +73,14 @@ export function toLeadRow(candidate, opts = {}) {
   cells["Canonical Key"] = key;
   cells["Research Source"] = candidate.researchSource || (activity.url ? "linkedin_activity" : "linkedin_profile");
   cells["Research Status"] = researchStatus;
+  cells["Browser Connection Status"] = candidate.browserConnectionStatus || "Unknown";
+  cells["Connection Checked On"] = candidate.connectionCheckedOn || "";
+  cells["Next Action"] = candidate.nextAction || "";
+  cells["Next Action Due"] = candidate.nextActionDue || "";
   return cells;
 }
 
-/** Field updates for an EXISTING lead. Agent-refresh + system only. Never K-Q. */
+/** Field updates for an EXISTING lead. Agent-refresh + system only. Never K-R. */
 export function toRefreshSet(candidate, opts = {}) {
   const { nowIso = new Date().toISOString() } = opts;
   const activity = candidate.activity || {};
@@ -106,6 +110,10 @@ export function toRefreshSet(candidate, opts = {}) {
   set["Last Verified"] = dateOnly(nowIso);
   set["Research Source"] = candidate.researchSource || (activity.url ? "linkedin_activity" : "linkedin_profile");
   set["Research Status"] = "Refreshed";
+  if (candidate.browserConnectionStatus) set["Browser Connection Status"] = candidate.browserConnectionStatus;
+  if (candidate.connectionCheckedOn) set["Connection Checked On"] = candidate.connectionCheckedOn;
+  if (candidate.nextAction) set["Next Action"] = candidate.nextAction;
+  if (candidate.nextActionDue) set["Next Action Due"] = candidate.nextActionDue;
   for (const h of HUMAN_FIELDS) delete set[h];
   return set;
 }

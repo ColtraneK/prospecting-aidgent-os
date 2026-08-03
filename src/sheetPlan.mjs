@@ -1,5 +1,5 @@
 // sheetPlan.mjs — turn a merge plan into concrete Google Sheets value writes.
-// Pure and testable. Guarantees updates NEVER touch human columns K:Q, because
+// Pure and testable. Guarantees updates NEVER touch human columns K:R, because
 // it only emits ranges for the exact columns present in each update's `set`.
 
 import { LEADS_HEADERS, COLS, RANGE_HUMAN, colLetter } from "./schema.mjs";

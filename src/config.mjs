@@ -133,12 +133,18 @@ export function resolveConfig(flags = {}, env = { ...loadDotEnv(), ...process.en
     liAt: str(flags["li-at"]) || env.AIDGENT_LI_AT || "",
     sheetId: flags.sheet || env.GOOGLE_SHEET_ID || "",
     credentialsPath: env.GOOGLE_APPLICATION_CREDENTIALS || "",
+    apifyToken: env.APIFY_API_TOKEN || "",
+    apifyActor: env.AIDGENT_APIFY_ACTOR || "harvestapi~linkedin-profile-posts",
+    apifyMaxPosts: intOr(env.AIDGENT_APIFY_MAX_POSTS, 3),
+    apifyLookback: env.AIDGENT_APIFY_LOOKBACK || "month",
+    apifyBatchSize: intOr(env.AIDGENT_APIFY_BATCH_SIZE, 20),
     // v6 daily budgets, persisted across invocations (src/budget.mjs).
     openBudget: intOr(env.AIDGENT_OPEN_BUDGET, 120),
     inspectBudget: intOr(env.AIDGENT_INSPECT_BUDGET, 60),
     minDelayMs: intOr(env.AIDGENT_MIN_DELAY_MS, 3500),
     maxDelayMs: intOr(env.AIDGENT_MAX_DELAY_MS, 9000),
     outDir: flags.out || path.join(REPO_ROOT, "run-artifacts"),
+    runDir: path.join(REPO_ROOT, "private", "runs"),
   };
 }
 

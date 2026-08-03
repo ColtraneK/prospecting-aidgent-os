@@ -41,10 +41,10 @@ test("buildValueUpdates emits correct A1 ranges and never a human column", () =>
   const ranges = cellUpdates.map((c) => c.range);
   // B4 (title), D4 (post), H4:J4 (why/comment/dm),
   // R4:U4 (activity+score+verified), W4:X4 (source+status)
-  assert.deepEqual(ranges, ["Leads!B4", "Leads!D4", "Leads!H4:J4", "Leads!R4:U4", "Leads!W4:X4"]);
+  assert.deepEqual(ranges, ["Leads!B4", "Leads!D4", "Leads!H4:J4", "Leads!S4:V4", "Leads!X4:Y4"]);
   // none of K..Q (human columns) appear
   for (const r of ranges) {
-    assert.ok(!humanLetters.has(colOf(r)), `range ${r} must not touch human columns K:Q`);
+    assert.ok(!humanLetters.has(colOf(r)), `range ${r} must not touch human columns K:R`);
   }
 });
 

@@ -1,6 +1,6 @@
 // The v6 write path: the agent's judgement, checked in code before it becomes
 // cells. Only fit=true rows are written; a failing draft is reported and never
-// written; K-Q are untouched; a refresh never blanks I/J. Grounding runs on
+// written; K-R are untouched; a refresh never blanks I/J. Grounding runs on
 // the merge path, so qualify goes THROUGH the validator, not around it.
 
 import { test } from "node:test";
@@ -25,6 +25,9 @@ const evidence = [{
   post: { summary: POST, date: "2026-07-30", url: "https://www.linkedin.com/feed/update/urn:li:activity:1/", type: "post" },
   activity_status: "captured",
   disqualified: null,
+  browser_verified: true,
+  browser_connection_status: "2nd",
+  connection_checked_on: "2026-08-01",
 }];
 
 const decision = {
@@ -39,7 +42,7 @@ const decision = {
 const emptySheet = { headers: [], rows: [] };
 const NOW = Date.parse("2026-08-01T12:00:00Z");
 
-test("a fit=true decision with grounded drafts becomes one full row, A-J + R-X", () => {
+test("a fit=true decision with grounded drafts becomes one full v7 row", () => {
   const { plan, counts } = planQualify({
     persona: {}, evidence, decisions: [decision], existingSheet: emptySheet, nowMs: NOW, nowIso: "2026-08-01T12:00:00Z",
   });
@@ -55,7 +58,7 @@ test("a fit=true decision with grounded drafts becomes one full row, A-J + R-X",
   assert.ok(cells["Suggested Comment"].length, "a grounded comment is written");
   assert.ok(cells["Suggested Intro DM"].length, "a grounded DM is written");
   // Human columns are seeded once (Date Added, Source Type) and no more.
-  assert.equal(cells["Reached Out"], "");
+  assert.equal(cells["Reached Out On"], "");
   assert.equal(cells["Notes"], "");
 });
 
@@ -114,7 +117,7 @@ test("an ungrounded draft is blanked and reported, and the row still lands with 
   assert.ok(plan.outreachRejected[0].rejected.length >= 2, "both failing drafts are reported for redraft");
 });
 
-test("re-qualifying someone already in the sheet refreshes their row and never blanks I/J or touches K-Q", () => {
+test("re-qualifying someone already in the sheet refreshes their row and never blanks I/J or touches K-R", () => {
   const existing = {
     headers: [],
     rows: [{
@@ -125,7 +128,7 @@ test("re-qualifying someone already in the sheet refreshes their row and never b
         "Canonical Key": KEY,
         "Suggested Comment": "an earlier, grounded comment",
         "Suggested Intro DM": "an earlier, grounded DM",
-        "Reached Out": "yes",
+        "Reached Out On": "2026-08-01",
         "Notes": "met at the conf",
       },
     }],
@@ -140,10 +143,10 @@ test("re-qualifying someone already in the sheet refreshes their row and never b
   assert.ok(!("Suggested Comment" in set), "a blank draft leaves the earlier one alone");
   assert.ok(!("Suggested Intro DM" in set), "a blank draft leaves the earlier one alone");
   for (const h of HUMAN_FIELDS) assert.ok(!(h in set), `refresh must not touch human column ${h}`);
-  // And the concrete cell ranges never cross into K-Q.
+  // And the concrete cell ranges never cross into K-R.
   const { cellUpdates } = buildValueUpdates(plan);
   for (const u of cellUpdates) {
-    assert.ok(!new RegExp(`![${COLS["Reached Out"].letter}-${COLS["Notes"].letter}]\\d`).test(u.range),
+    assert.ok(!new RegExp(`![${COLS["Reached Out On"].letter}-${COLS["Notes"].letter}]\\d`).test(u.range),
       `update range reaches a human column: ${u.range}`);
   }
 });
